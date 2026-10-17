@@ -9,6 +9,7 @@ import '../core/core.dart';
 part 'palette_widgets.dart';
 part 'v4_widgets.dart';
 part 'v5_widgets.dart';
+part 'v6_widgets.dart';
 
 const _background = Color(0xFF111315);
 const _panel = Color(0xFF1B1E21);
@@ -68,58 +69,62 @@ class FrulerApp extends StatelessWidget {
     ),
     home: AnimatedBuilder(
       animation: controller,
-      builder: (context, _) => Scaffold(
-        body: Row(
-          children: [
-            _Sidebar(controller: controller),
-            const VerticalDivider(width: 1, color: _line),
-            Expanded(
-              child: Column(
-                children: [
-                  _TopBar(controller: controller),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      key: PageStorageKey(controller.section),
-                      padding: const EdgeInsets.fromLTRB(34, 29, 34, 28),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (controller.error != null ||
-                              controller.notice != null) ...[
-                            _Message(controller: controller),
-                            const SizedBox(height: 20),
+      builder: (context, _) {
+        controller.confirmImageReplacement = () =>
+            _confirmImageReplacement(context, controller);
+        return Scaffold(
+          body: Row(
+            children: [
+              _Sidebar(controller: controller),
+              const VerticalDivider(width: 1, color: _line),
+              Expanded(
+                child: Column(
+                  children: [
+                    _TopBar(controller: controller),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        key: PageStorageKey(controller.section),
+                        padding: const EdgeInsets.fromLTRB(34, 29, 34, 28),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (controller.error != null ||
+                                controller.notice != null) ...[
+                              _Message(controller: controller),
+                              const SizedBox(height: 20),
+                            ],
+                            if (!controller.permissionGranted &&
+                                !controller.initializing &&
+                                controller.section != AppSection.image) ...[
+                              _PermissionBanner(controller: controller),
+                              const SizedBox(height: 24),
+                            ],
+                            switch (controller.section) {
+                              AppSection.picker => _PickerPage(
+                                controller: controller,
+                              ),
+                              AppSection.ruler => _RulerPage(
+                                controller: controller,
+                              ),
+                              AppSection.image => _ImageWorkspace(
+                                controller: controller,
+                              ),
+                              AppSection.settings => _SettingsPage(
+                                controller: controller,
+                              ),
+                            },
                           ],
-                          if (!controller.permissionGranted &&
-                              !controller.initializing &&
-                              controller.section != AppSection.image) ...[
-                            _PermissionBanner(controller: controller),
-                            const SizedBox(height: 24),
-                          ],
-                          switch (controller.section) {
-                            AppSection.picker => _PickerPage(
-                              controller: controller,
-                            ),
-                            AppSection.ruler => _RulerPage(
-                              controller: controller,
-                            ),
-                            AppSection.image => _ImageWorkspace(
-                              controller: controller,
-                            ),
-                            AppSection.settings => _SettingsPage(
-                              controller: controller,
-                            ),
-                          },
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                  _Footer(controller: controller),
-                ],
+                    _Footer(controller: controller),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     ),
   );
 }
@@ -209,7 +214,7 @@ class _Sidebar extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(left: 10),
           child: Text(
-            'macOS  ·  v0.5.0',
+            'macOS  ·  v0.6.0',
             style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
           ),
         ),
@@ -807,7 +812,7 @@ class _SettingsPage extends StatelessWidget {
       const SizedBox(height: 20),
       const _Hint(
         icon: Icons.layers_outlined,
-        text: 'fruler 0.3.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
+        text: 'fruler 0.6.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
       ),
     ],
   );

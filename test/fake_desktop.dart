@@ -25,6 +25,25 @@ class FakeDesktop extends DesktopService {
 
   void event(String type, [Map<String, Object?> data = const {}]) =>
       input.add({'type': type, 'sessionId': 7, ...data});
+  ImageProjectFileData? projectFile;
+  String? projectText;
+  bool? quitAllowed;
+  Object? projectError;
+  Completer<bool>? pendingProjectSave;
+  @override
+  Future<ImageProjectFileData?> openProjectFile() async => projectFile;
+  @override
+  Future<bool> saveProjectFile(String text) async {
+    if (projectError != null) throw projectError!;
+    projectText = text;
+    return pendingProjectSave == null ? fileResult : pendingProjectSave!.future;
+  }
+
+  @override
+  Future<void> replyToQuit(bool allow) async {
+    quitAllowed = allow;
+  }
+
   ImageFileData? imageFile;
   Uint8List? exportedImage;
   @override

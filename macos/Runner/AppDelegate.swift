@@ -15,6 +15,10 @@ class AppDelegate: FlutterAppDelegate {
     }
   }
 
+  override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    (mainFlutterWindow as? MainFlutterWindow)?.requestQuitConfirmation() == true ? .terminateLater : .terminateNow
+  }
+
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     return false
   }

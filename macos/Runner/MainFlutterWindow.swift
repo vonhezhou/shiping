@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 class MainFlutterWindow: NSWindow, NSDraggingDestination {
   private var desktopBridge: FrulerDesktopBridge?
 
+  func requestQuitConfirmation() -> Bool { desktopBridge?.requestQuitConfirmation() ?? false }
+
   override func awakeFromNib() {
     guard FrulerInstance.acquire() else { NSApp.terminate(nil); return }
     let flutterViewController = FlutterViewController()
@@ -96,6 +98,11 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         }
         return event
       }
+      if self.session != nil, Int(event.keyCode) == kVK_ANSI_Z, event.modifierFlags.contains(.command) {
+        self.overlays.values.first(where: { $0.isKeyWindow })?.overlay.onEvent?([
+          "type":event.modifierFlags.contains(.shift) ? "redoPins":"undoPins"])
+        return nil
+      }
       guard self.hasShortcuts else { return event }
       if self.shortcuts.picker.matches(event) { self.emitActivation("picker"); return nil }
       if self.shortcuts.ruler.matches(event) { self.emitActivation("rectangle"); return nil }
@@ -137,6 +144,14 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     return nil
   }
 
+  func requestQuitConfirmation() -> Bool {
+    guard sink != nil else { return false }
+    cancelSession()
+    mainWindow?.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps:true)
+    sink?(["type":"quitRequested"])
+    return true
+  }
   func acceptImageDrop(_ url: URL) {
     do { var data = try ImageFileInput.read(url); data["type"]="imageDropped"; sink?(data) }
     catch { sink?(["type":"imageDropFailed","message":error.localizedDescription]) }
@@ -193,6 +208,31 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         UserDefaults.standard.set(json, forKey: stateKey)
       }
       result(nil)
+    case "replyToQuit":
+      NSApp.reply(toApplicationShouldTerminate:args["allow"] as? Bool == true)
+      result(nil)
+    case "openProjectFile":
+      let panel = NSOpenPanel()
+      panel.allowedContentTypes = [UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json),.json]
+      panel.allowsMultipleSelection=false;panel.canChooseDirectories=false
+      NSApp.activate(ignoringOtherApps:true)
+      guard panel.runModal() == .OK, let url=panel.url else {result(nil);return}
+      do {
+        let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
+        guard size <= 128*1024*1024 else {throw NSError(domain:"fruler.project",code:1,userInfo:[NSLocalizedDescriptionKey:"项目文件不能超过 128 MB"])}
+        let bytes=try Data(contentsOf:url)
+        guard bytes.count<=128*1024*1024, let text=String(data:bytes,encoding:.utf8) else {throw NSError(domain:"fruler.project",code:2,userInfo:[NSLocalizedDescriptionKey:"项目文件过大或不是 UTF-8 文本"])}
+        result(["name":url.lastPathComponent,"text":text])
+      }catch{result(FlutterError(code:"project_read_failed",message:error.localizedDescription,details:nil))}
+    case "saveProjectFile":
+      guard let text=args["text"] as? String else{result(FlutterError(code:"project_write_failed",message:"项目数据无效",details:nil));return}
+      let panel=NSSavePanel()
+      panel.nameFieldStringValue="untitled.fruler"
+      panel.allowedContentTypes=[UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json)]
+      panel.canCreateDirectories=true
+      NSApp.activate(ignoringOtherApps:true)
+      guard panel.runModal() == .OK,let url=panel.url else{result(false);return}
+      do{try Data(text.utf8).write(to:url,options:.atomic);result(true)}catch{result(FlutterError(code:"project_write_failed",message:error.localizedDescription,details:nil))}
     case "openImageFile":
       let panel = NSOpenPanel()
       panel.allowedContentTypes = [.png,.jpeg,.webP]
@@ -658,6 +698,7 @@ private final class CaptureOverlayView: NSView {
   private let editbar = NSView()
   private let continuousButton = NSButton(checkboxWithTitle: "连续取色", target: nil, action: nil)
   private let editButton = NSButton(title: "编辑标注", target: nil, action: nil)
+  private let redoButton = NSButton(title:"重做",target:nil,action:nil)
   private let undoButton = NSButton(title: "撤销", target: nil, action: nil)
   private let deleteButton = NSButton(title: "删除选中", target: nil, action: nil)
   private let copyImageButton = NSButton(title: "复制图片", target: nil, action: nil)
@@ -699,7 +740,7 @@ private final class CaptureOverlayView: NSView {
     switch Int(event.keyCode) {
     case kVK_Escape: onCancel?()
     case kVK_ANSI_Z where event.modifierFlags.contains(.command):
-      onEvent?(["type": "undoPins"])
+      onEvent?(["type": event.modifierFlags.contains(.shift) ? "redoPins" : "undoPins"])
     case kVK_Delete, kVK_ForwardDelete:
       if editingPins { onEvent?(["type": "deletePin"]) }
     case kVK_Return, kVK_ANSI_KeypadEnter:
@@ -813,6 +854,7 @@ private final class CaptureOverlayView: NSView {
     editbar.isHidden = tool == "picker"
     editButton.title = editingPins ? "返回绘制" : "编辑标注"
     undoButton.isEnabled = data["canUndoPins"] as? Bool == true
+    redoButton.isEnabled = data["canRedoPins"] as? Bool == true
     if let values = data["pinned"] as? [[String: Any]] {
       pins = values.enumerated().compactMap { index, item in
         guard item["displayId"] as? UInt32 == snapshot.displayID,
@@ -920,7 +962,7 @@ private final class CaptureOverlayView: NSView {
     stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
     editbar.addSubview(stack)
     let actions: [(NSButton, Selector)] = [(editButton, #selector(togglePinEditing)),
-      (undoButton, #selector(undoPin)), (deleteButton, #selector(deletePin)),
+      (undoButton, #selector(undoPin)), (redoButton,#selector(redoPin)), (deleteButton, #selector(deletePin)),
       (copyImageButton, #selector(copyAnnotationImage)), (saveImageButton, #selector(saveAnnotationImage))]
     for (button, action) in actions {
       button.target = self; button.action = action; button.bezelStyle = .rounded
@@ -945,6 +987,7 @@ private final class CaptureOverlayView: NSView {
   }
   @objc private func toggleContinuous() { emitControl("continuousChanged", data: ["enabled": continuousButton.state == .on]) }
   @objc private func togglePinEditing() { emitControl("editPins") }
+  @objc private func redoPin() { emitControl("redoPins") }
   @objc private func undoPin() { emitControl("undoPins") }
   @objc private func deletePin() { emitControl("deletePin") }
   @objc private func selectAnnotation() {

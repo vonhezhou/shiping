@@ -134,7 +134,7 @@ void main() {
     expect((c.imageOverlay['pinned'] as List).single['rect']['right'], 50);
     expect(d.beginCalls, 0);
     expect(d.finishCalls, 0);
-    c.closeImage();
+    await c.closeImage();
     expect(c.imageDocument, isNull);
     expect(c.imageSessionActive, false);
   });

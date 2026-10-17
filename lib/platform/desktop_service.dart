@@ -51,6 +51,9 @@ abstract class DesktopService {
   Future<void> writeClipboard(String text);
   Future<String?> openPaletteFile();
   Future<ImageFileData?> openImageFile();
+  Future<ImageProjectFileData?> openProjectFile();
+  Future<bool> saveProjectFile(String text);
+  Future<void> replyToQuit(bool allow) async {}
   Future<bool> exportImage(Uint8List png, {required bool save});
   Future<bool> saveTextFile(String filename, String text);
   Future<bool> exportAnnotations(
@@ -129,6 +132,23 @@ class MacDesktopService implements DesktopService {
       Clipboard.setData(ClipboardData(text: text));
 
   @override
+  Future<ImageProjectFileData?> openProjectFile() async {
+    final data = await _methods.invokeMapMethod<String, Object?>(
+      'openProjectFile',
+    );
+    return data == null
+        ? null
+        : ImageProjectFileData(data['name'] as String, data['text'] as String);
+  }
+
+  @override
+  Future<bool> saveProjectFile(String text) async =>
+      await _methods.invokeMethod<bool>('saveProjectFile', {'text': text}) ??
+      false;
+  @override
+  Future<void> replyToQuit(bool allow) =>
+      _methods.invokeMethod<void>('replyToQuit', {'allow': allow});
+  @override
   Future<ImageFileData?> openImageFile() async {
     final data = await _methods.invokeMapMethod<String, Object?>(
       'openImageFile',
@@ -185,6 +205,12 @@ class MacDesktopService implements DesktopService {
 }
 
 class UnsupportedDesktopService implements DesktopService {
+  @override
+  Future<void> replyToQuit(bool allow) async {}
+  @override
+  Future<ImageProjectFileData?> openProjectFile() async => null;
+  @override
+  Future<bool> saveProjectFile(String text) async => false;
   @override
   Future<ImageFileData?> openImageFile() async => null;
   @override

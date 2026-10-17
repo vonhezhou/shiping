@@ -12,6 +12,11 @@ class ImageFileData {
   final Uint8List bytes;
 }
 
+class ImageProjectFileData {
+  const ImageProjectFileData(this.name, this.text);
+  final String name, text;
+}
+
 class ImageDocument {
   const ImageDocument(this.name, this.png, this.frame);
   final String name;
@@ -21,9 +26,13 @@ class ImageDocument {
 
 /// Flutter decoding keeps image tools available to future desktop adapters.
 class ImageDocumentCodec {
-  Future<ImageDocument> decode(ImageFileData file) async {
-    if (file.bytes.length > 32 * 1024 * 1024) {
-      throw const FormatException('图片文件不能超过 32 MB');
+  Future<ImageDocument> decode(ImageFileData file) =>
+      _decode(file, 32 * 1024 * 1024);
+  Future<ImageDocument> decodeProjectPng(ImageFileData file) =>
+      _decode(file, 96 * 1024 * 1024);
+  Future<ImageDocument> _decode(ImageFileData file, int limit) async {
+    if (file.bytes.length > limit) {
+      throw FormatException('图片文件不能超过 ${limit ~/ (1024 * 1024)} MB');
     }
     final b = file.bytes;
     final png =

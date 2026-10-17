@@ -85,20 +85,181 @@ class MeasurementRecord {
   }
 }
 
+class _ImageDraft {
+  _ImageDraft(
+    this.pins,
+    this.undo,
+    this.redo,
+    this.tool,
+    this.selected,
+    this.editing,
+    this.tolerance,
+    this.zoom,
+  );
+  final List<Map<String, Object?>> pins;
+  final List<List<Map<String, Object?>>> undo, redo;
+  final String tool;
+  final int? selected;
+  final bool editing;
+  final int tolerance, zoom;
+}
+
 class AppController extends ChangeNotifier {
   AppController(this.desktop, {ImageDocumentCodec? imageCodec})
     : imageCodec = imageCodec ?? ImageDocumentCodec();
   final ImageDocumentCodec imageCodec;
   final DesktopService desktop;
   ImageDocument? imageDocument;
+  ImageProjectView? imageView;
+  String? imageProjectName;
+  bool imageSaving = false;
+  Future<bool> Function()? confirmImageReplacement;
+  bool _confirming = false, _askingToQuit = false;
+  int _imageEpoch = 0;
+  String? _savedImageSignature;
+  _ImageDraft? _imageDraft;
+  List<Map<String, Object?>> get _imagePins =>
+      _imageSession ? _pins : _imageDraft?.pins ?? [];
+  String _imageSignature() => jsonEncode({
+    'epoch': _imageEpoch,
+    'pins': _imagePins,
+    'tool': imageTool,
+    'view': imageView?.toJson(),
+    'zoom': _imageSession ? zoom : _imageDraft?.zoom ?? zoom,
+    'tolerance': _imageSession
+        ? tolerance
+        : _imageDraft?.tolerance ?? tolerance,
+  });
+  bool get imageProjectDirty =>
+      imageDocument != null && _imageSignature() != _savedImageSignature;
+  Future<bool> allowImageReplacement() async {
+    if (!imageProjectDirty || confirmImageReplacement == null) return true;
+    if (_confirming) return false;
+    _confirming = true;
+    try {
+      return await confirmImageReplacement!();
+    } finally {
+      _confirming = false;
+    }
+  }
+
+  void updateImageView(ImageProjectView view) {
+    if (imageDocument == null ||
+        jsonEncode(imageView?.toJson()) == jsonEncode(view.toJson())) {
+      return;
+    }
+    imageView = view;
+    _notify();
+  }
+
+  Future<void> openImageProject() async {
+    if (busy || imageLoading || imageSaving) return;
+    imageLoading = true;
+    _notify();
+    try {
+      final file = await desktop.openProjectFile();
+      if (file == null) return;
+      final project = ImageProject.decode(file.text);
+      final document = await imageCodec.decodeProjectPng(
+        ImageFileData(project.name, project.png),
+      );
+      if (document.frame.width != project.width ||
+          document.frame.height != project.height) {
+        throw const FormatException('项目图片尺寸与元数据不一致');
+      }
+      if (_disposed || !await allowImageReplacement() || _disposed) return;
+      _imageDraft = null;
+      if (_imageSession) _resetSession();
+      imageDocument = document;
+      _imageEpoch++;
+      imageView = project.view;
+      imageProjectName = file.name;
+      useImageTool(project.tool);
+      tolerance = project.tolerance;
+      zoom = project.zoom;
+      _pins.addAll(project.annotations);
+      for (final pin in _pins) {
+        if ((pin['id'] as int) > _nextPinId) _nextPinId = pin['id'] as int;
+      }
+      _savedImageSignature = _imageSignature();
+      _redraw();
+      notice = '项目已打开：${file.name}';
+      error = null;
+    } catch (e) {
+      _fail(e is FormatException ? e.message : '无法打开图片项目');
+    } finally {
+      imageLoading = false;
+      _notify();
+    }
+  }
+
+  Future<bool> saveImageProject() async {
+    final document = imageDocument;
+    if (document == null || imageSaving || busy) return false;
+    _finishPinDrag();
+    if (_imageSession) _redraw();
+    final signature = _imageSignature();
+    final project = ImageProject(
+      name: document.name,
+      png: document.png,
+      width: document.frame.width,
+      height: document.frame.height,
+      annotations: List.of(_imagePins),
+      tool: imageTool,
+      view: imageView,
+      tolerance: _imageSession
+          ? tolerance
+          : _imageDraft?.tolerance ?? tolerance,
+      zoom: _imageSession ? zoom : _imageDraft?.zoom ?? zoom,
+    );
+    imageSaving = true;
+    _notify();
+    try {
+      final text = project.encode();
+      if (text.length > ImageProject.maxFileBytes) {
+        throw const FormatException('项目文件超过 128 MB，无法保存');
+      }
+      final saved = await desktop.saveProjectFile(text);
+      if (saved && identical(imageDocument, document)) {
+        _savedImageSignature = signature;
+        imageProjectName ??= '图片项目';
+        notice = '图片项目已保存';
+        error = null;
+      }
+      return saved;
+    } catch (e) {
+      _fail(e is FormatException ? e.message : '图片项目保存失败：${_message(e)}');
+      return false;
+    } finally {
+      imageSaving = false;
+      _notify();
+    }
+  }
+
+  void _suspendImage() {
+    if (!_imageSession) return;
+    _finishPinDrag();
+    _imageDraft = _ImageDraft(
+      List.of(_pins),
+      List.of(_pinUndo),
+      List.of(_pinRedo),
+      _tool ?? 'picker',
+      _selectedPin,
+      _editingPins,
+      tolerance,
+      zoom,
+    );
+  }
+
   Map<String, Object?> imageOverlay = {};
   bool imageLoading = false;
   bool _imageSession = false;
   int _nextImageSession = -1;
   bool get imageSessionActive => _imageSession;
-  String get imageTool => _imageSession ? _tool ?? 'picker' : 'picker';
+  String get imageTool =>
+      _imageSession ? _tool ?? 'picker' : _imageDraft?.tool ?? 'picker';
   Future<void> openImage() async {
-    if (busy || imageLoading) return;
+    if (busy || imageLoading || imageSaving) return;
     imageLoading = true;
     _notify();
     try {
@@ -114,13 +275,18 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> loadImage(ImageFileData file) async {
-    if (busy || imageLoading || _disposed) return;
+    if (busy || imageLoading || imageSaving || _disposed) return;
     imageLoading = true;
     error = null;
     _notify();
     try {
       final document = await imageCodec.decode(file);
-      if (_disposed) return;
+      if (_disposed || !await allowImageReplacement() || _disposed) return;
+      _imageDraft = null;
+      imageView = null;
+      imageProjectName = null;
+      _savedImageSignature = null;
+      _imageEpoch++;
       if (_imageSession) _resetSession();
       imageDocument = document;
       section = AppSection.image;
@@ -135,6 +301,7 @@ class AppController extends ChangeNotifier {
   }
 
   void useImageTool(String tool) {
+    final restoring = !_imageSession ? _imageDraft : null;
     if (busy ||
         imageDocument == null ||
         !['picker', ...RulerMode.values.map((e) => e.name)].contains(tool)) {
@@ -143,6 +310,14 @@ class AppController extends ChangeNotifier {
     if (!_imageSession) {
       _resetSession();
       _imageSession = true;
+      final draft = _imageDraft;
+      if (draft != null) {
+        _pins.addAll(draft.pins);
+        _pinUndo.addAll(draft.undo);
+        _pinRedo.addAll(draft.redo);
+        tolerance = draft.tolerance;
+        zoom = draft.zoom;
+      }
       _session = CaptureSession(_nextImageSession--, [
         CapturedDisplay(
           id: 0,
@@ -157,7 +332,8 @@ class AppController extends ChangeNotifier {
     if (tool != 'picker') mode = RulerMode.values.byName(tool);
     _anchor = null;
     _anchorDisplay = null;
-    _editingPins = false;
+    _editingPins = restoring?.editing ?? false;
+    _selectedPin = restoring?.selected ?? _selectedPin;
     _keyboardRectangle = false;
     section = AppSection.image;
     _redraw();
@@ -165,13 +341,18 @@ class AppController extends ChangeNotifier {
   }
 
   void imageEvent(String type, [Map<String, Object?> data = const {}]) {
-    if (!_imageSession) return;
+    if (!_imageSession || imageSaving) return;
     _event({'type': type, 'sessionId': _session!.id, 'displayId': 0, ...data});
   }
 
-  void closeImage() {
+  Future<void> closeImage() async {
+    if (imageSaving || !await allowImageReplacement()) return;
     if (_imageSession) _resetSession();
     imageDocument = null;
+    imageView = null;
+    imageProjectName = null;
+    _imageDraft = null;
+    _savedImageSignature = null;
     imageOverlay = {};
     _notify();
   }
@@ -271,6 +452,7 @@ class AppController extends ChangeNotifier {
   int? _selectedPin;
   bool _editingPins = false;
   final List<List<Map<String, Object?>>> _pinUndo = [];
+  final List<List<Map<String, Object?>>> _pinRedo = [];
 
   final List<MeasurementRecord> _measurements = [];
   List<RgbColor> get colors => List.unmodifiable(_colors);
@@ -341,7 +523,7 @@ class AppController extends ChangeNotifier {
         imageDocument != null &&
         !_imageSession &&
         !busy) {
-      useImageTool('picker');
+      useImageTool(imageTool);
     }
     _notify();
   }
@@ -443,6 +625,7 @@ class AppController extends ChangeNotifier {
   Future<void> _begin(String tool) async {
     if (busy ||
         imageLoading ||
+        imageSaving ||
         initializing ||
         recordingShortcut ||
         savingShortcuts ||
@@ -453,7 +636,10 @@ class AppController extends ChangeNotifier {
       _fail('当前版本仅支持 macOS 14 及以上。');
       return;
     }
-    if (_imageSession) _resetSession();
+    if (_imageSession) {
+      _suspendImage();
+      _resetSession();
+    }
     busy = true;
     _tool = tool;
     _committing = false;
@@ -462,6 +648,7 @@ class AppController extends ChangeNotifier {
     _pending.clear();
     _pins.clear();
     _pinUndo.clear();
+    _pinRedo.clear();
     _selectedPin = null;
     _editingPins = false;
     _pickedCount = 0;
@@ -500,6 +687,22 @@ class AppController extends ChangeNotifier {
   void _event(Map<Object?, Object?> event) {
     if (_disposed) return;
     switch (event['type']) {
+      case 'quitRequested':
+        if (!_askingToQuit) {
+          _askingToQuit = true;
+          unawaited(() async {
+            try {
+              final allow = await allowImageReplacement();
+              await desktop.replyToQuit(allow);
+            } catch (e) {
+              await desktop.replyToQuit(false);
+              _fail('无法确认退出，请先保存图片项目后重试');
+            } finally {
+              _askingToQuit = false;
+            }
+          }());
+        }
+        return;
       case 'imageDropped':
         if (event['name'] is String && event['bytes'] is Uint8List) {
           unawaited(
@@ -583,10 +786,16 @@ class AppController extends ChangeNotifier {
         }
         return;
       case 'undoPins':
-        if (_pinUndo.isNotEmpty) {
+      case 'redoPins':
+        _finishPinDrag();
+        final from = event['type'] == 'undoPins' ? _pinUndo : _pinRedo;
+        final to = event['type'] == 'undoPins' ? _pinRedo : _pinUndo;
+        if (from.isNotEmpty) {
+          to.add(List.of(_pins));
+          if (to.length > 64) to.removeAt(0);
           _pins
             ..clear()
-            ..addAll(_pinUndo.removeLast());
+            ..addAll(from.removeLast());
           _selectedPin = null;
           _redraw();
         }
@@ -691,6 +900,7 @@ class AppController extends ChangeNotifier {
     'selectedPin': _selectedPin,
     'editingPins': _editingPins,
     'canUndoPins': _pinUndo.isNotEmpty,
+    'canRedoPins': _pinRedo.isNotEmpty,
     'pinned': List<Map<String, Object?>>.of(_pins),
   };
 
@@ -851,6 +1061,10 @@ class AppController extends ChangeNotifier {
     CapturedDisplay display, {
     bool keep = false,
   }) async {
+    if (_imageSession && keep && _pins.length >= 4096) {
+      _fail('图片项目最多支持 4096 个标注');
+      return;
+    }
     final sessionId = _session!.id;
     _committing = true;
     _measurements.insert(
@@ -947,8 +1161,7 @@ class AppController extends ChangeNotifier {
       _replacePin(index, rect);
       if (event['phase'] == 'end') {
         if (jsonEncode(drag.original.toJson()) != jsonEncode(rect.toJson())) {
-          _pinUndo.add(drag.snapshot);
-          if (_pinUndo.length > 64) _pinUndo.removeAt(0);
+          _recordPinUndo(drag.snapshot);
         }
         _pinDrag = null;
       }
@@ -977,9 +1190,24 @@ class AppController extends ChangeNotifier {
     _redraw();
   }
 
-  void _rememberPins() {
-    _pinUndo.add(List<Map<String, Object?>>.of(_pins));
+  void _recordPinUndo(List<Map<String, Object?>> snapshot) {
+    _pinUndo.add(snapshot);
     if (_pinUndo.length > 64) _pinUndo.removeAt(0);
+    _pinRedo.clear();
+  }
+
+  void _finishPinDrag() {
+    final drag = _pinDrag;
+    if (drag == null) return;
+    if (jsonEncode(drag.snapshot) != jsonEncode(_pins)) {
+      _recordPinUndo(drag.snapshot);
+    }
+    _pinDrag = null;
+  }
+
+  void _rememberPins() {
+    _finishPinDrag();
+    _recordPinUndo(List.of(_pins));
   }
 
   Future<void> _exportPins(int displayId, {required bool save}) async {
@@ -1067,6 +1295,7 @@ class AppController extends ChangeNotifier {
     _pending.clear();
     _pins.clear();
     _pinUndo.clear();
+    _pinRedo.clear();
     _selectedPin = null;
     _editingPins = false;
     _pickedCount = 0;

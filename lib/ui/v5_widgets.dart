@@ -200,6 +200,43 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
   final transform = TransformationController();
   final focus = FocusNode();
   bool pan = false;
+  bool applyingView = false;
+  @override
+  void initState() {
+    super.initState();
+    transform.addListener(storeView);
+  }
+
+  void storeView() {
+    if (applyingView || fitted != c.imageDocument || c.imageDocument == null) {
+      return;
+    }
+    final matrix = transform.value;
+    c.updateImageView(
+      ImageProjectView(
+        scale: matrix.getMaxScaleOnAxis(),
+        x: matrix.entry(0, 3),
+        y: matrix.entry(1, 3),
+        pan: pan,
+      ),
+    );
+  }
+
+  void restoreView() {
+    final view = c.imageView;
+    applyingView = true;
+    setState(() => pan = view?.pan ?? false);
+    if (view == null) {
+      fit();
+    } else {
+      transform.value = Matrix4.identity()
+        ..translateByDouble(view.x, view.y, 0, 1)
+        ..scaleByDouble(view.scale, view.scale, 1, 1);
+    }
+    applyingView = false;
+    if (view == null) storeView();
+  }
+
   Object? fitted;
   Size viewport = Size.zero;
   ({int id, Offset start, String handle})? dragging;
@@ -326,8 +363,12 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
     final meta =
         HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
+    if (k == LogicalKeyboardKey.keyS && meta) {
+      c.saveImageProject();
+      return KeyEventResult.handled;
+    }
     if (k == LogicalKeyboardKey.keyZ && meta) {
-      c.imageEvent('undoPins');
+      c.imageEvent(shift ? 'redoPins' : 'undoPins');
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
@@ -335,7 +376,10 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.escape) {
-      if (pan) setState(() => pan = false);
+      if (pan) {
+        setState(() => pan = false);
+        storeView();
+      }
       c.imageEvent('selectPin', {'id': null});
       return KeyEventResult.handled;
     }
@@ -376,6 +420,33 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
             label: Text(c.imageLoading ? '正在解码…' : '打开图片'),
           ),
         ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: c.busy || c.imageLoading || c.imageSaving
+                  ? null
+                  : c.openImageProject,
+              icon: const Icon(Icons.folder_open, size: 16),
+              label: const Text('打开项目'),
+            ),
+            OutlinedButton.icon(
+              onPressed:
+                  doc == null || c.busy || c.imageSaving || c.imageLoading
+                  ? null
+                  : c.saveImageProject,
+              icon: const Icon(Icons.save_outlined, size: 16),
+              label: Text(c.imageSaving ? '正在保存…' : '保存项目'),
+            ),
+            if (doc != null)
+              Text(
+                c.imageProjectDirty ? '● 有未保存修改' : '已保存',
+                style: const TextStyle(color: _muted, fontSize: 11),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
         if (doc == null)
           const _Empty(
             icon: Icons.image_outlined,
@@ -408,13 +479,17 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
                       : (_) {
                           c.useImageTool(tool);
                           setState(() => pan = false);
+                          storeView();
                           focus.requestFocus();
                         },
                 ),
               ChoiceChip(
                 label: const Text('平移'),
                 selected: pan,
-                onSelected: (v) => setState(() => pan = v),
+                onSelected: (v) {
+                  setState(() => pan = v);
+                  storeView();
+                },
               ),
               IconButton(
                 tooltip: '缩小',
@@ -448,7 +523,7 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
                 if (fitted != doc) {
                   fitted = doc;
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) fit();
+                    if (mounted) restoreView();
                   });
                 }
                 return Focus(
@@ -549,6 +624,18 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
                 child: const Text('撤销'),
               ),
               TextButton(
+                onPressed: overlay['canRedoPins'] == true
+                    ? () => c.imageEvent('redoPins')
+                    : null,
+                child: const Text('重做'),
+              ),
+              TextButton(
+                onPressed: (overlay['pinned'] as List? ?? []).isEmpty
+                    ? null
+                    : () => c.imageEvent('clearPins'),
+                child: const Text('清空标注'),
+              ),
+              TextButton(
                 onPressed: overlay['selectedPin'] != null
                     ? () => c.imageEvent('deletePin')
                     : null,
@@ -584,7 +671,7 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
           const SizedBox(height: 8),
           const _Hint(
             icon: Icons.info_outline,
-            text: '取色可连续点击；矩形拖拽后自动保留。滚轮/触控板缩放，选择平移后拖动；方向键逐像素移动，Enter 确认，编辑时 Shift + 方向键调尺寸。标注仅留在本次图片会话，切换屏幕工具或关闭图片会清除。',
+            text: '取色可连续点击；矩形拖拽后自动保留。滚轮/触控板缩放，选择平移后拖动；方向键逐像素移动，Enter 确认，编辑时 Shift + 方向键调尺寸。使用保存项目保留图片、标注和视图；⌘Z 撤销，⌘⇧Z 重做。切换屏幕工具会保留当前图片草稿，关闭或替换前会提示未保存修改。',
           ),
         ],
       ],
