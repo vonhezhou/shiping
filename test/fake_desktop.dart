@@ -6,6 +6,24 @@ import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
   final input = StreamController<Map<Object?, Object?>>.broadcast(sync: true);
+  ShortcutBindings bindings = ShortcutBindings.defaults;
+  bool recording = false;
+  Object? shortcutError;
+  @override
+  Future<bool> configureShortcuts(ShortcutBindings value) async {
+    if (shortcutError != null) throw shortcutError!;
+    bindings = value;
+    return true;
+  }
+
+  @override
+  Future<bool> setShortcutRecording(bool value) async {
+    recording = value;
+    return true;
+  }
+
+  void event(String type, [Map<String, Object?> data = const {}]) =>
+      input.add({'type': type, 'sessionId': 7, ...data});
   String? saved;
   String? clipboard;
   int beginCalls = 0;
@@ -49,6 +67,7 @@ class FakeDesktop extends DesktopService {
     String phase = 'move',
     int session = 7,
     int display = 1,
+    bool keep = false,
   }) => input.add({
     'type': 'pointer',
     'sessionId': session,
@@ -56,6 +75,7 @@ class FakeDesktop extends DesktopService {
     'x': x,
     'y': y,
     'phase': phase,
+    'keep': keep,
   });
   @override
   Future<void> updateOverlay(Map<String, Object?> data) async {

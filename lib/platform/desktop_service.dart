@@ -48,6 +48,8 @@ abstract class DesktopService {
   Future<String?> loadState();
   Future<void> saveState(String json);
   Future<void> writeClipboard(String text);
+  Future<bool> configureShortcuts(ShortcutBindings bindings);
+  Future<bool> setShortcutRecording(bool recording);
 }
 
 class MacDesktopService implements DesktopService {
@@ -114,9 +116,27 @@ class MacDesktopService implements DesktopService {
   @override
   Future<void> writeClipboard(String text) =>
       Clipboard.setData(ClipboardData(text: text));
+
+  @override
+  Future<bool> configureShortcuts(ShortcutBindings bindings) async =>
+      await _methods.invokeMethod<bool>(
+        'configureShortcuts',
+        bindings.toJson(),
+      ) ??
+      false;
+  @override
+  Future<bool> setShortcutRecording(bool recording) async =>
+      await _methods.invokeMethod<bool>('setShortcutRecording', {
+        'recording': recording,
+      }) ??
+      false;
 }
 
 class UnsupportedDesktopService implements DesktopService {
+  @override
+  Future<bool> configureShortcuts(ShortcutBindings bindings) async => false;
+  @override
+  Future<bool> setShortcutRecording(bool recording) async => false;
   @override
   Stream<Map<Object?, Object?>> get events => const Stream.empty();
   @override

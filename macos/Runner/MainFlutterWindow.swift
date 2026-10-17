@@ -41,6 +41,10 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   private var previousApplication: NSRunningApplication?
   private var captureTask: Task<Void, Never>?
   private var hasShortcuts = false
+  private var shortcuts = NativeShortcutBindings.defaults
+  private var shortcutRecording = false
+  private var pausedMenuKeys: [(NSMenuItem, String)] = []
+  private var toolMenuItems: [String: NSMenuItem] = [:]
   private let stateKey = "fruler.state.v1"
 
   init(window: NSWindow, messenger: FlutterBinaryMessenger) {
@@ -53,11 +57,19 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     setupMenu()
     setupHotkeys()
     localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-      let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-      if modifiers == [.command, .shift] {
-        if event.keyCode == UInt16(kVK_ANSI_C) { self?.emitActivation("picker"); return nil }
-        if event.keyCode == UInt16(kVK_ANSI_R) { self?.emitActivation("rectangle"); return nil }
+      guard let self = self else { return event }
+      if self.shortcutRecording {
+        if let key = NativeShortcut.codes.first(where: { $0.value == UInt32(event.keyCode) })?.key {
+          let flags = event.modifierFlags
+          self.sink?(["type": "shortcutRecorded", "chord": ["key": key,
+            "meta": flags.contains(.command), "control": flags.contains(.control),
+            "alt": flags.contains(.option), "shift": flags.contains(.shift)]])
+        }
+        return event
       }
+      guard self.hasShortcuts else { return event }
+      if self.shortcuts.picker.matches(event) { self.emitActivation("picker"); return nil }
+      if self.shortcuts.ruler.matches(event) { self.emitActivation("rectangle"); return nil }
       return event
     }
     observers.append(NotificationCenter.default.addObserver(
@@ -101,6 +113,38 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     switch call.method {
     case "initialize":
       result(["permission": CGPreflightScreenCaptureAccess(), "shortcuts": hasShortcuts, "platform": "macos"])
+    case "configureShortcuts":
+      guard let requested = NativeShortcutBindings(args), requested.isValid else {
+        result(FlutterError(code: "shortcut_invalid", message: "请使用不同的字母或数字组合，并避开系统退出、编辑和截图快捷键。", details: nil))
+        return
+      }
+      if requested == shortcuts && (hasShortcuts || shortcutRecording) { result(true); return }
+      let previous = shortcuts
+      let hadShortcuts = hasShortcuts
+      unregisterHotkeys()
+      if shortcutRecording || registerHotkeys(requested) {
+        shortcuts = requested
+        updateMenuShortcuts()
+        result(true)
+      } else {
+        if hadShortcuts { _ = registerHotkeys(previous) }
+        updateMenuShortcuts()
+        result(FlutterError(code: "shortcut_conflict", message: "快捷键已被占用", details: ["shortcuts": hasShortcuts]))
+      }
+    case "setShortcutRecording":
+      shortcutRecording = args["recording"] as? Bool == true
+      if shortcutRecording {
+        pauseApplicationMenuKeys()
+        unregisterHotkeys()
+        updateMenuShortcuts()
+        result(true)
+      } else {
+        for (item, key) in pausedMenuKeys { item.keyEquivalent = key }
+        pausedMenuKeys.removeAll()
+        let registered = registerHotkeys(shortcuts)
+        updateMenuShortcuts()
+        result(registered)
+      }
     case "requestPermission":
       result(CGRequestScreenCaptureAccess())
     case "openPrivacySettings":
@@ -123,10 +167,12 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       }
       begin(tool: tool, result: result)
     case "updateOverlay":
-      if let id = args["sessionId"] as? Int, id == session,
-         let display = args["displayId"] as? UInt32 {
-        for (key, panel) in overlays { panel.overlay.isPointerActive = key == display }
-        overlays[display]?.overlay.update(args)
+      if let id = args["sessionId"] as? Int, id == session {
+        for panel in overlays.values { panel.overlay.updateOptions(args) }
+        if let display = args["displayId"] as? UInt32 {
+          for (key, panel) in overlays { panel.overlay.isPointerActive = key == display }
+          overlays[display]?.overlay.update(args)
+        }
       }
       result(nil)
     case "finish":
@@ -185,10 +231,12 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         guard self.session == id, !captures.isEmpty else { throw CaptureFailure.unavailable }
         for snapshot in captures {
           let panel = CapturePanel(snapshot: snapshot, tool: tool)
-          panel.overlay.onPointer = { [weak self] x, y, phase in
+          panel.overlay.onEvent = { [weak self] event in
             guard let self = self, self.session == id else { return }
-            self.sink?(["type": "pointer", "sessionId": id,
-              "displayId": snapshot.displayID, "x": x, "y": y, "phase": phase])
+            var data = event
+            data["sessionId"] = id
+            data["displayId"] = snapshot.displayID
+            self.sink?(data)
           }
           panel.overlay.onCancel = { [weak self] in self?.cancelSession() }
           self.overlays[snapshot.displayID] = panel
@@ -224,7 +272,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   private func closeSession() {
     session = nil
     preparing = false
-    for panel in overlays.values { panel.orderOut(nil); panel.close() }
+    for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil); panel.close() }
     overlays.removeAll()
     if restoreMainWindow {
       NSApp.activate(ignoringOtherApps: true)
@@ -249,6 +297,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       entry.target = self
       entry.representedObject = tool
       if !key.isEmpty { entry.keyEquivalentModifierMask = [.command, .shift] }
+      toolMenuItems[tool] = entry
       menu.addItem(entry)
     }
     menu.addItem(.separator())
@@ -258,6 +307,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     quit.target = self
     item.menu = menu
     statusItem = item
+    updateMenuShortcuts()
   }
 
   @objc private func activateTool(_ sender: NSMenuItem) {
@@ -265,6 +315,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     emitActivation(tool)
   }
   private func emitActivation(_ tool: String) {
+    guard !shortcutRecording else { return }
     guard session == nil, !preparing else { NSSound.beep(); return }
     guard CGPreflightScreenCaptureAccess() else {
       showMainWindow()
@@ -295,15 +346,103 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       return noErr
     }, 1, &spec, context, &hotkeyHandler)
     guard status == noErr else { return }
-    let signature: OSType = 0x46524C52 // FRLR
-    for (id, keyCode) in [(UInt32(1), UInt32(kVK_ANSI_C)), (UInt32(2), UInt32(kVK_ANSI_R))] {
+    updateMenuShortcuts()
+  }
+
+  private func unregisterHotkeys() {
+    hotkeys.forEach { UnregisterEventHotKey($0) }
+    hotkeys.removeAll()
+    hasShortcuts = false
+  }
+
+  @discardableResult private func registerHotkeys(_ bindings: NativeShortcutBindings) -> Bool {
+    unregisterHotkeys()
+    guard hotkeyHandler != nil else { return false }
+    let signature: OSType = 0x46524C52
+    for (id, chord) in [(UInt32(1), bindings.picker), (UInt32(2), bindings.ruler)] {
       var ref: EventHotKeyRef?
-      let error = RegisterEventHotKey(keyCode, UInt32(cmdKey | shiftKey),
-        EventHotKeyID(signature: signature, id: id), GetApplicationEventTarget(), 0, &ref)
-      if error == noErr, let ref = ref { hotkeys.append(ref) }
+      let error = RegisterEventHotKey(chord.keyCode, chord.carbonModifiers,
+        EventHotKeyID(signature: signature, id: id), GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &ref)
+      guard error == noErr, let value = ref else { unregisterHotkeys(); return false }
+      hotkeys.append(value)
     }
     hasShortcuts = hotkeys.count == 2
+    return hasShortcuts
   }
+
+  private func pauseApplicationMenuKeys() {
+    guard pausedMenuKeys.isEmpty else { return }
+    func pause(_ menu: NSMenu?) {
+      for item in menu?.items ?? [] {
+        if !item.keyEquivalent.isEmpty {
+          pausedMenuKeys.append((item, item.keyEquivalent))
+          item.keyEquivalent = ""
+        }
+        pause(item.submenu)
+      }
+    }
+    pause(NSApp.mainMenu)
+  }
+
+  private func updateMenuShortcuts() {
+    for (tool, chord) in [("picker", shortcuts.picker), ("rectangle", shortcuts.ruler)] {
+      toolMenuItems[tool]?.keyEquivalent = (shortcutRecording || !hasShortcuts) ? "" : chord.key.lowercased()
+      toolMenuItems[tool]?.keyEquivalentModifierMask = chord.modifiers
+    }
+  }
+}
+
+private struct NativeShortcut: Equatable {
+  let key: String
+  let modifiers: NSEvent.ModifierFlags
+  static let codes: [String: UInt32] = ["A":0,"S":1,"D":2,"F":3,"H":4,"G":5,"Z":6,"X":7,"C":8,"V":9,
+    "B":11,"Q":12,"W":13,"E":14,"R":15,"Y":16,"T":17,"1":18,"2":19,"3":20,"4":21,"6":22,"5":23,
+    "9":25,"7":26,"8":28,"0":29,"O":31,"U":32,"I":34,"P":35,"L":37,"J":38,"K":40,"N":45,"M":46]
+  init(key: String, modifiers: NSEvent.ModifierFlags) { self.key = key; self.modifiers = modifiers }
+  init?(_ data: Any?) {
+    guard let data = data as? [String: Any], let key = data["key"] as? String,
+          Self.codes[key] != nil else { return nil }
+    var flags: NSEvent.ModifierFlags = []
+    if data["meta"] as? Bool == true { flags.insert(.command) }
+    if data["control"] as? Bool == true { flags.insert(.control) }
+    if data["alt"] as? Bool == true { flags.insert(.option) }
+    if data["shift"] as? Bool == true { flags.insert(.shift) }
+    self.init(key: key, modifiers: flags)
+  }
+  var keyCode: UInt32 { Self.codes[key]! }
+  var carbonModifiers: UInt32 {
+    var value: UInt32 = 0
+    if modifiers.contains(.command) { value |= UInt32(cmdKey) }
+    if modifiers.contains(.control) { value |= UInt32(controlKey) }
+    if modifiers.contains(.option) { value |= UInt32(optionKey) }
+    if modifiers.contains(.shift) { value |= UInt32(shiftKey) }
+    return value
+  }
+  var isValid: Bool {
+    guard !modifiers.intersection([.command, .control, .option]).isEmpty else { return false }
+    if modifiers.contains(.command) && modifiers.intersection([.control, .option]).isEmpty {
+      if ["Q", "W", "H", "M"].contains(key) { return false }
+      if !modifiers.contains(.shift) && ["A", "C", "V", "X", "Z"].contains(key) { return false }
+      if modifiers.contains(.shift) && ["3", "4", "5"].contains(key) { return false }
+    }
+    return true
+  }
+  func matches(_ event: NSEvent) -> Bool {
+    UInt32(event.keyCode) == keyCode && event.modifierFlags.intersection([.command,.control,.option,.shift]) == modifiers
+  }
+}
+
+private struct NativeShortcutBindings: Equatable {
+  let picker: NativeShortcut
+  let ruler: NativeShortcut
+  static let defaults = NativeShortcutBindings(picker: NativeShortcut(key: "C", modifiers: [.command, .shift]),
+    ruler: NativeShortcut(key: "R", modifiers: [.command, .shift]))
+  init(picker: NativeShortcut, ruler: NativeShortcut) { self.picker = picker; self.ruler = ruler }
+  init?(_ data: [String: Any]) {
+    guard let picker = NativeShortcut(data["picker"]), let ruler = NativeShortcut(data["ruler"]) else { return nil }
+    self.init(picker: picker, ruler: ruler)
+  }
+  var isValid: Bool { picker.isValid && ruler.isValid && picker != ruler }
 }
 
 private enum CaptureFailure: LocalizedError {
@@ -374,21 +513,35 @@ private final class CapturePanel: NSPanel {
 
 private final class CaptureOverlayView: NSView {
   let snapshot: DisplaySnapshot
-  let tool: String
-  var onPointer: ((Double, Double, String) -> Void)?
+  private var tool: String
+  var onEvent: (([String: Any]) -> Void)?
   var onCancel: (() -> Void)?
-  var isPointerActive = false { didSet { if oldValue != isPointerActive { needsDisplay = true } } }
+  var isPointerActive = false {
+    didSet { if !isPointerActive { releaseCursor() }; if oldValue != isPointerActive { needsDisplay = true } }
+  }
   private var pointer = NSPoint.zero
   private var label = ""
   private var selectedColor = NSColor.white
   private var measuredRect: NSRect?
   private var tracking: NSTrackingArea?
+  private var tolerance = 16
+  private var zoom = 12
+  private var anchored = false
+  private var cursorHidden = false
+  private var scrollRemainder: CGFloat = 0
+  private var pins: [(rect: NSRect, label: String)] = []
+  private var modeButtons: [String: NSButton] = [:]
+  private let toolbar = NSView()
+  private let infoLabel = NSTextField(labelWithString: "")
+  private let clearButton = NSButton(title: "清除标注", target: nil, action: nil)
+  private var toolbarWidth: NSLayoutConstraint?
   private let accent = NSColor(srgbRed: 215 / 255, green: 250 / 255, blue: 107 / 255, alpha: 1)
 
   init(snapshot: DisplaySnapshot, tool: String) {
     self.snapshot = snapshot
     self.tool = tool
     super.init(frame: NSRect(origin: .zero, size: snapshot.frame.size))
+    setupToolbar()
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
   override var isFlipped: Bool { true }
@@ -410,26 +563,58 @@ private final class CaptureOverlayView: NSView {
   override func mouseUp(with event: NSEvent) { send(event, phase: "up") }
   override func rightMouseDown(with event: NSEvent) { onCancel?() }
   override func keyDown(with event: NSEvent) {
-    if event.keyCode == UInt16(kVK_Escape) { onCancel?() }
+    switch Int(event.keyCode) {
+    case kVK_Escape: onCancel?()
+    case kVK_Return, kVK_ANSI_KeypadEnter:
+      onEvent?(["type": "confirm", "keep": event.modifierFlags.contains(.shift)])
+    case kVK_LeftArrow: onEvent?(["type": "nudge", "dx": -1, "dy": 0])
+    case kVK_RightArrow: onEvent?(["type": "nudge", "dx": 1, "dy": 0])
+    case kVK_UpArrow: onEvent?(["type": "nudge", "dx": 0, "dy": -1])
+    case kVK_DownArrow: onEvent?(["type": "nudge", "dx": 0, "dy": 1])
+    case kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4:
+      guard tool != "picker", !event.isARepeat else { return }
+      let modes = [kVK_ANSI_1: "rectangle", kVK_ANSI_2: "horizontal", kVK_ANSI_3: "vertical", kVK_ANSI_4: "cross"]
+      onEvent?(["type": "modeChanged", "tool": modes[Int(event.keyCode)]!])
+    default: break
+    }
+  }
+
+  override func scrollWheel(with event: NSEvent) {
+    guard tool != "rectangle" else { return }
+    scrollRemainder += event.scrollingDeltaY / (event.hasPreciseScrollingDeltas ? 12 : 1)
+    let steps = Int(scrollRemainder.rounded(.towardZero))
+    if steps != 0 {
+      scrollRemainder -= CGFloat(steps)
+      onEvent?(["type": "scroll", "steps": steps])
+    }
+    if event.phase == .ended || event.momentumPhase == .ended { scrollRemainder = 0 }
   }
 
   private func send(_ event: NSEvent, phase: String) {
-    pointer = convert(event.locationInWindow, from: nil)
+    let location = convert(event.locationInWindow, from: nil)
+    guard !toolbar.frame.contains(location) else { return }
+    releaseCursor()
+    pointer = location
     isPointerActive = true
     needsDisplay = true
-    onPointer?(pointer.x, pointer.y, phase)
+    onEvent?(["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": phase,
+      "keep": event.modifierFlags.contains(.shift)])
   }
   func sendCurrentPointer() {
     guard let window = window else { return }
     pointer = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
     isPointerActive = bounds.contains(pointer)
-    if isPointerActive { onPointer?(pointer.x, pointer.y, "move") }
+    if isPointerActive { onEvent?(["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": "move"]) }
     needsDisplay = true
   }
 
   func update(_ data: [String: Any]) {
     if let x = data["x"] as? Double, let y = data["y"] as? Double { pointer = NSPoint(x: x, y: y) }
     label = data["label"] as? String ?? ""
+    anchored = data["anchored"] as? Bool == true
+    if data["keyboard"] as? Bool == true && isPointerActive {
+      if !cursorHidden { NSCursor.hide(); cursorHidden = true }
+    } else { releaseCursor() }
     if let rgb = data["color"] as? [Int], rgb.count == 3 {
       selectedColor = NSColor(srgbRed: Double(rgb[0]) / 255, green: Double(rgb[1]) / 255,
         blue: Double(rgb[2]) / 255, alpha: 1)
@@ -444,6 +629,107 @@ private final class CaptureOverlayView: NSView {
     needsDisplay = true
   }
 
+  func releaseCursor() {
+    if cursorHidden { NSCursor.unhide(); cursorHidden = false }
+  }
+
+  func updateOptions(_ data: [String: Any]) {
+    if let value = data["tool"] as? String { tool = value }
+    if let value = data["tolerance"] as? Int { tolerance = value }
+    if let value = data["zoom"] as? Int { zoom = value }
+    if let values = data["pinned"] as? [[String: Any]] {
+      pins = values.enumerated().compactMap { index, item in
+        guard item["displayId"] as? UInt32 == snapshot.displayID,
+              let rect = item["rect"] as? [String: Int],
+              let left = rect["left"], let top = rect["top"], let right = rect["right"], let bottom = rect["bottom"] else { return nil }
+        let sx = bounds.width / Double(snapshot.width), sy = bounds.height / Double(snapshot.height)
+        return (NSRect(x: Double(left) * sx, y: Double(top) * sy,
+          width: Double(right - left) * sx, height: Double(bottom - top) * sy),
+          "\(index + 1) · \(item["label"] as? String ?? "")")
+      }
+      clearButton.title = "清除标注 \(values.count)"
+      clearButton.isEnabled = !values.isEmpty
+    }
+    for (mode, button) in modeButtons {
+      let selected = mode == tool
+      button.isHidden = tool == "picker"
+      button.layer?.backgroundColor = (selected ? accent : NSColor.white.withAlphaComponent(0.07)).cgColor
+      button.contentTintColor = selected ? .black : .white
+      button.setAccessibilityValue(selected ? "已选中" : "")
+    }
+    clearButton.isHidden = tool == "picker"
+    infoLabel.stringValue = tool == "picker" ? "取色器 · \(zoom)× · 滚轮缩放" :
+      tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
+    toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
+    needsDisplay = true
+  }
+
+  private func setupToolbar() {
+    toolbar.translatesAutoresizingMaskIntoConstraints = false
+    toolbar.wantsLayer = true
+    toolbar.layer?.backgroundColor = NSColor(srgbRed: 0.055, green: 0.065, blue: 0.075, alpha: 0.97).cgColor
+    toolbar.layer?.cornerRadius = 12
+    toolbar.layer?.borderColor = NSColor.white.withAlphaComponent(0.17).cgColor
+    toolbar.layer?.borderWidth = 1
+    addSubview(toolbar)
+    let stack = NSStackView()
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    stack.orientation = .horizontal
+    stack.spacing = 7
+    stack.alignment = .centerY
+    toolbar.addSubview(stack)
+    for (index, mode) in ["rectangle", "horizontal", "vertical", "cross"].enumerated() {
+      let names = ["矩形", "水平", "垂直", "交叉"]
+      let button = NSButton(title: "\(index + 1) \(names[index])", target: self, action: #selector(changeMode(_:)))
+      button.identifier = NSUserInterfaceItemIdentifier(mode)
+      button.font = .systemFont(ofSize: 11, weight: .medium)
+      button.isBordered = false
+      button.wantsLayer = true
+      button.layer?.cornerRadius = 6
+      button.widthAnchor.constraint(equalToConstant: 67).isActive = true
+      button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+      button.toolTip = "切换\(names[index])模式（\(index + 1)）"
+      modeButtons[mode] = button
+      stack.addArrangedSubview(button)
+    }
+    infoLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+    infoLabel.textColor = accent
+    infoLabel.alignment = .center
+    infoLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    infoLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    stack.addArrangedSubview(infoLabel)
+    clearButton.target = self
+    clearButton.action = #selector(clearPins)
+    clearButton.bezelStyle = .rounded
+    clearButton.font = .systemFont(ofSize: 11)
+    stack.addArrangedSubview(clearButton)
+    let close = NSButton(title: "退出 Esc", target: self, action: #selector(cancelCapture))
+    close.bezelStyle = .rounded
+    close.font = .systemFont(ofSize: 11)
+    stack.addArrangedSubview(close)
+    let width = toolbar.widthAnchor.constraint(equalToConstant: min(bounds.width - 24, 740))
+    toolbarWidth = width
+    NSLayoutConstraint.activate([
+      toolbar.centerXAnchor.constraint(equalTo: centerXAnchor), toolbar.topAnchor.constraint(equalTo: topAnchor, constant: 22),
+      toolbar.heightAnchor.constraint(equalToConstant: 46), width,
+      stack.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 12),
+      stack.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -12),
+      stack.topAnchor.constraint(equalTo: toolbar.topAnchor, constant: 8),
+      stack.bottomAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: -8)
+    ])
+    updateOptions(["tool": tool])
+  }
+
+  @objc private func changeMode(_ sender: NSButton) {
+    if let mode = sender.identifier?.rawValue { onEvent?(["type": "modeChanged", "tool": mode]) }
+    window?.makeFirstResponder(self)
+  }
+  @objc private func clearPins() {
+    onEvent?(["type": "clearPins"])
+    window?.makeFirstResponder(self)
+  }
+  @objc private func cancelCapture() { onCancel?() }
+
   override func draw(_ dirtyRect: NSRect) {
     NSImage(cgImage: snapshot.image, size: bounds.size).draw(in: bounds, from: .zero,
       operation: .copy, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.none])
@@ -451,7 +737,14 @@ private final class CaptureOverlayView: NSView {
       NSColor.black.withAlphaComponent(0.08).setFill()
       bounds.fill()
     }
-    drawInstructions()
+    for pin in pins {
+      accent.withAlphaComponent(0.08).setFill(); pin.rect.fill()
+      accent.setStroke()
+      let outline = NSBezierPath(rect: pin.rect); outline.lineWidth = 1.5; outline.stroke()
+      let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
+        .foregroundColor: accent, .backgroundColor: NSColor.black.withAlphaComponent(0.85)]
+      (pin.label as NSString).draw(at: NSPoint(x: pin.rect.minX + 4, y: max(4, pin.rect.minY - 20)), withAttributes: attrs)
+    }
     guard isPointerActive else { return }
     if let rect = measuredRect { drawMeasurement(rect) }
     drawCrosshair()
@@ -507,21 +800,25 @@ private final class CaptureOverlayView: NSView {
     if tool == "picker" {
       let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
       let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
-      let minX = max(0, px - 5), minY = max(0, py - 5)
-      let maxX = min(snapshot.width, px + 6), maxY = min(snapshot.height, py + 6)
+      let cell = CGFloat(zoom) / (window?.backingScaleFactor ?? 1)
+      let radius = Int(ceil(99 / cell / 2)) + 1
+      let minX = max(0, px - radius), minY = max(0, py - radius)
+      let maxX = min(snapshot.width, px + radius + 1), maxY = min(snapshot.height, py + radius + 1)
       if let crop = snapshot.image.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)) {
-        let cell: CGFloat = 9
         let area = NSRect(x: box.minX + 14, y: box.minY + 12, width: 99, height: 99)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: area).addClip()
         NSColor.black.setFill(); area.fill()
         // At display edges pad the missing pixels instead of stretching the crop.
-        let imageRect = NSRect(x: area.minX + CGFloat(minX - px + 5) * cell,
-          y: area.minY + CGFloat(minY - py + 5) * cell,
+        let imageRect = NSRect(x: area.midX - (CGFloat(px - minX) + 0.5) * cell,
+          y: area.midY - (CGFloat(py - minY) + 0.5) * cell,
           width: CGFloat(maxX - minX) * cell, height: CGFloat(maxY - minY) * cell)
         NSImage(cgImage: crop, size: imageRect.size).draw(in: imageRect, from: .zero,
           operation: .copy, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.none])
         accent.setStroke()
-        let center = NSBezierPath(rect: NSRect(x: area.minX + 45, y: area.minY + 45, width: 9, height: 9))
-        center.lineWidth = 2; center.stroke()
+        let center = NSBezierPath(rect: NSRect(x: area.midX - cell / 2, y: area.midY - cell / 2, width: cell, height: cell))
+        center.lineWidth = 1.5; center.stroke()
+        NSGraphicsContext.restoreGraphicsState()
       }
       selectedColor.setFill()
       NSBezierPath(roundedRect: NSRect(x: box.minX + 130, y: box.minY + 12, width: 154, height: 99), xRadius: 7, yRadius: 7).fill()
@@ -529,22 +826,13 @@ private final class CaptureOverlayView: NSView {
     let labelY = tool == "picker" ? box.minY + 122 : box.minY + 12
     (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
       .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
-    let hint = tool == "rectangle" ? "松开复制尺寸  ·  Esc 取消" : "点击复制  ·  Esc 取消"
+    let hint = tool == "rectangle" ? (anchored ? "Enter 确认 · Shift 保留 · 方向键微调" : "拖拽 / Enter 定起点 · 方向键微调") :
+      "点击 / Enter 复制 · 方向键微调 · Esc 取消"
     (hint as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 21), withAttributes: [
       .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.gray])
   }
 
-  private func drawInstructions() {
-    let title = ["picker": "取色器", "rectangle": "矩形测量", "horizontal": "水平间距",
-      "vertical": "垂直间距", "cross": "交叉测距"][tool] ?? "fruler"
-    let text = "fruler  /  \(title)     屏幕已冻结 · Esc 或右键退出"
-    let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white]
-    let size = (text as NSString).size(withAttributes: attrs)
-    let box = NSRect(x: (bounds.width - size.width) / 2 - 18, y: 24, width: size.width + 36, height: 38)
-    NSColor.black.withAlphaComponent(0.85).setFill()
-    NSBezierPath(roundedRect: box, xRadius: 10, yRadius: 10).fill()
-    (text as NSString).draw(at: NSPoint(x: box.minX + 18, y: box.minY + 11), withAttributes: attrs)
-  }
+
 }
 
 private extension Int {

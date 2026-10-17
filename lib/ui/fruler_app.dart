@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
 import '../core/core.dart';
@@ -190,7 +191,7 @@ class _Sidebar extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(left: 10),
           child: Text(
-            'macOS  ·  v0.1.0',
+            'macOS  ·  v0.2.0',
             style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
           ),
         ),
@@ -447,9 +448,10 @@ class _PickerPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const _Hint(
+        _Hint(
           icon: Icons.keyboard_command_key_rounded,
-          text: '⌘ ⇧ C 唤起取色器  ·  移动查看像素放大镜  ·  点击复制  ·  Esc 取消',
+          text:
+              '${controller.shortcuts.picker.label} 唤起 · 滚轮缩放 · 方向键逐像素移动 · Enter 确认 · Esc 取消',
         ),
         const SizedBox(height: 29),
         _SectionTitle(
@@ -600,8 +602,8 @@ class _RulerPage extends StatelessWidget {
       _Hint(
         icon: Icons.info_outline_rounded,
         text: controller.mode == RulerMode.rectangle
-            ? '拖拽框选区域，松开后复制尺寸。矩形测量限于单个显示器。'
-            : '将鼠标移到区域内部，自动识别同色边界。点击复制，Esc 取消。',
+            ? '拖拽框选；Shift 保留多个标注。也可按 Enter 定起点，方向键移动，再按 Enter 确认。浮动栏或 1–4 切换模式。'
+            : '自动识别同色边界；滚轮调容差，方向键逐像素移动，Enter 复制。浮动栏或 1–4 切换模式，Esc 取消。',
       ),
       const SizedBox(height: 28),
       _SectionTitle(
@@ -820,8 +822,8 @@ class _SettingsPage extends StatelessWidget {
             Slider(
               value: controller.tolerance.toDouble(),
               min: 0,
-              max: 80,
-              divisions: 80,
+              max: 255,
+              divisions: 255,
               label: '${controller.tolerance}',
               onChanged: (v) => controller.setTolerance(v.round()),
             ),
@@ -830,7 +832,7 @@ class _SettingsPage extends StatelessWidget {
               children: [
                 Text('0 · 精确匹配', style: TextStyle(color: _muted, fontSize: 10)),
                 Text(
-                  '80 · 宽松匹配',
+                  '255 · 宽松匹配',
                   style: TextStyle(color: _muted, fontSize: 10),
                 ),
               ],
@@ -844,9 +846,9 @@ class _SettingsPage extends StatelessWidget {
         icon: Icons.keyboard_rounded,
         child: Column(
           children: [
-            _shortcut('取色器', '⌘ ⇧ C'),
+            _editableShortcut(context, true),
             const SizedBox(height: 15),
-            _shortcut('矩形测量', '⌘ ⇧ R'),
+            _editableShortcut(context, false),
             const SizedBox(height: 15),
             _shortcut('取消当前工具', 'Esc / 鼠标右键'),
             if (!controller.shortcutsAvailable)
@@ -863,10 +865,49 @@ class _SettingsPage extends StatelessWidget {
       const SizedBox(height: 20),
       const _Hint(
         icon: Icons.layers_outlined,
-        text: 'fruler 0.1.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
+        text: 'fruler 0.2.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
       ),
     ],
   );
+  Widget _editableShortcut(BuildContext context, bool picker) => Row(
+    children: [
+      Text(picker ? '取色器' : '矩形测量', style: const TextStyle(fontSize: 12)),
+      const Spacer(),
+      OutlinedButton(
+        onPressed:
+            controller.busy ||
+                controller.initializing ||
+                controller.savingShortcuts ||
+                controller.recordingShortcut
+            ? null
+            : () => _recordShortcut(context, picker),
+        child: Text(
+          (picker ? controller.shortcuts.picker : controller.shortcuts.ruler)
+              .label,
+        ),
+      ),
+    ],
+  );
+
+  Future<void> _recordShortcut(BuildContext context, bool picker) async {
+    if (!await controller.beginShortcutRecording()) return;
+    ShortcutChord? chord;
+    try {
+      if (context.mounted) {
+        chord = await showDialog<ShortcutChord>(
+          context: context,
+          builder: (_) => _ShortcutDialog(
+            tool: picker ? '取色器' : '矩形测量',
+            controller: controller,
+          ),
+        );
+      }
+    } finally {
+      await controller.endShortcutRecording();
+    }
+    if (chord != null) await controller.setShortcut(picker, chord);
+  }
+
   Widget _shortcut(String label, String keys) => Row(
     children: [
       Text(label, style: const TextStyle(fontSize: 12)),
@@ -1272,4 +1313,103 @@ class _RulerIllustration extends CustomPainter {
   @override
   bool shouldRepaint(_RulerIllustration oldDelegate) =>
       oldDelegate.mode != mode;
+}
+
+class _ShortcutDialog extends StatefulWidget {
+  const _ShortcutDialog({required this.tool, required this.controller});
+  final String tool;
+  final AppController controller;
+  @override
+  State<_ShortcutDialog> createState() => _ShortcutDialogState();
+}
+
+class _ShortcutDialogState extends State<_ShortcutDialog> {
+  ShortcutChord? candidate;
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_nativeChordChanged);
+  }
+
+  void _nativeChordChanged() {
+    final chord = widget.controller.recordedShortcut;
+    if (chord != null && chord != candidate) setState(() => candidate = chord);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_nativeChordChanged);
+    super.dispose();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.handled;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.pop(context);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter && candidate != null) {
+      Navigator.pop(context, candidate);
+      return KeyEventResult.handled;
+    }
+    final usage = event.physicalKey.usbHidUsage;
+    final String? key = usage >= 0x70004 && usage <= 0x7001d
+        ? String.fromCharCode(65 + usage - 0x70004)
+        : usage >= 0x7001e && usage <= 0x70027
+        ? '${(usage - 0x7001e + 1) % 10}'
+        : null;
+    if (key != null) {
+      final keyboard = HardwareKeyboard.instance;
+      final chord = ShortcutChord(
+        key: key,
+        meta: keyboard.isMetaPressed,
+        control: keyboard.isControlPressed,
+        alt: keyboard.isAltPressed,
+        shift: keyboard.isShiftPressed,
+      );
+      if (chord.isValid) setState(() => candidate = chord);
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    autofocus: true,
+    onKeyEvent: _onKey,
+    child: AlertDialog(
+      title: Text('设置${widget.tool}快捷键'),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('按下修饰键与一个字母或数字的组合。需要包含 ⌘、⌃ 或 ⌥；支持附加 ⇧。'),
+            const SizedBox(height: 20),
+            Text(
+              candidate?.label ?? '等待按键…',
+              style: const TextStyle(fontSize: 24, color: _accent),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '按 Enter 保存，Esc 取消。系统保留或已占用的组合无法保存。',
+              style: TextStyle(color: _muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: candidate == null
+              ? null
+              : () => Navigator.pop(context, candidate),
+          child: const Text('保存'),
+        ),
+      ],
+    ),
+  );
 }

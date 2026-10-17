@@ -72,6 +72,15 @@ class AppController extends ChangeNotifier {
   RulerMode mode = RulerMode.rectangle;
   ColorFormat format = ColorFormat.hex;
   int tolerance = 16;
+  int zoom = CaptureControls.defaultZoom;
+  ShortcutBindings shortcuts = ShortcutBindings.defaults;
+  bool savingShortcuts = false;
+  bool recordingShortcut = false;
+  ShortcutChord? recordedShortcut;
+  final List<Map<String, Object?>> _pins = [];
+  ({int displayId, double x, double y})? _lastPointer;
+  bool _keyboardRectangle = false;
+  bool _keyboardCursor = false;
   bool permissionGranted = false;
   bool shortcutsAvailable = false;
   bool supported = true;
@@ -103,6 +112,14 @@ class AppController extends ChangeNotifier {
       supported = status.supported;
       final saved = await desktop.loadState();
       if (saved != null) _restore(saved);
+      if (supported) {
+        try {
+          shortcutsAvailable = await desktop.configureShortcuts(shortcuts);
+        } catch (e) {
+          shortcutsAvailable = false;
+          error = _message(e);
+        }
+      }
       if (!supported) error = '当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。';
     } catch (e) {
       error = _message(e);
@@ -130,7 +147,7 @@ class AppController extends ChangeNotifier {
   }
 
   void setTolerance(int value) {
-    tolerance = value.clamp(0, 80);
+    tolerance = value.clamp(0, 255);
     _notify();
     _persist();
   }
@@ -174,7 +191,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _begin(String tool) async {
-    if (busy || initializing || _disposed) return;
+    if (busy ||
+        initializing ||
+        recordingShortcut ||
+        savingShortcuts ||
+        _disposed) {
+      return;
+    }
     if (!supported) {
       _fail('当前版本仅支持 macOS 14 及以上。');
       return;
@@ -185,6 +208,10 @@ class AppController extends ChangeNotifier {
     _anchor = null;
     _anchorDisplay = null;
     _pending.clear();
+    _pins.clear();
+    _lastPointer = null;
+    _keyboardRectangle = false;
+    _keyboardCursor = false;
     error = null;
     notice = null;
     section = tool == 'picker' ? AppSection.picker : AppSection.ruler;
@@ -197,6 +224,7 @@ class AppController extends ChangeNotifier {
       }
       _session = session;
       permissionGranted = true;
+      _redraw();
       final pending = List<Map<Object?, Object?>>.of(_pending);
       _pending.clear();
       for (final event in pending) {
@@ -216,6 +244,16 @@ class AppController extends ChangeNotifier {
   void _event(Map<Object?, Object?> event) {
     if (_disposed) return;
     switch (event['type']) {
+      case 'shortcutRecorded':
+        if (recordingShortcut) {
+          try {
+            recordedShortcut = ShortcutChord.fromJson(event['chord']);
+            _notify();
+          } catch (_) {
+            /* Ignore modifier-only or unsupported keys. */
+          }
+        }
+        return;
       case 'activate':
         final tool = event['tool'];
         if (tool == 'picker') {
@@ -245,7 +283,111 @@ class AppController extends ChangeNotifier {
       _notify();
       return;
     }
-    if (event['type'] != 'pointer' || _committing) return;
+    if (_committing) return;
+    switch (event['type']) {
+      case 'modeChanged':
+        final next = RulerMode.values
+            .where((m) => m.name == event['tool'])
+            .firstOrNull;
+        if (_tool != 'picker' && next != null) {
+          _tool = next.name;
+          mode = next;
+          _anchor = null;
+          _anchorDisplay = null;
+          _keyboardRectangle = false;
+          _persist();
+          _redraw();
+          _notify();
+        }
+        return;
+      case 'scroll':
+        final steps = (event['steps'] as int).clamp(-32, 32);
+        if (_tool == 'picker') {
+          zoom = CaptureControls.adjustZoom(zoom, steps);
+        } else if (_tool != 'rectangle') {
+          tolerance = CaptureControls.adjustTolerance(tolerance, steps);
+        }
+        _persist();
+        _redraw();
+        _notify();
+        return;
+      case 'nudge':
+        final position = _lastPointer;
+        if (position == null) return;
+        final display = _session!.displays
+            .where((d) => d.id == position.displayId)
+            .first;
+        final next = CaptureControls.nudge(
+          display.frame,
+          position.x,
+          position.y,
+          (event['dx'] as int).clamp(-1, 1),
+          (event['dy'] as int).clamp(-1, 1),
+        );
+        _pointer({
+          'displayId': position.displayId,
+          'x': next.x,
+          'y': next.y,
+          'phase': 'move',
+          'keyboard': true,
+        });
+        return;
+      case 'confirm':
+        final position = _lastPointer;
+        if (position == null) return;
+        final start = _tool == 'rectangle' && _anchor == null;
+        _pointer({
+          'displayId': position.displayId,
+          'x': position.x,
+          'y': position.y,
+          'phase': start ? 'down' : 'up',
+          'keep': event['keep'] == true,
+          'keyboard': true,
+        });
+        return;
+      case 'clearPins':
+        _pins.clear();
+        _redraw();
+        return;
+      case 'pointer':
+        _pointer(event);
+        return;
+    }
+  }
+
+  Map<String, Object?> get _overlayOptions => {
+    'sessionId': _session!.id,
+    'tool': _tool,
+    'tolerance': tolerance,
+    'zoom': zoom,
+    'pinned': List<Map<String, Object?>>.of(_pins),
+  };
+
+  void _redraw() {
+    final pointer = _lastPointer;
+    if (pointer == null) {
+      if (_session != null) _updateOverlay(_overlayOptions);
+    } else {
+      _pointer({
+        'displayId': pointer.displayId,
+        'x': pointer.x,
+        'y': pointer.y,
+        'phase': 'move',
+        'keyboard': _keyboardCursor,
+      });
+    }
+  }
+
+  void _updateOverlay(Map<String, Object?> data) {
+    unawaited(
+      desktop.updateOverlay(data).catchError((Object e) {
+        unawaited(_abort(e));
+      }),
+    );
+  }
+
+  void _pointer(Map<Object?, Object?> event) {
+    if (_session == null || _committing) return;
     final display = _session!.displays
         .where((d) => d.id == event['displayId'])
         .firstOrNull;
@@ -253,6 +395,8 @@ class AppController extends ChangeNotifier {
     final x = (event['x'] as num).toDouble();
     final y = (event['y'] as num).toDouble();
     if (!x.isFinite || !y.isFinite) return;
+    _lastPointer = (displayId: display.id, x: x, y: y);
+    _keyboardCursor = event['keyboard'] == true;
     final phase = event['phase'] as String;
     final frame = display.frame;
     final pixel = frame.logicalToPixel(x, y);
@@ -260,13 +404,19 @@ class AppController extends ChangeNotifier {
     RulerMeasurement? measurement;
     if (_tool == RulerMode.rectangle.name) {
       if (phase == 'down') {
-        _anchor = frame.logicalToBoundary(x, y);
+        _keyboardRectangle = event['keyboard'] == true;
+        _anchor = _keyboardRectangle ? pixel : frame.logicalToBoundary(x, y);
         _anchorDisplay = display.id;
       }
       if (_anchor != null && _anchorDisplay == display.id) {
         measurement = RulerMeasurement.fromRect(
           frame,
-          PixelRect.fromPoints(_anchor!, frame.logicalToBoundary(x, y)),
+          PixelRect.fromPoints(
+            _anchor!,
+            (_keyboardRectangle || event['keyboard'] == true)
+                ? pixel
+                : frame.logicalToBoundary(x, y),
+          ),
           RulerMode.rectangle,
         );
       }
@@ -282,28 +432,30 @@ class AppController extends ChangeNotifier {
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}'
         : measurement?.label ?? '按住并拖拽，测量矩形区域';
-    unawaited(
-      desktop
-          .updateOverlay({
-            'sessionId': _session!.id,
-            'displayId': display.id,
-            'x': x,
-            'y': y,
-            'label': label,
-            'color': color.toJson(),
-            'rect': measurement?.rect.toJson(),
-          })
-          .catchError((Object e) {
-            unawaited(_abort(e));
-          }),
-    );
+    _updateOverlay({
+      ..._overlayOptions,
+      'displayId': display.id,
+      'x': x,
+      'y': y,
+      'label': label,
+      'color': color.toJson(),
+      'rect': measurement?.rect.toJson(),
+      'keyboard': event['keyboard'] == true,
+      'anchored': _anchor != null,
+    });
     if (phase != 'up') return;
     if (_tool == 'picker') {
       unawaited(_commitColor(color));
     } else if (measurement != null &&
         measurement.rect.width > 0 &&
         measurement.rect.height > 0) {
-      unawaited(_commitMeasurement(measurement, display.name));
+      unawaited(
+        _commitMeasurement(
+          measurement,
+          display,
+          keep: _tool == 'rectangle' && event['keep'] == true,
+        ),
+      );
     } else {
       _anchor = null;
       _anchorDisplay = null;
@@ -321,19 +473,42 @@ class AppController extends ChangeNotifier {
 
   Future<void> _commitMeasurement(
     RulerMeasurement measurement,
-    String displayName,
-  ) async {
+    CapturedDisplay display, {
+    bool keep = false,
+  }) async {
     _committing = true;
     _measurements.insert(
       0,
       MeasurementRecord(
         measurement: measurement,
         createdAt: DateTime.now(),
-        displayName: displayName,
+        displayName: display.name,
       ),
     );
     if (_measurements.length > 32) _measurements.removeLast();
-    await _complete(measurement.label);
+    if (keep) {
+      _pins.add({
+        'displayId': display.id,
+        'rect': measurement.rect.toJson(),
+        'label': measurement.pixelLabel,
+      });
+      _anchor = null;
+      _anchorDisplay = null;
+      _keyboardRectangle = false;
+      try {
+        await desktop.writeClipboard(measurement.label);
+        notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
+      } catch (e) {
+        error = '标注已保留，但复制失败：${_message(e)}';
+      } finally {
+        _committing = false;
+        if (_session != null) _redraw();
+        _persist();
+        _notify();
+      }
+    } else {
+      await _complete(measurement.label);
+    }
   }
 
   Future<void> _complete(String text) async {
@@ -376,6 +551,74 @@ class AppController extends ChangeNotifier {
     _anchorDisplay = null;
     _committing = false;
     _pending.clear();
+    _pins.clear();
+    _lastPointer = null;
+    _keyboardRectangle = false;
+    _keyboardCursor = false;
+  }
+
+  Future<bool> beginShortcutRecording() async {
+    if (busy || initializing || recordingShortcut || savingShortcuts) {
+      return false;
+    }
+    try {
+      if (!await desktop.setShortcutRecording(true)) return false;
+      recordedShortcut = null;
+      recordingShortcut = true;
+      _notify();
+      return true;
+    } catch (e) {
+      _fail(_message(e));
+      return false;
+    }
+  }
+
+  Future<void> endShortcutRecording() async {
+    try {
+      shortcutsAvailable = await desktop.setShortcutRecording(false);
+    } catch (e) {
+      _fail(_message(e));
+    } finally {
+      recordingShortcut = false;
+      _notify();
+    }
+  }
+
+  Future<bool> setShortcut(bool picker, ShortcutChord chord) async {
+    if (busy || savingShortcuts || recordingShortcut) return false;
+    final candidate = ShortcutBindings(
+      picker: picker ? chord : shortcuts.picker,
+      ruler: picker ? shortcuts.ruler : chord,
+    );
+    if (!candidate.isValid) {
+      _fail('快捷键需要字母或数字、至少一个主修饰键，且两个工具不能重复。');
+      return false;
+    }
+    savingShortcuts = true;
+    _notify();
+    try {
+      final registered = await desktop.configureShortcuts(candidate);
+      if (!registered) {
+        _fail('快捷键注册失败，已保留原配置。');
+        return false;
+      }
+      shortcuts = candidate;
+      shortcutsAvailable = true;
+      error = null;
+      notice = '快捷键已更新';
+      _persist();
+      return true;
+    } catch (e) {
+      if (e is PlatformException && e.details is Map) {
+        final status = (e.details as Map)['shortcuts'];
+        if (status is bool) shortcutsAvailable = status;
+      }
+      _fail(_message(e));
+      return false;
+    } finally {
+      savingShortcuts = false;
+      _notify();
+    }
   }
 
   Future<void> copyColor([RgbColor? color]) async {
@@ -414,6 +657,8 @@ class AppController extends ChangeNotifier {
       'format': format.name,
       'mode': mode.name,
       'tolerance': tolerance,
+      'zoom': zoom,
+      'shortcuts': shortcuts.toJson(),
       'colors': _colors.map((c) => c.toJson()).toList(),
       'measurements': _measurements.map((r) => r.toJson()).toList(),
     });
@@ -435,8 +680,19 @@ class AppController extends ChangeNotifier {
       mode =
           RulerMode.values.where((v) => v.name == data['mode']).firstOrNull ??
           mode;
+      try {
+        if (data['shortcuts'] != null) {
+          shortcuts = ShortcutBindings.fromJson(data['shortcuts']);
+        }
+      } catch (_) {
+        notice = '快捷键配置无效，已恢复默认值。';
+      }
+      final savedZoom = data['zoom'];
+      if (savedZoom is int && CaptureControls.zoomLevels.contains(savedZoom)) {
+        zoom = savedZoom;
+      }
       final value = data['tolerance'];
-      if (value is int) tolerance = value.clamp(0, 80);
+      if (value is int) tolerance = value.clamp(0, 255);
       for (final value in (data['colors'] as List? ?? []).take(64)) {
         try {
           final c = RgbColor.fromJson(value);
@@ -465,6 +721,8 @@ class AppController extends ChangeNotifier {
       return switch (e.code) {
         'screen_permission' => '需要屏幕录制权限。请前往偏好设置授权，再重新打开工具。',
         'capture_cancelled' => '屏幕状态发生变化，请重新开始。',
+        'shortcut_conflict' => '快捷键已被占用，已尝试恢复原配置。',
+        'shortcut_invalid' => e.message ?? '此快捷键不可用，请使用其他组合。',
         'capture_busy' => '已有工具正在使用，请先按 Esc 退出。',
         _ => e.message ?? '系统操作失败，请重试。',
       };
