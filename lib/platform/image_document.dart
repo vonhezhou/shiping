@@ -13,8 +13,17 @@ class ImageFileData {
 }
 
 class ImageProjectFileData {
-  const ImageProjectFileData(this.name, this.text);
+  const ImageProjectFileData(this.name, this.text, {this.path});
   final String name, text;
+  final String? path;
+}
+
+class ProjectLocation {
+  const ProjectLocation(this.name, this.path);
+  final String name, path;
+  factory ProjectLocation.fromJson(Map value) =>
+      ProjectLocation(value['name'] as String, value['path'] as String);
+  Map<String, String> toJson() => {'name': name, 'path': path};
 }
 
 class ImageDocument {

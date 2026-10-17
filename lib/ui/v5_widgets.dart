@@ -364,7 +364,7 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
         HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
     if (k == LogicalKeyboardKey.keyS && meta) {
-      c.saveImageProject();
+      c.saveImageProject(saveAs: shift);
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.keyZ && meta) {
@@ -415,7 +415,14 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
           title: '从原图捕捉细节',
           description: '拖入 PNG、JPEG、WebP，或打开本地图片。透明部分铺白底，不需要录屏权限。',
           action: FilledButton.icon(
-            onPressed: c.busy || c.imageLoading ? null : c.openImage,
+            onPressed:
+                c.busy ||
+                    c.imageLoading ||
+                    c.imageSaving ||
+                    c.recoveryPending ||
+                    c.recoveryPending
+                ? null
+                : c.openImage,
             icon: const Icon(Icons.folder_open, size: 18),
             label: Text(c.imageLoading ? '正在解码…' : '打开图片'),
           ),
@@ -425,7 +432,8 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
           runSpacing: 8,
           children: [
             OutlinedButton.icon(
-              onPressed: c.busy || c.imageLoading || c.imageSaving
+              onPressed:
+                  c.busy || c.imageLoading || c.imageSaving || c.recoveryPending
                   ? null
                   : c.openImageProject,
               icon: const Icon(Icons.folder_open, size: 16),
@@ -439,6 +447,53 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
               icon: const Icon(Icons.save_outlined, size: 16),
               label: Text(c.imageSaving ? '正在保存…' : '保存项目'),
             ),
+            OutlinedButton.icon(
+              onPressed:
+                  doc == null || c.busy || c.imageSaving || c.imageLoading
+                  ? null
+                  : () => c.saveImageProject(saveAs: true),
+              icon: const Icon(Icons.save_as_outlined, size: 16),
+              label: const Text('另存为'),
+            ),
+            if (c.recentImageProjects.isNotEmpty)
+              PopupMenuButton<String>(
+                tooltip: '最近项目',
+                enabled:
+                    !c.busy &&
+                    !c.imageLoading &&
+                    !c.imageSaving &&
+                    !c.recoveryPending,
+                onSelected: (path) => c.openImageProject(path: path),
+                itemBuilder: (_) => c.recentImageProjects
+                    .map(
+                      (e) => PopupMenuItem(
+                        value: e.path,
+                        child: SizedBox(
+                          width: 300,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(e.name),
+                              Text(
+                                e.path,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _muted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+                child: const Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Text('最近项目 ▾'),
+                ),
+              ),
             if (doc != null)
               Text(
                 c.imageProjectDirty ? '● 有未保存修改' : '已保存',
@@ -447,6 +502,30 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
           ],
         ),
         const SizedBox(height: 12),
+        if (doc != null) ...[
+          Text(
+            c.imageProjectName ?? '未命名图片项目',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          if (c.imageProjectPath != null)
+            SelectableText(
+              c.imageProjectPath!,
+              style: const TextStyle(color: _muted, fontSize: 11),
+            ),
+          Text(
+            c.draftError ??
+                (c.draftSaving
+                    ? '正在保存本地草稿…'
+                    : c.draftSavedAt == null
+                    ? '本地草稿将在修改后自动保存'
+                    : '本地草稿已保存 · ${c.draftSavedAt!.toLocal().toString().split('.').first}'),
+            style: TextStyle(
+              color: c.draftError == null ? _muted : Colors.orange,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (doc == null)
           const _Empty(
             icon: Icons.image_outlined,
@@ -671,7 +750,7 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
           const SizedBox(height: 8),
           const _Hint(
             icon: Icons.info_outline,
-            text: '取色可连续点击；矩形拖拽后自动保留。滚轮/触控板缩放，选择平移后拖动；方向键逐像素移动，Enter 确认，编辑时 Shift + 方向键调尺寸。使用保存项目保留图片、标注和视图；⌘Z 撤销，⌘⇧Z 重做。切换屏幕工具会保留当前图片草稿，关闭或替换前会提示未保存修改。',
+            text: '取色可连续点击；矩形拖拽后自动保留。滚轮/触控板缩放，选择平移后拖动；方向键逐像素移动，Enter 确认，编辑时 Shift + 方向键调尺寸。⌘S 保存原项目，⌘⇧S 另存为，⌘O 打开；⌘Z 撤销，⌘⇧Z 重做。本地草稿独立保存，重启后可恢复。切换屏幕工具会保留当前图片草稿，关闭或替换前会提示未保存修改。',
           ),
         ],
       ],

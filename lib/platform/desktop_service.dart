@@ -51,8 +51,12 @@ abstract class DesktopService {
   Future<void> writeClipboard(String text);
   Future<String?> openPaletteFile();
   Future<ImageFileData?> openImageFile();
-  Future<ImageProjectFileData?> openProjectFile();
-  Future<bool> saveProjectFile(String text);
+  Future<ImageProjectFileData?> openProjectFile({String? path});
+  Future<ProjectLocation?> saveProjectFile(String text, {String? path});
+  Future<List<ProjectLocation>> recentProjects();
+  Future<String?> loadImageDraft();
+  Future<void> saveImageDraft(String? text);
+  Future<void> projectEventsReady();
   Future<void> replyToQuit(bool allow) async {}
   Future<bool> exportImage(Uint8List png, {required bool save});
   Future<bool> saveTextFile(String filename, String text);
@@ -132,19 +136,43 @@ class MacDesktopService implements DesktopService {
       Clipboard.setData(ClipboardData(text: text));
 
   @override
-  Future<ImageProjectFileData?> openProjectFile() async {
+  Future<ImageProjectFileData?> openProjectFile({String? path}) async {
     final data = await _methods.invokeMapMethod<String, Object?>(
       'openProjectFile',
+      {'path': path},
     );
     return data == null
         ? null
-        : ImageProjectFileData(data['name'] as String, data['text'] as String);
+        : ImageProjectFileData(
+            data['name'] as String,
+            data['text'] as String,
+            path: data['path'] as String?,
+          );
   }
 
   @override
-  Future<bool> saveProjectFile(String text) async =>
-      await _methods.invokeMethod<bool>('saveProjectFile', {'text': text}) ??
-      false;
+  Future<ProjectLocation?> saveProjectFile(String text, {String? path}) async {
+    final data = await _methods.invokeMapMethod<String, Object?>(
+      'saveProjectFile',
+      {'text': text, 'path': path},
+    );
+    return data == null ? null : ProjectLocation.fromJson(data);
+  }
+
+  @override
+  Future<List<ProjectLocation>> recentProjects() async =>
+      (await _methods.invokeListMethod<Object?>('recentProjects') ?? [])
+          .map((e) => ProjectLocation.fromJson(e as Map))
+          .toList();
+  @override
+  Future<String?> loadImageDraft() =>
+      _methods.invokeMethod<String>('loadImageDraft');
+  @override
+  Future<void> saveImageDraft(String? text) =>
+      _methods.invokeMethod<void>('saveImageDraft', {'text': text});
+  @override
+  Future<void> projectEventsReady() =>
+      _methods.invokeMethod<void>('projectEventsReady');
   @override
   Future<void> replyToQuit(bool allow) =>
       _methods.invokeMethod<void>('replyToQuit', {'allow': allow});
@@ -208,9 +236,18 @@ class UnsupportedDesktopService implements DesktopService {
   @override
   Future<void> replyToQuit(bool allow) async {}
   @override
-  Future<ImageProjectFileData?> openProjectFile() async => null;
+  Future<ImageProjectFileData?> openProjectFile({String? path}) async => null;
   @override
-  Future<bool> saveProjectFile(String text) async => false;
+  Future<ProjectLocation?> saveProjectFile(String text, {String? path}) async =>
+      null;
+  @override
+  Future<List<ProjectLocation>> recentProjects() async => [];
+  @override
+  Future<String?> loadImageDraft() async => null;
+  @override
+  Future<void> saveImageDraft(String? text) async {}
+  @override
+  Future<void> projectEventsReady() async {}
   @override
   Future<ImageFileData?> openImageFile() async => null;
   @override

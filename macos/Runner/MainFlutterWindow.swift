@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 class MainFlutterWindow: NSWindow, NSDraggingDestination {
   private var desktopBridge: FrulerDesktopBridge?
 
+  func openProjectURLs(_ urls: [URL]) { urls.forEach { desktopBridge?.acceptProjectURL($0) } }
+
   func requestQuitConfirmation() -> Bool { desktopBridge?.requestQuitConfirmation() ?? false }
 
   override func awakeFromNib() {
@@ -27,12 +29,13 @@ class MainFlutterWindow: NSWindow, NSDraggingDestination {
   }
   func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
     let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly:true]) as? [URL] ?? []
-    return urls.count == 1 && ["png","jpg","jpeg","webp"].contains(urls[0].pathExtension.lowercased()) ? .copy : []
+    return urls.count == 1 && ["png","jpg","jpeg","webp","fruler"].contains(urls[0].pathExtension.lowercased()) ? .copy : []
   }
   func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
   func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
     guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly:true]) as? [URL], urls.count == 1 else { return false }
-    desktopBridge?.acceptImageDrop(urls[0])
+    if urls[0].pathExtension.lowercased() == "fruler" { desktopBridge?.acceptProjectURL(urls[0]) }
+    else { desktopBridge?.acceptImageDrop(urls[0]) }
     return true
   }
 }
@@ -76,6 +79,10 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   private var shortcutRecording = false
   private var pausedMenuKeys: [(NSMenuItem, String)] = []
   private var toolMenuItems: [String: NSMenuItem] = [:]
+  private let projectFiles = ProjectFileStore()
+  private var projectEventsReady = false
+  private var pendingProjectPaths: [String] = []
+  private var incomingProjects: [String: URL] = [:]
   private let stateKey = "fruler.state.v1"
 
   init(window: NSWindow, messenger: FlutterBinaryMessenger) {
@@ -152,6 +159,12 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     sink?(["type":"quitRequested"])
     return true
   }
+  func acceptProjectURL(_ url: URL) {
+    guard url.isFileURL, url.pathExtension.lowercased() == "fruler" else { return }
+    incomingProjects[url.path] = url
+    if projectEventsReady { showMainWindow(); sink?(["type":"openProject", "path":url.path]) }
+    else if !pendingProjectPaths.contains(url.path) { pendingProjectPaths.append(url.path) }
+  }
   func acceptImageDrop(_ url: URL) {
     do { var data = try ImageFileInput.read(url); data["type"]="imageDropped"; sink?(data) }
     catch { sink?(["type":"imageDropFailed","message":error.localizedDescription]) }
@@ -211,28 +224,51 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     case "replyToQuit":
       NSApp.reply(toApplicationShouldTerminate:args["allow"] as? Bool == true)
       result(nil)
+    case "projectEventsReady":
+      projectEventsReady = true
+      let pending = pendingProjectPaths; pendingProjectPaths.removeAll()
+      for path in pending { showMainWindow(); sink?(["type":"openProject", "path":path]) }
+      result(nil)
+    case "recentProjects": result(projectFiles.recent())
+    case "loadImageDraft":
+      do { result(try projectFiles.loadDraft()) }
+      catch { result(FlutterError(code:"draft_read_failed",message:error.localizedDescription,details:nil)) }
+    case "saveImageDraft":
+      do { try projectFiles.saveDraft(args["text"] as? String); result(nil) }
+      catch { result(FlutterError(code:"draft_write_failed",message:error.localizedDescription,details:nil)) }
     case "openProjectFile":
-      let panel = NSOpenPanel()
-      panel.allowedContentTypes = [UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json),.json]
-      panel.allowsMultipleSelection=false;panel.canChooseDirectories=false
-      NSApp.activate(ignoringOtherApps:true)
-      guard panel.runModal() == .OK, let url=panel.url else {result(nil);return}
       do {
-        let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
-        guard size <= 128*1024*1024 else {throw NSError(domain:"fruler.project",code:1,userInfo:[NSLocalizedDescriptionKey:"项目文件不能超过 128 MB"])}
-        let bytes=try Data(contentsOf:url)
-        guard bytes.count<=128*1024*1024, let text=String(data:bytes,encoding:.utf8) else {throw NSError(domain:"fruler.project",code:2,userInfo:[NSLocalizedDescriptionKey:"项目文件过大或不是 UTF-8 文本"])}
-        result(["name":url.lastPathComponent,"text":text])
-      }catch{result(FlutterError(code:"project_read_failed",message:error.localizedDescription,details:nil))}
+        let url: URL
+        if let path = args["path"] as? String {
+          url = try incomingProjects.removeValue(forKey:path) ?? projectFiles.resolve(path)
+        } else {
+          let panel = NSOpenPanel()
+          panel.allowedContentTypes = [UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json), .json]
+          panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
+          NSApp.activate(ignoringOtherApps:true)
+          guard panel.runModal() == .OK, let selected = panel.url else { result(nil); return }
+          url = selected
+        }
+        result(try projectFiles.read(url))
+      } catch { result(FlutterError(code:"project_read_failed",message:error.localizedDescription,details:nil)) }
     case "saveProjectFile":
-      guard let text=args["text"] as? String else{result(FlutterError(code:"project_write_failed",message:"项目数据无效",details:nil));return}
-      let panel=NSSavePanel()
-      panel.nameFieldStringValue="untitled.fruler"
-      panel.allowedContentTypes=[UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json)]
-      panel.canCreateDirectories=true
-      NSApp.activate(ignoringOtherApps:true)
-      guard panel.runModal() == .OK,let url=panel.url else{result(false);return}
-      do{try Data(text.utf8).write(to:url,options:.atomic);result(true)}catch{result(FlutterError(code:"project_write_failed",message:error.localizedDescription,details:nil))}
+      guard let text = args["text"] as? String else { result(FlutterError(code:"project_write_failed",message:"项目数据无效",details:nil)); return }
+      do {
+        let url: URL
+        if let path = args["path"] as? String {
+          url = try projectFiles.resolve(path)
+        }
+        else {
+          let panel = NSSavePanel()
+          panel.nameFieldStringValue = "untitled.fruler"
+          panel.allowedContentTypes = [UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json)]
+          panel.canCreateDirectories = true
+          NSApp.activate(ignoringOtherApps:true)
+          guard panel.runModal() == .OK, let selected = panel.url else { result(nil); return }
+          url = selected
+        }
+        result(try projectFiles.write(text, to:url, mustExist:args["path"] is String))
+      } catch { result(FlutterError(code:"project_write_failed",message:error.localizedDescription,details:nil)) }
     case "openImageFile":
       let panel = NSOpenPanel()
       panel.allowedContentTypes = [.png,.jpeg,.webP]
@@ -467,6 +503,25 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     item.menu = menu
     statusItem = item
     updateMenuShortcuts()
+    if let main = NSApp.mainMenu {
+      let root = NSMenuItem(title:"文件",action:nil,keyEquivalent:"")
+      let files = NSMenu(title:"文件")
+      for (title, action, key, modifiers) in [
+        ("打开项目…","open","o",NSEvent.ModifierFlags.command),
+        ("保存项目","save","s",NSEvent.ModifierFlags.command),
+        ("项目另存为…","saveAs","s",NSEvent.ModifierFlags([.command,.shift]))] {
+        let entry = NSMenuItem(title:title,action:#selector(projectCommand(_:)),keyEquivalent:key)
+        entry.target = self; entry.representedObject = action; entry.keyEquivalentModifierMask = modifiers
+        files.addItem(entry)
+      }
+      root.submenu = files
+      main.insertItem(root,at:min(1,main.items.count))
+    }
+  }
+  @objc private func projectCommand(_ item: NSMenuItem) {
+    guard !shortcutRecording, let action = item.representedObject as? String else { return }
+    showMainWindow()
+    sink?(["type":"projectCommand","action":action])
   }
 
   @objc private func activateTool(_ sender: NSMenuItem) {
@@ -580,8 +635,8 @@ private struct NativeShortcut: Equatable {
   var isValid: Bool {
     guard !modifiers.intersection([.command, .control, .option]).isEmpty else { return false }
     if modifiers.contains(.command) && modifiers.intersection([.control, .option]).isEmpty {
-      if ["Q", "W", "H", "M"].contains(key) { return false }
-      if !modifiers.contains(.shift) && ["A", "C", "V", "X", "Z"].contains(key) { return false }
+      if ["Q", "W", "H", "M", "S", "Z"].contains(key) { return false }
+      if !modifiers.contains(.shift) && ["A", "C", "V", "X", "O"].contains(key) { return false }
       if modifiers.contains(.shift) && ["3", "4", "5"].contains(key) { return false }
     }
     return true
@@ -1176,5 +1231,93 @@ private enum AnnotationRenderer {
     NSGraphicsContext.restoreGraphicsState()
     guard let result = context.makeImage() else { return nil }
     return NSBitmapImageRep(cgImage: result).representation(using: .png,properties: [:])
+  }
+}
+
+
+/// User-selected projects have scoped bookmarks; drafts stay in app support.
+final class ProjectFileStore {
+  static let maximumBytes = 128 * 1024 * 1024
+  private let defaults: UserDefaults
+  private let draftOverride: URL?
+  private let key = "fruler.project-bookmarks.v1"
+  init(defaults: UserDefaults = .standard, draftURL: URL? = nil) {
+    self.defaults = defaults; self.draftOverride = draftURL
+  }
+  private var records: [[String:Any]] { defaults.array(forKey:key) as? [[String:Any]] ?? [] }
+  func recent() -> [[String:String]] {
+    records.compactMap { item in
+      guard let name = item["name"] as? String, let path = item["path"] as? String else { return nil }
+      return ["name":name,"path":path]
+    }
+  }
+  private func withAccess<T>(_ url: URL, _ operation: () throws -> T) rethrows -> T {
+    let accessed = url.startAccessingSecurityScopedResource()
+    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+    return try operation()
+  }
+  private func remember(_ url: URL, replacing oldPath: String? = nil) throws {
+    let bookmark = try url.bookmarkData(options:.withSecurityScope,includingResourceValuesForKeys:nil,relativeTo:nil)
+    var items = records.filter { $0["path"] as? String != url.path && $0["path"] as? String != oldPath }
+    items.insert(["name":url.lastPathComponent,"path":url.path,"bookmark":bookmark],at:0)
+    defaults.set(Array(items.prefix(12)),forKey:key)
+  }
+  func resolve(_ path: String) throws -> URL {
+    guard let data = records.first(where: { $0["path"] as? String == path })?["bookmark"] as? Data else {
+      throw NSError(domain:"fruler.project",code:1,userInfo:[NSLocalizedDescriptionKey:"文件访问已失效，请用打开项目重新选择文件"])
+    }
+    var stale = false
+    let url = try URL(resolvingBookmarkData:data,options:.withSecurityScope,relativeTo:nil,bookmarkDataIsStale:&stale)
+    if stale || url.path != path { try withAccess(url) { try remember(url,replacing:path) } }
+    return url
+  }
+  func read(_ url: URL) throws -> [String:String] {
+    try withAccess(url) {
+      let values = try url.resourceValues(forKeys:[.fileSizeKey,.isRegularFileKey])
+      guard values.isRegularFile == true, (values.fileSize ?? 0) <= Self.maximumBytes else {
+        throw NSError(domain:"fruler.project",code:2,userInfo:[NSLocalizedDescriptionKey:"请选择不超过 128 MB 的项目文件"])
+      }
+      let bytes = try Data(contentsOf:url)
+      guard bytes.count <= Self.maximumBytes, let text = String(data:bytes,encoding:.utf8) else {
+        throw NSError(domain:"fruler.project",code:3,userInfo:[NSLocalizedDescriptionKey:"项目文件过大或不是 UTF-8 文本"])
+      }
+      try remember(url)
+      return ["name":url.lastPathComponent,"path":url.path,"text":text]
+    }
+  }
+  func write(_ text: String, to url: URL, mustExist: Bool = false) throws -> [String:String] {
+    try withAccess(url) {
+      if mustExist && !FileManager.default.fileExists(atPath:url.path) {
+        throw NSError(domain:"fruler.project",code:5,userInfo:[NSLocalizedDescriptionKey:"原项目已不存在，请另存为"])
+      }
+      let bytes = Data(text.utf8)
+      guard bytes.count <= Self.maximumBytes else { throw NSError(domain:"fruler.project",code:4,userInfo:[NSLocalizedDescriptionKey:"项目文件不能超过 128 MB"]) }
+      try bytes.write(to:url,options:.atomic)
+      try remember(url)
+      return ["name":url.lastPathComponent,"path":url.path]
+    }
+  }
+  private func draftURL() throws -> URL {
+    if let url = draftOverride { return url }
+    let folder = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("fruler",isDirectory:true)
+    try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+    return folder.appendingPathComponent("image-draft-v1.json")
+  }
+  func loadDraft() throws -> String? {
+    let url = try draftURL()
+    guard FileManager.default.fileExists(atPath:url.path) else { return nil }
+    let size = try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
+    guard size <= Self.maximumBytes + 8192 else { throw NSError(domain:"fruler.draft",code:1) }
+    let data = try Data(contentsOf:url)
+    guard data.count <= Self.maximumBytes + 8192, let text = String(data:data,encoding:.utf8) else { throw NSError(domain:"fruler.draft",code:2) }
+    return text
+  }
+  func saveDraft(_ text: String?) throws {
+    let url = try draftURL()
+    if let text = text {
+      let data = Data(text.utf8)
+      guard data.count <= Self.maximumBytes + 8192 else { throw NSError(domain:"fruler.draft",code:3) }
+      try data.write(to:url,options:.atomic)
+    } else if FileManager.default.fileExists(atPath:url.path) { try FileManager.default.removeItem(at:url) }
   }
 }

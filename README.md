@@ -7,7 +7,7 @@
 - 取色：4×–32× 可调像素放大镜；单次或连续采集；HEX / RGB / HSL / Flutter `Color(...)` / CSS 复制格式；最多 64 条去重的最近颜色。
 - 颜色编辑：输入 3 位或 6 位 HEX，调整 RGB / HSL，确认后加入最近记录；取消不修改颜色。
 - 我的调色板：收藏、命名、单条删除，独立于最近记录保存；JSON / CSS 导出，JSON 导入预览与冲突合并，多选复制 CSS 变量或 Flutter 颜色列表；支持分组、重命名、解散、颜色名称 / HEX 搜索和长按拖动排序。
-- 图片工作区：打开或拖入 PNG / JPEG / WebP，按原始像素取色与矩形 / 水平 / 垂直 / 交叉测量；缩放、平移、编辑标注、撤销 / 重做及局部 PNG 导出；支持自包含 `.fruler` 项目保存与恢复，读取本地图片不需要录屏授权。
+- 图片工作区：打开或拖入 PNG / JPEG / WebP，按原始像素取色与矩形 / 水平 / 垂直 / 交叉测量；缩放、平移、编辑标注、撤销 / 重做及局部 PNG 导出；支持自包含 `.fruler` 项目、原文件保存 / 另存为、最近项目和独立本地草稿恢复，读取本地图片不需要录屏授权。
 - 颜色对比度：编辑或从屏幕依次选取前景 / 背景色，实时文字预览、比值和普通 / 大号文字的 WCAG AA / AAA 结果。
 - 测量：浮动工具栏现场切换模式、Shift 连续保留多个矩形标注、选中和删除单个标注、撤销标注操作、复制和保存带尺寸的局部 PNG、矩形拖拽、水平间距、垂直间距、交叉测距；自动测量根据光标处像素的颜色识别连续边界，可通过滚轮调整颜色容差（0–255，每档 15）。
 - 标注编辑：拖动移动、拖拽四角或四边调整，方向键移动一个截图像素，Shift + 方向键调整右 / 下边界；支持整次拖拽撤销，限制在所属显示器内，至少保留 1×1 像素。
@@ -81,7 +81,9 @@ flutter --no-version-check run -d macos
 | 打开图片 | 图片工作区「打开图片」，或把单个图片文件从访达拖入 fruler 窗口 |
 | 图片缩放 / 平移 | 滚轮或触控板缩放，或使用 + / −；选「平移」后拖动；「适应窗口」「100%」重置视图 |
 | 图片取色 / 测量 | 工作区选工具后点击或拖拽；原图坐标不随视图缩放改变；方向键 / Enter 可微调和确认，测量自动保留标注 |
-| 图片项目 | 「保存项目」「打开项目」；画布聚焦时 `⌘ S` 保存，保存面板取消不丢弃修改 |
+| 图片项目 | `⌘ O` 打开，`⌘ S` 保存原文件，`⌘ ⇧ S` 另存为；新项目首次保存选择位置，取消不丢弃修改 |
+| 项目文件入口 | 双击或拖入单个 `.fruler`，或选择「最近项目」；项目名和完整保存路径显示在工作区 |
+| 本地草稿恢复 | 重启后选择「恢复草稿」或确认丢弃；退出未保存项目时可「保留草稿并退出」 |
 | 图片标注 / 对比度 | 「编辑标注」后选择、拖动、调边角，或用方向键与 Shift 调尺寸；导出 PNG / 复制标注图；已取颜色可设为前景 / 背景 |
 | 取消屏幕工具 | `Esc` 或鼠标右键；图片工作区 Esc 取消选择，关闭图片结束该图片会话 |
 
@@ -107,13 +109,25 @@ JSON 导入只接受 fruler version 1 导出格式，文件最多 2 MB、4096 �
 
 ### 第六版的项目与编辑历史
 
-「保存项目」通过系统面板写入 `.fruler` 文件，包含白底合成 PNG、图片名称、标注坐标、当前工具、倍率、容差、缩放和平移位置，无需原始图片即可恢复。「打开项目」完整校验后才替换当前图片，不重复添加测量历史。项目不包含调色板、偏好设置、屏幕历史或撤销 / 重做栈；重新打开后从保存的标注状态开始编辑。当前通过工作区按钮打开项目，不提供 Finder 双击打开。
+「保存项目」写入 `.fruler` 文件，包含白底合成 PNG、图片名称、标注坐标、当前工具、倍率、容差、缩放和平移位置，无需原始图片即可恢复。「打开项目」完整校验后才替换当前图片，不重复添加测量历史。项目不包含调色板、偏好设置、屏幕历史或撤销 / 重做栈；重新打开后从保存的标注状态开始编辑。第七版增加 Finder 双击、拖入、文件菜单和最近项目入口。
 
 未保存的图片项目显示提示，替换图片、关闭图片或退出应用前可选择保存、放弃或取消。保存面板取消或写入失败保留当前内容；保存期间的新视图变化仍标为未保存。关闭主窗口仅隐藏窗口，不丢弃草稿。
 
 项目 JSON 格式为 `dev.fruler.image-project`、版本 1，最多 128 MiB，内嵌 PNG 最多 96 MiB；图片仍限制 1600 万像素、单边 16384，最多 4096 个标注。未知版本、尺寸不符、重复编号、越界或损坏内容整份拒绝并保留原文档。普通图片导入仍限制 32 MB。
 
 屏幕和图片标注共用撤销 / 重做规则：添加、删除、清空、移动和调尺寸均可往返；一次拖拽合并为一次操作，键盘调整按次记录。新编辑清空重做分支，每侧最多保留 64 个状态。屏幕新捕获重置历史，图片切到屏幕工具时保留自己的历史。此功能作用于标注，不撤销取色、调色板或测量历史管理。
+
+### 第七版的文件流程与恢复
+
+新项目第一次保存才弹出系统面板；打开或保存过的项目用 `⌘S` 原子写回原文件，`⌘⇧S` 或「另存为」选择新位置，成功后切换保存目标。取消另存为或写入失败不会改变当前位置与未保存状态。`⌘O` 打开项目，这些快捷键在工作台各页可用；macOS「文件」菜单提供同样入口，录制自定义快捷键时暂时停用。Flutter 侧也支持 Control 对应组合，供后续平台适配使用。
+
+工作区显示项目名称、完整路径以及最多 12 个最近项目。macOS 通过系统安全书签保留用户主动打开 / 保存文件的访问权限，重启后可继续读写，不申请整盘访问。文件移动时尝试用书签定位并刷新记录；文件缺失、只读或授权失效会提示失败，原文档仍保留，可重新选择文件或另存为。书签由原生层管理，项目 JSON 不携带任何授权。文件关联仅针对 `.fruler`；一次编辑一个图片项目，替换当前未保存内容前仍需确认。
+
+图片或标注、工具、缩放平移发生变化后，静止 2 秒写入独立草稿；持续编辑时每 15 秒尝试保存，状态未变不会重复写入。草稿使用原子写入，保存在应用沙盒内的 `Application Support/fruler/image-draft-v1.json`，包括图片项目、原文件位置、未保存标记和时间，不覆盖用户手动保存的文件。只保留当前一个图片草稿，不保存撤销栈。最近约 2 秒内尚未写入的修改仍可能在突然中断时丢失；磁盘失败会提示并定期重试。
+
+重启后发现草稿时先提供恢复 / 丢弃入口；未做选择前不会让新图片或自动保存覆盖它，外部打开的项目会等待恢复选择。恢复使用与项目打开相同的完整校验，不重复添加测量历史。草稿损坏或读取失败会保留它供重试或明确丢弃。正常退出时，已保存项目会留下会话草稿；未保存项目可保存、保留草稿退出、放弃更改或取消。明确放弃、关闭图片或确认丢弃恢复草稿会清除对应草稿；仅隐藏主窗口不会清除。项目文件格式仍是版本 1，兼容第六版文件与原有本机历史。
+
+安全书签的访问与释放遵循 [Apple 沙盒文件访问说明](https://developer.apple.com/documentation/Security/accessing-files-from-the-macos-app-sandbox)。
 
 ### 授权与快捷键排查
 
@@ -168,6 +182,7 @@ flutter --no-version-check test --no-pub
 ```sh
 python3 tool/test_annotation_export.py
 python3 tool/test_single_instance.py
+python3 tool/test_project_storage.py
 ```
 
 仅运行某一组测试：
@@ -209,7 +224,8 @@ lib/
     palette_widgets.dart          # 颜色编辑对话框、色卡菜单与导出入口
     v4_widgets.dart               # 对比度、导入预览、批量复制与历史管理
     v5_widgets.dart               # 分组、拖动排序与可缩放平移的图片工作区
-    v6_widgets.dart               # 未保存项目的保存、放弃与取消确认
+    v6_widgets.dart               # 未保存项目确认与保留草稿退出
+    v7_widgets.dart               # 本地草稿恢复和丢弃确认
 macos/
   Runner/
     MainFlutterWindow.swift       # 原生桥接、截图、浮层、菜单栏和快捷键
@@ -229,6 +245,7 @@ tool/
   generate_icon.swift             # 可重复执行的 macOS 图标生成脚本
   test_annotation_export.py       # 调用生产 PNG 渲染实现执行原生回归
   test_single_instance.py         # 跨进程验证生产实例锁
+  test_project_storage.py         # 真实书签、原文件保存和独立草稿存储回归
 ```
 
 `lib/core/` 不依赖 Flutter 或 macOS，可以直接复用于其他平台；`lib/app/` 使用 Flutter 的状态通知机制，但通过 `DesktopService` 调用系统能力。Swift 不承载颜色转换或边界检测规则。
@@ -253,7 +270,10 @@ tool/
 | `finish(sessionId)` | 关闭浮层、释放屏幕帧，恢复必要的焦点；旧会话不能关闭新会话 |
 | `loadState` / `saveState` | 读写控制器提供的 JSON；macOS 当前使用 `UserDefaults` 的 `fruler.state.v1` |
 | `openImageFile()` | 通过系统文件选择器返回 ImageFileData(name, bytes)，取消返回 null，文件最多 32 MB；解码、像素上限检查与图片交互由 Flutter 承担 |
-| `openProjectFile()` / `saveProjectFile(text)` | 系统面板读取 UTF-8 项目或原子保存；读取取消返回 null，保存取消返回 false，失败抛错；Dart 校验内容 |
+| `openProjectFile(path?)` / `saveProjectFile(text, path?)` | 无路径时使用系统面板，有路径时通过已有授权读取 / 原子写回；返回文件名和实际路径，取消返回 null，失败抛错；Dart 校验项目内容 |
+| `recentProjects()` | 返回最多 12 个项目名称和路径；持久授权留在平台层，不把书签交给 Dart |
+| `loadImageDraft()` / `saveImageDraft(text?)` | 在应用本地存储独立草稿；null 表示清除，原子写入，失败抛错；禁止写入用户项目文件 |
+| `projectEventsReady()` | 控制器载入历史与恢复状态后才释放冷启动的文件打开事件，避免丢失 Finder 请求 |
 | `replyToQuit(allow)` | 响应 quitRequested，等待 Flutter 完成未保存确认后继续或取消退出 |
 | `exportImage(png, save)` | 保存 Flutter 渲染的原图标注 PNG，或写入图片剪贴板；取消返回 false，失败抛错 |
 | `openPaletteFile()` | 通过系统文件对话框读取用户选中的 UTF-8 JSON；取消返回 null，限制 2 MB；内容由 Dart 完整校验并预览 |
@@ -284,6 +304,7 @@ CaptureSession
 - 快捷键录制可通过 Flutter 键盘事件处理；macOS 也发送 `shortcutRecorded(chord)`，以原生事件自带的修饰键和物理键位为准，避免输入法或遗漏修饰键变化事件影响录制。此事件只在录制期间生效。
 - 快捷键 `bindings` 为 `{picker, ruler}`，每项含 `key`（A–Z / 0–9）和布尔修饰键 `meta/control/alt/shift`。新平台应按其按键映射实现，不把 macOS Carbon keycode 写入 Dart。注册失败不能覆盖已保存组合。
 - 第三版增加 `continuousChanged(enabled)`、`editPins`、`selectPin(id)`、`deletePin`、`undoPins` 和 `exportPins(displayId, save)` 会话事件。保留框含稳定 `id`；`selectPin(null)` 取消选择。`updateOverlay` 增加 `continuous`、`pickedCount`、`editingPins`、`selectedPin`、`canUndoPins`。
+- 第七版新增全局 `openProject(path)` 与 `projectCommand(action)`，action 为 open/save/saveAs；平台在启动时暂存打开请求，等待 `projectEventsReady` 再发送，文件访问只能来自用户选择或此前持久授权。
 - 第六版新增 `redoPins` 会话事件及 `updateOverlay.canRedoPins`；平台提供撤销 / 重做按钮与快捷键。全局 `quitRequested` 挂起退出，收到 `replyToQuit(allow)` 后继续或取消。图片项目与编辑历史在 Dart 中实现，新平台只需接入文件面板和退出握手。图片画布支持 Control Z / Control Shift Z / Control S。
 - 本地 JSON 继续使用 `fruler.state.v1`，新增可选 `continuousPicker` 和 `palette[]`；缺失时按旧版本迁移，单条损坏记录独立跳过。调色板条目包含 `color`、`name` 和 `favorite`，不存屏幕图像。
 - 第四版 `pinDrag` 包含 `id`、`displayId`、`phase: start/update/end`；update/end 的 `dx/dy` 为相对手势起点的本屏逻辑坐标位移，`handle` 为 move/n/s/e/w/ne/nw/se/sw。Dart 按该屏 scaleX/scaleY 换算截图像素并限制边界。`nudge` 新增 `resize` 布尔值，仅在编辑状态调整选中框；旧平台不发送时默认移动。
@@ -291,7 +312,7 @@ CaptureSession
 - 第五版原生拖入图片事件为 imageDropped(name, bytes)，bytes 使用 Uint8List / FlutterStandardTypedData；失败用 imageDropFailed(message)。平台仅读取用户明确拖入的单个文件，Dart 再完整校验。新增平台只需实现文件选择、拖入及图片保存 / 剪贴板接口，即可复用图片工作区，无需为它接入屏幕捕获权限。
 - 图片使用独立的负会话 ID 和 displayId=0，1:1 的 PixelFrame；输入、标注及撤销规则复用控制器，浮层更新在 Flutter 内渲染，不调用原生 begin/updateOverlay/finish。屏幕会话保持原契约。新数据可选 paletteGroups[]、PaletteEntry.group 和 MeasurementRecord.imageSource，旧值缺省仍兼容。
 - 新平台应在创建引擎及系统服务之前实现同等的单实例保护与激活已有窗口机制；macOS 当前使用沙盒容器内的 flock，不能直接复制文件路径假设到 Windows / Linux。
-- macOS 的文件保存只启用 `com.apple.security.files.user-selected.read-write`，文件位置由系统保存对话框选择，不申请整盘文件访问。
+- macOS 文件权限使用 `com.apple.security.files.user-selected.read-write` 与 `com.apple.security.files.bookmarks.app-scope`，只持久保留用户主动选择项目的访问权，不申请整盘文件访问。
 - 其他事件为 `activate`（含 `tool`）、`cancelled`（含 `sessionId`）、`permissionChanged`（含 `permission`）。取消后须释放平台资源，并让控制器离开忙碌状态。
 - 输入可能早于 `begin` 的返回结果到达，控制器会暂存事件；后续仍依赖正确的会话 ID 过滤旧事件。屏幕重配、休眠等导致会话失效时，应关闭浮层并通知取消。
 

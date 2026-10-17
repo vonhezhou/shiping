@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
-import 'package:fruler/ui/fruler_app.dart';
+
+import 'controller_test_host.dart';
 
 import '../fake_desktop.dart';
 
@@ -19,13 +20,12 @@ void main() {
       final desktop = FakeDesktop();
       final controller = AppController(desktop);
       await controller.initialize();
-      addTearDown(controller.dispose);
       addTearDown(desktop.input.close);
       final key = GlobalKey();
       await tester.pumpWidget(
         RepaintBoundary(
           key: key,
-          child: FrulerApp(controller: controller),
+          child: ControllerTestHost(controller: controller),
         ),
       );
       await tester.pumpAndSettle();
@@ -55,9 +55,8 @@ void main() {
     final desktop = FakeDesktop()..permission = false;
     final controller = AppController(desktop);
     await controller.initialize();
-    addTearDown(controller.dispose);
     addTearDown(desktop.input.close);
-    await tester.pumpWidget(FrulerApp(controller: controller));
+    await tester.pumpWidget(ControllerTestHost(controller: controller));
     await tester.pumpAndSettle();
     await tester.tap(find.text('前往授权 →'));
     await tester.pumpAndSettle();

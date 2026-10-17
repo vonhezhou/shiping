@@ -112,8 +112,223 @@ class AppController extends ChangeNotifier {
   ImageDocument? imageDocument;
   ImageProjectView? imageView;
   String? imageProjectName;
+  String? imageProjectPath;
+  List<ProjectLocation> recentImageProjects = [];
+  String? recoveryDraft;
+  bool _recoveryReadFailed = false;
+  bool get recoveryPending => recoveryDraft != null || _recoveryReadFailed;
+  bool draftSaving = false;
+  String? draftError;
+  DateTime? draftSavedAt;
+  Timer? _draftDebounce, _draftPeriodic;
+  String? _observedDraftSignature, _writtenDraftSignature;
+  Future<void> _draftWrites = Future.value();
+  String? _pendingProjectPath;
+
+  ImageProject _currentImageProject() {
+    final document = imageDocument!;
+    return ImageProject(
+      name: document.name,
+      png: document.png,
+      width: document.frame.width,
+      height: document.frame.height,
+      annotations: List.of(_imagePins),
+      tool: imageTool,
+      view: imageView,
+      tolerance: _imageSession
+          ? tolerance
+          : _imageDraft?.tolerance ?? tolerance,
+      zoom: _imageSession ? zoom : _imageDraft?.zoom ?? zoom,
+    );
+  }
+
+  String _draftSignature() =>
+      '${_imageSignature()}|$imageProjectPath|$_savedImageSignature';
+  void _scheduleDraft() {
+    if (initializing || recoveryPending || imageDocument == null) return;
+    final signature = _draftSignature();
+    if (signature == _observedDraftSignature) return;
+    _observedDraftSignature = signature;
+    _draftDebounce?.cancel();
+    _draftDebounce = Timer(
+      const Duration(seconds: 2),
+      () => unawaited(flushImageDraft()),
+    );
+  }
+
+  Future<void> _writeDraft(String? text) {
+    final next = _draftWrites
+        .catchError((Object _) {})
+        .then((_) => desktop.saveImageDraft(text));
+    _draftWrites = next;
+    return next;
+  }
+
+  Future<bool> flushImageDraft() async {
+    if (_disposed || recoveryPending || imageDocument == null || draftSaving) {
+      return false;
+    }
+    final signature = _draftSignature();
+    if (signature == _writtenDraftSignature) return true;
+    draftSaving = true;
+    try {
+      final now = DateTime.now();
+      final text = jsonEncode({
+        'version': 1,
+        'savedAt': now.toIso8601String(),
+        'project': jsonDecode(_currentImageProject().encode()),
+        'location': imageProjectPath == null
+            ? null
+            : {'name': imageProjectName, 'path': imageProjectPath},
+        'dirty': imageProjectDirty,
+      });
+      await _writeDraft(text);
+      _writtenDraftSignature = signature;
+      draftSavedAt = now;
+      draftError = null;
+      return true;
+    } catch (_) {
+      draftError = '本地草稿保存失败，请手动保存项目；稍后会自动重试。';
+      return false;
+    } finally {
+      draftSaving = false;
+      _notify();
+    }
+  }
+
+  Future<void> _clearImageDraft() async {
+    _draftDebounce?.cancel();
+    _observedDraftSignature = null;
+    _writtenDraftSignature = null;
+    await _writeDraft(null);
+    _draftDebounce?.cancel();
+    _observedDraftSignature = null;
+    _writtenDraftSignature = null;
+    draftSavedAt = null;
+    draftError = null;
+  }
+
+  Future<void> discardRecovery() async {
+    if (!recoveryPending || imageLoading) return;
+    try {
+      await _clearImageDraft();
+      recoveryDraft = null;
+      _recoveryReadFailed = false;
+      _notify();
+      _openPendingProject();
+    } catch (_) {
+      _fail('无法清除本地草稿，请重试');
+    }
+  }
+
+  Future<void> restoreImageDraft() async {
+    if (!recoveryPending || busy || imageLoading || imageSaving) return;
+    imageLoading = true;
+    _notify();
+    try {
+      if (_recoveryReadFailed) {
+        recoveryDraft = await desktop.loadImageDraft();
+        _recoveryReadFailed = false;
+        if (recoveryDraft == null) {
+          _notify();
+          return;
+        }
+      }
+      final value = jsonDecode(recoveryDraft!);
+      if (value is! Map || value['version'] != 1 || value['dirty'] is! bool) {
+        throw const FormatException('草稿格式无效');
+      }
+      final project = ImageProject.decode(jsonEncode(value['project']));
+      final document = await _decodeProject(project);
+      final location = value['location'];
+      if (location != null &&
+          (location is! Map ||
+              location['path'] is! String ||
+              location['name'] is! String)) {
+        throw const FormatException('草稿位置无效');
+      }
+      if (_disposed) return;
+      _installProject(
+        project,
+        document,
+        name: location?['name'] as String?,
+        path: location?['path'] as String?,
+      );
+      if (value['dirty'] == true) _savedImageSignature = null;
+      draftSavedAt = DateTime.tryParse(value['savedAt']?.toString() ?? '');
+      recoveryDraft = null;
+      notice = '已恢复上次图片工作；原项目文件未被自动覆盖';
+      error = null;
+    } catch (_) {
+      _fail('无法恢复本地草稿，可保留后重试，或选择丢弃草稿');
+    } finally {
+      imageLoading = false;
+      _notify();
+    }
+    _openPendingProject();
+  }
+
+  void _openPendingProject() {
+    if (recoveryPending || _pendingProjectPath == null) return;
+    final path = _pendingProjectPath!;
+    _pendingProjectPath = null;
+    unawaited(openImageProject(path: path));
+  }
+
+  Future<ImageDocument> _decodeProject(ImageProject project) async {
+    final document = await imageCodec.decodeProjectPng(
+      ImageFileData(project.name, project.png),
+    );
+    if (document.frame.width != project.width ||
+        document.frame.height != project.height) {
+      throw const FormatException('项目图片尺寸与元数据不一致');
+    }
+    return document;
+  }
+
+  void _installProject(
+    ImageProject project,
+    ImageDocument document, {
+    String? name,
+    String? path,
+  }) {
+    _imageDraft = null;
+    if (_imageSession) _resetSession();
+    imageDocument = document;
+    _imageEpoch++;
+    imageView = project.view;
+    imageProjectName = name;
+    imageProjectPath = path;
+    draftSavedAt = null;
+    draftError = null;
+    useImageTool(project.tool);
+    tolerance = project.tolerance;
+    zoom = project.zoom;
+    _pins.addAll(project.annotations);
+    for (final pin in _pins) {
+      if ((pin['id'] as int) > _nextPinId) _nextPinId = pin['id'] as int;
+    }
+    _savedImageSignature = _imageSignature();
+    _redraw();
+  }
+
+  void _rememberProject(ProjectLocation location) {
+    recentImageProjects = [
+      location,
+      ...recentImageProjects.where((e) => e.path != location.path),
+    ].take(12).toList();
+  }
+
   bool imageSaving = false;
   Future<bool> Function()? confirmImageReplacement;
+  Future<bool> Function()? confirmImageQuit;
+  bool _retainDraftForQuit = false;
+  Future<bool> keepImageDraftForQuit() async {
+    if (draftSaving) await _draftWrites;
+    _retainDraftForQuit = await flushImageDraft();
+    return _retainDraftForQuit;
+  }
+
   bool _confirming = false, _askingToQuit = false;
   int _imageEpoch = 0;
   String? _savedImageSignature;
@@ -152,87 +367,81 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> openImageProject() async {
-    if (busy || imageLoading || imageSaving) return;
+  Future<void> openImageProject({String? path}) async {
+    if (recoveryPending) {
+      _pendingProjectPath = path;
+      section = AppSection.image;
+      notice = '已保留待打开项目，请先恢复或丢弃上次的草稿';
+      error = null;
+      _notify();
+      return;
+    }
+    if (busy || imageLoading || imageSaving) {
+      if (path != null) _pendingProjectPath = path;
+      return;
+    }
     imageLoading = true;
     _notify();
     try {
-      final file = await desktop.openProjectFile();
+      final file = await desktop.openProjectFile(path: path);
       if (file == null) return;
       final project = ImageProject.decode(file.text);
-      final document = await imageCodec.decodeProjectPng(
-        ImageFileData(project.name, project.png),
-      );
-      if (document.frame.width != project.width ||
-          document.frame.height != project.height) {
-        throw const FormatException('项目图片尺寸与元数据不一致');
-      }
+      final document = await _decodeProject(project);
       if (_disposed || !await allowImageReplacement() || _disposed) return;
-      _imageDraft = null;
-      if (_imageSession) _resetSession();
-      imageDocument = document;
-      _imageEpoch++;
-      imageView = project.view;
-      imageProjectName = file.name;
-      useImageTool(project.tool);
-      tolerance = project.tolerance;
-      zoom = project.zoom;
-      _pins.addAll(project.annotations);
-      for (final pin in _pins) {
-        if ((pin['id'] as int) > _nextPinId) _nextPinId = pin['id'] as int;
+      _installProject(project, document, name: file.name, path: file.path);
+      if (file.path != null) {
+        _rememberProject(ProjectLocation(file.name, file.path!));
       }
-      _savedImageSignature = _imageSignature();
-      _redraw();
       notice = '项目已打开：${file.name}';
       error = null;
     } catch (e) {
-      _fail(e is FormatException ? e.message : '无法打开图片项目');
+      _fail(
+        e is FormatException
+            ? e.message
+            : '无法打开图片项目：${_message(e)}。可重新选择文件获取访问权限。',
+      );
     } finally {
       imageLoading = false;
       _notify();
+      _openPendingProject();
     }
   }
 
-  Future<bool> saveImageProject() async {
+  Future<bool> saveImageProject({bool saveAs = false}) async {
     final document = imageDocument;
     if (document == null || imageSaving || busy) return false;
     _finishPinDrag();
     if (_imageSession) _redraw();
     final signature = _imageSignature();
-    final project = ImageProject(
-      name: document.name,
-      png: document.png,
-      width: document.frame.width,
-      height: document.frame.height,
-      annotations: List.of(_imagePins),
-      tool: imageTool,
-      view: imageView,
-      tolerance: _imageSession
-          ? tolerance
-          : _imageDraft?.tolerance ?? tolerance,
-      zoom: _imageSession ? zoom : _imageDraft?.zoom ?? zoom,
-    );
     imageSaving = true;
     _notify();
     try {
-      final text = project.encode();
-      if (text.length > ImageProject.maxFileBytes) {
+      final text = _currentImageProject().encode();
+      if (utf8.encode(text).length > ImageProject.maxFileBytes) {
         throw const FormatException('项目文件超过 128 MB，无法保存');
       }
-      final saved = await desktop.saveProjectFile(text);
-      if (saved && identical(imageDocument, document)) {
+      final location = await desktop.saveProjectFile(
+        text,
+        path: saveAs ? null : imageProjectPath,
+      );
+      if (location != null && identical(imageDocument, document)) {
         _savedImageSignature = signature;
-        imageProjectName ??= '图片项目';
+        imageProjectName = location.name;
+        imageProjectPath = location.path;
+        _rememberProject(location);
         notice = '图片项目已保存';
         error = null;
       }
-      return saved;
+      return location != null;
     } catch (e) {
-      _fail(e is FormatException ? e.message : '图片项目保存失败：${_message(e)}');
+      _fail(
+        e is FormatException ? e.message : '图片项目保存失败：${_message(e)}。可尝试另存为。',
+      );
       return false;
     } finally {
       imageSaving = false;
       _notify();
+      _openPendingProject();
     }
   }
 
@@ -259,7 +468,7 @@ class AppController extends ChangeNotifier {
   String get imageTool =>
       _imageSession ? _tool ?? 'picker' : _imageDraft?.tool ?? 'picker';
   Future<void> openImage() async {
-    if (busy || imageLoading || imageSaving) return;
+    if (busy || imageLoading || imageSaving || recoveryPending) return;
     imageLoading = true;
     _notify();
     try {
@@ -275,7 +484,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> loadImage(ImageFileData file) async {
-    if (busy || imageLoading || imageSaving || _disposed) return;
+    if (busy || imageLoading || imageSaving || _disposed || recoveryPending) {
+      return;
+    }
     imageLoading = true;
     error = null;
     _notify();
@@ -285,6 +496,9 @@ class AppController extends ChangeNotifier {
       _imageDraft = null;
       imageView = null;
       imageProjectName = null;
+      imageProjectPath = null;
+      draftSavedAt = null;
+      draftError = null;
       _savedImageSignature = null;
       _imageEpoch++;
       if (_imageSession) _resetSession();
@@ -297,6 +511,7 @@ class AppController extends ChangeNotifier {
     } finally {
       imageLoading = false;
       _notify();
+      _openPendingProject();
     }
   }
 
@@ -346,11 +561,21 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> closeImage() async {
-    if (imageSaving || !await allowImageReplacement()) return;
+    if (imageSaving || imageLoading || !await allowImageReplacement()) return;
+    imageLoading = true;
+    try {
+      await _clearImageDraft();
+    } catch (_) {
+      imageLoading = false;
+      _fail('无法清除本地草稿，图片仍保留，请重试');
+      return;
+    }
+    imageLoading = false;
     if (_imageSession) _resetSession();
     imageDocument = null;
     imageView = null;
     imageProjectName = null;
+    imageProjectPath = null;
     _imageDraft = null;
     _savedImageSignature = null;
     imageOverlay = {};
@@ -508,6 +733,20 @@ class AppController extends ChangeNotifier {
           error = _message(e);
         }
       }
+      try {
+        recentImageProjects = await desktop.recentProjects();
+        recoveryDraft = await desktop.loadImageDraft();
+        if (recoveryPending) section = AppSection.image;
+      } catch (_) {
+        _recoveryReadFailed = true;
+        section = AppSection.image;
+        draftError = '无法读取本地草稿或最近项目，请检查本地存储后重试。';
+      }
+      await desktop.projectEventsReady();
+      _draftPeriodic = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => unawaited(flushImageDraft()),
+      );
       if (!supported) error = '当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。';
     } catch (e) {
       error = _message(e);
@@ -687,12 +926,39 @@ class AppController extends ChangeNotifier {
   void _event(Map<Object?, Object?> event) {
     if (_disposed) return;
     switch (event['type']) {
+      case 'openProject':
+        if (event['path'] is String) {
+          unawaited(openImageProject(path: event['path'] as String));
+        }
+        return;
+      case 'projectCommand':
+        if (recordingShortcut) return;
+        switch (event['action']) {
+          case 'open':
+            unawaited(openImageProject());
+          case 'save':
+            unawaited(saveImageProject());
+          case 'saveAs':
+            unawaited(saveImageProject(saveAs: true));
+        }
+        return;
       case 'quitRequested':
         if (!_askingToQuit) {
           _askingToQuit = true;
           unawaited(() async {
             try {
-              final allow = await allowImageReplacement();
+              _retainDraftForQuit = false;
+              final allow = imageProjectDirty && confirmImageQuit != null
+                  ? await confirmImageQuit!()
+                  : await allowImageReplacement();
+              if (allow && !recoveryPending) {
+                if (imageProjectDirty && !_retainDraftForQuit) {
+                  await _clearImageDraft();
+                } else if (imageDocument != null) {
+                  if (draftSaving) await _draftWrites;
+                  if (!await flushImageDraft()) throw StateError('draft');
+                }
+              }
               await desktop.replyToQuit(allow);
             } catch (e) {
               await desktop.replyToQuit(false);
@@ -756,6 +1022,7 @@ class AppController extends ChangeNotifier {
       _resetSession();
       notice = count > 0 ? '取色已结束，已采集 $count 次' : '已取消';
       _notify();
+      _openPendingProject();
       return;
     }
     if (_committing) return;
@@ -1732,11 +1999,16 @@ class AppController extends ChangeNotifier {
   }
 
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (!_disposed) {
+      _scheduleDraft();
+      notifyListeners();
+    }
   }
 
   @override
   void dispose() {
+    _draftDebounce?.cancel();
+    _draftPeriodic?.cancel();
     _disposed = true;
     _subscription?.cancel();
     final id = _session?.id;

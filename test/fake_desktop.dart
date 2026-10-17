@@ -31,14 +31,52 @@ class FakeDesktop extends DesktopService {
   Object? projectError;
   Completer<bool>? pendingProjectSave;
   @override
-  Future<ImageProjectFileData?> openProjectFile() async => projectFile;
-  @override
-  Future<bool> saveProjectFile(String text) async {
-    if (projectError != null) throw projectError!;
-    projectText = text;
-    return pendingProjectSave == null ? fileResult : pendingProjectSave!.future;
+  Future<ImageProjectFileData?> openProjectFile({String? path}) async {
+    openedProjectPath = path;
+    return projectFiles[path] ?? projectFile;
   }
 
+  @override
+  Future<ProjectLocation?> saveProjectFile(String text, {String? path}) async {
+    if (projectError != null) throw projectError!;
+    projectText = text;
+    savedProjectPath = path;
+    final ok = pendingProjectSave == null
+        ? fileResult
+        : await pendingProjectSave!.future;
+    return ok ? saveLocation : null;
+  }
+
+  String? openedProjectPath, savedProjectPath;
+  ProjectLocation saveLocation = const ProjectLocation(
+    'saved.fruler',
+    '/tmp/saved.fruler',
+  );
+  List<ProjectLocation> recent = [];
+  final Map<String?, ImageProjectFileData> projectFiles = {};
+  String? draft;
+  Object? draftReadError;
+  Object? draftError;
+  Completer<void>? pendingDraftSave;
+  final List<String?> draftWrites = [];
+  @override
+  Future<List<ProjectLocation>> recentProjects() async => recent;
+  @override
+  Future<String?> loadImageDraft() async {
+    if (draftReadError != null) throw draftReadError!;
+    return draft;
+  }
+
+  @override
+  Future<void> saveImageDraft(String? text) async {
+    draftWrites.add(text);
+    if (pendingDraftSave != null) await pendingDraftSave!.future;
+    if (draftError != null) throw draftError!;
+    draft = text;
+  }
+
+  @override
+  Future<void> projectEventsReady() async {}
   @override
   Future<void> replyToQuit(bool allow) async {
     quitAllowed = allow;

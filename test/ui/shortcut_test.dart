@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
-import 'package:fruler/ui/fruler_app.dart';
+
+import 'controller_test_host.dart';
 
 import '../fake_desktop.dart';
 
@@ -15,9 +16,8 @@ void main() {
     final desktop = FakeDesktop();
     final controller = AppController(desktop);
     await controller.initialize();
-    addTearDown(controller.dispose);
     addTearDown(desktop.input.close);
-    await tester.pumpWidget(FrulerApp(controller: controller));
+    await tester.pumpWidget(ControllerTestHost(controller: controller));
     await tester.tap(find.text('偏好设置').first);
     await tester.pumpAndSettle();
     final edit = find.widgetWithText(

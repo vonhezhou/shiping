@@ -4,15 +4,23 @@ import FlutterMacOS
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  private var pendingProjectURLs: [URL] = []
   private var reopenObserver: NSObjectProtocol?
   override func applicationDidFinishLaunching(_ notification: Notification) {
     super.applicationDidFinishLaunching(notification)
+    (mainFlutterWindow as? MainFlutterWindow)?.openProjectURLs(pendingProjectURLs)
+    pendingProjectURLs.removeAll()
     reopenObserver = DistributedNotificationCenter.default().addObserver(
       forName: FrulerInstance.reopenNotification, object: nil, queue: .main
     ) { [weak self] _ in
       NSApp.activate(ignoringOtherApps: true)
       self?.mainFlutterWindow?.makeKeyAndOrderFront(nil)
     }
+  }
+
+  override func application(_ application: NSApplication, open urls: [URL]) {
+    if let window = mainFlutterWindow as? MainFlutterWindow { window.openProjectURLs(urls) }
+    else { pendingProjectURLs.append(contentsOf:urls) }
   }
 
   override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

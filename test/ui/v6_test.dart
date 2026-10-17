@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/image_document.dart';
-import 'package:fruler/ui/fruler_app.dart';
+
+import 'controller_test_host.dart';
 
 import '../fake_desktop.dart';
 
@@ -21,9 +22,8 @@ void main() {
     d = FakeDesktop();
     c = AppController(d);
     await c.initialize();
-    addTearDown(c.dispose);
     addTearDown(d.input.close);
-    await tester.pumpWidget(FrulerApp(controller: c));
+    await tester.pumpWidget(ControllerTestHost(controller: c));
     await tester.pumpAndSettle();
     await tester.runAsync(
       () => c.loadImage(
