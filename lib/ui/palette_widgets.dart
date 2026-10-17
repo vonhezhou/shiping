@@ -5,16 +5,22 @@ Future<void> _editColor(
   AppController controller,
   RgbColor color,
 ) async {
-  final result = await showDialog<RgbColor>(
-    context: context,
-    builder: (_) => _ColorEditorDialog(initial: color),
-  );
-  if (result != null) controller.addEditedColor(result);
+  controller.colorEditorActive = true;
+  try {
+    final result = await showDialog<RgbColor>(
+      context: context,
+      builder: (_) => _ColorEditorDialog(initial: color),
+    );
+    if (result != null) controller.addEditedColor(result);
+  } finally {
+    controller.finishPickedEditor();
+  }
 }
 
 class _ColorEditorDialog extends StatefulWidget {
-  const _ColorEditorDialog({required this.initial});
+  const _ColorEditorDialog({required this.initial, this.allowPickNew = false});
   final RgbColor initial;
+  final bool allowPickNew;
   @override
   State<_ColorEditorDialog> createState() => _ColorEditorDialogState();
 }
@@ -169,6 +175,11 @@ class _ColorEditorDialogState extends State<_ColorEditorDialog> {
       ),
     ),
     actions: [
+      if (widget.allowPickNew)
+        TextButton(
+          onPressed: () => Navigator.pop(context, 'pickNew'),
+          child: const Text('重新取色'),
+        ),
       TextButton(
         onPressed: () => Navigator.pop(context),
         child: const Text('取消'),

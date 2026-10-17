@@ -200,6 +200,7 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
   final transform = TransformationController();
   final focus = FocusNode();
   bool pan = false;
+  int? primaryPointer;
   bool applyingView = false;
   @override
   void initState() {
@@ -289,6 +290,14 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
 
   void pointer(PointerEvent event, String phase) {
     if (pan || !c.imageSessionActive) return;
+    if (phase == 'down') {
+      if (event.buttons != kPrimaryMouseButton) return;
+      primaryPointer = event.pointer;
+    }
+    if ((phase == 'drag' || phase == 'up') && primaryPointer != event.pointer) {
+      return;
+    }
+    if (phase == 'up') primaryPointer = null;
     final p = event.localPosition;
     final frame = c.imageDocument!.frame;
     if (phase == 'down') focus.requestFocus();
@@ -626,6 +635,7 @@ class _ImageWorkspaceState extends State<_ImageWorkspace> {
                           onPointerMove: (e) => pointer(e, 'drag'),
                           onPointerUp: (e) => pointer(e, 'up'),
                           onPointerCancel: (e) {
+                            primaryPointer = null;
                             final d = dragging;
                             if (d != null) {
                               c.imageEvent('pinDrag', {

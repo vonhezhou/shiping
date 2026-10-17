@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
@@ -11,6 +12,7 @@ part 'v4_widgets.dart';
 part 'v5_widgets.dart';
 part 'v6_widgets.dart';
 part 'v7_widgets.dart';
+part 'v8_widgets.dart';
 
 const _background = Color(0xFF111315);
 const _panel = Color(0xFF1B1E21);
@@ -109,60 +111,69 @@ class FrulerApp extends StatelessWidget {
                 _confirmImageReplacement(context, controller);
             controller.confirmImageQuit = () =>
                 _confirmImageReplacement(context, controller, quitting: true);
-            return Scaffold(
-              body: Row(
-                children: [
-                  _Sidebar(controller: controller),
-                  const VerticalDivider(width: 1, color: _line),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        _TopBar(controller: controller),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            key: PageStorageKey(controller.section),
-                            padding: const EdgeInsets.fromLTRB(34, 29, 34, 28),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (controller.recoveryPending) ...[
-                                  _RecoveryBanner(controller: controller),
-                                  const SizedBox(height: 20),
+            return _PickedColorEditorHost(
+              controller: controller,
+              child: Scaffold(
+                body: Row(
+                  children: [
+                    _Sidebar(controller: controller),
+                    const VerticalDivider(width: 1, color: _line),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _TopBar(controller: controller),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              key: PageStorageKey(controller.section),
+                              padding: const EdgeInsets.fromLTRB(
+                                34,
+                                29,
+                                34,
+                                28,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (controller.recoveryPending) ...[
+                                    _RecoveryBanner(controller: controller),
+                                    const SizedBox(height: 20),
+                                  ],
+                                  if (controller.error != null ||
+                                      controller.notice != null) ...[
+                                    _Message(controller: controller),
+                                    const SizedBox(height: 20),
+                                  ],
+                                  if (!controller.permissionGranted &&
+                                      !controller.initializing &&
+                                      controller.section !=
+                                          AppSection.image) ...[
+                                    _PermissionBanner(controller: controller),
+                                    const SizedBox(height: 24),
+                                  ],
+                                  switch (controller.section) {
+                                    AppSection.picker => _PickerPage(
+                                      controller: controller,
+                                    ),
+                                    AppSection.ruler => _RulerPage(
+                                      controller: controller,
+                                    ),
+                                    AppSection.image => _ImageWorkspace(
+                                      controller: controller,
+                                    ),
+                                    AppSection.settings => _SettingsPage(
+                                      controller: controller,
+                                    ),
+                                  },
                                 ],
-                                if (controller.error != null ||
-                                    controller.notice != null) ...[
-                                  _Message(controller: controller),
-                                  const SizedBox(height: 20),
-                                ],
-                                if (!controller.permissionGranted &&
-                                    !controller.initializing &&
-                                    controller.section != AppSection.image) ...[
-                                  _PermissionBanner(controller: controller),
-                                  const SizedBox(height: 24),
-                                ],
-                                switch (controller.section) {
-                                  AppSection.picker => _PickerPage(
-                                    controller: controller,
-                                  ),
-                                  AppSection.ruler => _RulerPage(
-                                    controller: controller,
-                                  ),
-                                  AppSection.image => _ImageWorkspace(
-                                    controller: controller,
-                                  ),
-                                  AppSection.settings => _SettingsPage(
-                                    controller: controller,
-                                  ),
-                                },
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                        _Footer(controller: controller),
-                      ],
+                          _Footer(controller: controller),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -257,7 +268,7 @@ class _Sidebar extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(left: 10),
           child: Text(
-            'macOS  ·  v0.7.0',
+            'macOS  ·  v0.8.0',
             style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
           ),
         ),
@@ -421,6 +432,20 @@ class _PickerPage extends StatelessWidget {
               icon: const Icon(Icons.tune, size: 16),
               label: const Text('编辑颜色'),
             ),
+            OutlinedButton.icon(
+              onPressed: controller.busy
+                  ? null
+                  : () => _manageColorOutputs(context, controller),
+              icon: const Icon(Icons.format_paint_outlined, size: 16),
+              label: const Text('颜色格式'),
+            ),
+            OutlinedButton.icon(
+              onPressed: controller.busy
+                  ? null
+                  : () => _configurePicker(context, controller),
+              icon: const Icon(Icons.mouse_outlined, size: 16),
+              label: const Text('取色设置'),
+            ),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -501,12 +526,12 @@ class _PickerPage extends StatelessWidget {
                           style: TextStyle(color: _muted, fontSize: 10),
                         ),
                         const SizedBox(height: 14),
-                        for (final f in ColorFormat.values)
+                        for (final f in controller.enabledColorOutputs)
                           _ColorRow(
                             format: f,
-                            value: color.formatted(f),
+                            value: f.render(color),
                             onCopy: () {
-                              controller.setFormat(f);
+                              controller.selectColorOutput(f.id);
                               controller.copyColor();
                             },
                           ),
@@ -522,11 +547,11 @@ class _PickerPage extends StatelessWidget {
                               '自动复制',
                               style: TextStyle(fontSize: 10, color: _muted),
                             ),
-                            for (final f in ColorFormat.values)
+                            for (final f in controller.enabledColorOutputs)
                               _Chip(
-                                label: f.label,
-                                selected: controller.format == f,
-                                onTap: () => controller.setFormat(f),
+                                label: f.name,
+                                selected: controller.selectedOutputId == f.id,
+                                onTap: () => controller.selectColorOutput(f.id),
                               ),
                           ],
                         ),
@@ -585,7 +610,7 @@ class _ColorRow extends StatelessWidget {
     required this.value,
     required this.onCopy,
   });
-  final ColorFormat format;
+  final ColorOutput format;
   final String value;
   final VoidCallback onCopy;
   @override
@@ -597,9 +622,11 @@ class _ColorRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 48,
+            width: 68,
             child: Text(
-              format.label,
+              format.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 9, color: _muted),
             ),
           ),
@@ -855,7 +882,7 @@ class _SettingsPage extends StatelessWidget {
       const SizedBox(height: 20),
       const _Hint(
         icon: Icons.layers_outlined,
-        text: 'fruler 0.7.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
+        text: 'fruler 0.8.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
       ),
     ],
   );

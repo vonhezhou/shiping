@@ -684,6 +684,161 @@ class AppController extends ChangeNotifier {
   List<MeasurementRecord> get measurements => List.unmodifiable(_measurements);
   RulerMode mode = RulerMode.rectangle;
   ColorFormat format = ColorFormat.hex;
+  final List<ColorOutput> _colorOutputs = List.of(ColorOutput.defaults);
+  List<ColorOutput> get colorOutputs => List.unmodifiable(_colorOutputs);
+  List<ColorOutput> get enabledColorOutputs =>
+      _colorOutputs.where((e) => e.enabled).toList();
+  String selectedOutputId = 'hex';
+  ColorOutput get activeColorOutput => enabledColorOutputs.firstWhere(
+    (e) => e.id == selectedOutputId,
+    orElse: () => enabledColorOutputs.first,
+  );
+  String formatColor(RgbColor color) => activeColorOutput.render(color);
+  PickerBehavior pickerBehavior = const PickerBehavior();
+  RgbColor? pendingPickedEditorColor;
+  bool colorEditorActive = false;
+  bool _openingColorEditor = false;
+  RgbColor? takePickedEditorColor() {
+    final color = pendingPickedEditorColor;
+    pendingPickedEditorColor = null;
+    if (color != null) colorEditorActive = true;
+    return color;
+  }
+
+  void finishPickedEditor() {
+    colorEditorActive = false;
+  }
+
+  void selectColorOutput(String id) {
+    if (!enabledColorOutputs.any((e) => e.id == id)) return;
+    selectedOutputId = id;
+    format =
+        ColorFormat.values.where((e) => e.name == id).firstOrNull ?? format;
+    _persist();
+    _notify();
+  }
+
+  bool saveColorOutput({
+    String? id,
+    required String name,
+    required String template,
+  }) {
+    try {
+      if (id == null && _colorOutputs.length >= 24) {
+        throw const FormatException('最多保留 24 种颜色格式');
+      }
+      name = name.trim();
+      if (_colorOutputs.any(
+        (e) => e.id != id && e.name.toLowerCase() == name.toLowerCase(),
+      )) {
+        throw const FormatException('格式名称不能重复');
+      }
+      var index = 1;
+      while (_colorOutputs.any((e) => e.id == 'custom-$index')) {
+        index++;
+      }
+      final old = _colorOutputs.where((e) => e.id == id).firstOrNull;
+      if (id != null && old == null) return false;
+      final value = ColorOutput(
+        id: id ?? 'custom-$index',
+        name: name,
+        template: template,
+        enabled: old?.enabled ?? true,
+      );
+      value.validate();
+      if (old == null) {
+        _colorOutputs.add(value);
+      } else {
+        _colorOutputs[_colorOutputs.indexOf(old)] = value;
+      }
+      _persist();
+      _notify();
+      return true;
+    } on FormatException catch (e) {
+      _fail(e.message);
+      return false;
+    }
+  }
+
+  bool enableColorOutput(String id, bool enabled) {
+    final index = _colorOutputs.indexWhere((e) => e.id == id);
+    if (index < 0) return false;
+    if (!enabled &&
+        enabledColorOutputs.length == 1 &&
+        _colorOutputs[index].enabled) {
+      _fail('至少保留一种启用的颜色格式');
+      return false;
+    }
+    _colorOutputs[index] = _colorOutputs[index].copyWith(enabled: enabled);
+    _ensureActiveOutput();
+    _persist();
+    _notify();
+    return true;
+  }
+
+  bool deleteColorOutput(String id) {
+    final entry = _colorOutputs.where((e) => e.id == id).firstOrNull;
+    if (entry == null) return false;
+    if (entry.enabled && enabledColorOutputs.length == 1) {
+      _fail('至少保留一种启用的颜色格式');
+      return false;
+    }
+    _colorOutputs.remove(entry);
+    _ensureActiveOutput();
+    _persist();
+    _notify();
+    return true;
+  }
+
+  void moveColorOutput(String id, int delta) {
+    final from = _colorOutputs.indexWhere((e) => e.id == id);
+    final to = from + delta;
+    if (from < 0 || to < 0 || to >= _colorOutputs.length) return;
+    _colorOutputs.insert(to, _colorOutputs.removeAt(from));
+    _persist();
+    _notify();
+  }
+
+  void _ensureActiveOutput() {
+    if (!enabledColorOutputs.any((e) => e.id == selectedOutputId)) {
+      selectedOutputId = enabledColorOutputs.first.id;
+      format =
+          ColorFormat.values
+              .where((e) => e.name == selectedOutputId)
+              .firstOrNull ??
+          format;
+    }
+  }
+
+  void setPickerBehavior(PickerBehavior value) {
+    pickerBehavior = value;
+    continuousPicker = value.primary == PickerMouseAction.pickAndContinue;
+    _persist();
+    if (_session != null) _redraw();
+    _notify();
+  }
+
+  Future<void> _openPickedEditor(RgbColor color) async {
+    if (_disposed ||
+        colorEditorActive ||
+        _openingColorEditor ||
+        pendingPickedEditorColor != null) {
+      return;
+    }
+    _openingColorEditor = true;
+    try {
+      await desktop.showMainWindow();
+      if (_disposed) return;
+      section = AppSection.picker;
+      pendingPickedEditorColor = color;
+      _notify();
+    } catch (e) {
+      _fail('无法打开颜色编辑器：${_message(e)}');
+    } finally {
+      _openingColorEditor = false;
+    }
+  }
+
   int tolerance = 16;
   int zoom = CaptureControls.defaultZoom;
   ShortcutBindings shortcuts = ShortcutBindings.defaults;
@@ -774,9 +929,8 @@ class AppController extends ChangeNotifier {
   }
 
   void setFormat(ColorFormat value) {
-    format = value;
-    _notify();
-    _persist();
+    if (!enabledColorOutputs.any((e) => e.id == value.name)) return;
+    selectColorOutput(value.name);
   }
 
   void setTolerance(int value) {
@@ -818,7 +972,27 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> pickColor() {
-    if (busy) return Future.value();
+    if (busy ||
+        initializing ||
+        recordingShortcut ||
+        savingShortcuts ||
+        colorEditorActive ||
+        _openingColorEditor ||
+        pendingPickedEditorColor != null) {
+      return Future.value();
+    }
+    _contrastTarget = null;
+    _contrastPair = false;
+    if (pickerBehavior.activation == PickerActivation.editor) {
+      return _openPickedEditor(selectedColor);
+    }
+    return _begin('picker');
+  }
+
+  Future<void> pickNewColor() {
+    if (busy || initializing || recordingShortcut || savingShortcuts) {
+      return Future.value();
+    }
     _contrastTarget = null;
     _contrastPair = false;
     return _begin('picker');
@@ -1160,6 +1334,9 @@ class AppController extends ChangeNotifier {
     'tolerance': tolerance,
     'zoom': zoom,
     'continuous': _contrastTarget == null && continuousPicker,
+    'pickerActions': _contrastTarget == null
+        ? '左键：${pickerBehavior.primary.label} · 中键：${pickerBehavior.middle.label} · 右键：${pickerBehavior.secondary.label}'
+        : '左键 / Enter 确认 · 右键取消',
     'capturePurpose': _contrastTarget == null
         ? ''
         : (_contrastTarget == 'foreground' ? '选取前景色' : '选取背景色'),
@@ -1263,7 +1440,16 @@ class AppController extends ChangeNotifier {
     });
     if (phase != 'up' || _editingPins) return;
     if (_tool == 'picker') {
-      unawaited(_commitColor(color));
+      final button = event['button'] as String? ?? 'primary';
+      if (_imageSession && button != 'primary') return;
+      final action = _imageSession
+          ? PickerMouseAction.pickAndContinue
+          : _contrastTarget != null
+          ? (button == 'secondary'
+                ? PickerMouseAction.cancel
+                : PickerMouseAction.pickAndClose)
+          : pickerBehavior.forButton(button);
+      unawaited(_commitColor(color, action: action));
     } else if (measurement != null &&
         measurement.rect.width > 0 &&
         measurement.rect.height > 0) {
@@ -1281,8 +1467,25 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> _commitColor(RgbColor color) async {
+  Future<void> _commitColor(
+    RgbColor color, {
+    required PickerMouseAction action,
+  }) async {
     final sessionId = _session!.id;
+    if (action == PickerMouseAction.cancel) {
+      _committing = true;
+      try {
+        await desktop.finish(sessionId);
+        notice = '已取消取色';
+        error = null;
+      } catch (e) {
+        _fail('无法关闭取色浮层：${_message(e)}');
+      } finally {
+        if (_session?.id == sessionId) _resetSession();
+        _notify();
+      }
+      return;
+    }
     _committing = true;
     selectedColor = color;
     _rememberColor(color);
@@ -1295,13 +1498,13 @@ class AppController extends ChangeNotifier {
         _committing = false;
         _redraw();
       } else {
-        await _complete(color.formatted(format));
+        await _complete(formatColor(color));
       }
       return;
     }
-    if (continuousPicker || _imageSession) {
+    if (action == PickerMouseAction.pickAndContinue || _imageSession) {
       try {
-        await desktop.writeClipboard(color.formatted(format));
+        await desktop.writeClipboard(formatColor(color));
         if (_session?.id == sessionId) {
           notice = _imageSession
               ? '已从图片复制 ${color.hex}'
@@ -1319,7 +1522,10 @@ class AppController extends ChangeNotifier {
         _notify();
       }
     } else {
-      await _complete(color.formatted(format));
+      await _complete(formatColor(color));
+      if (action == PickerMouseAction.pickAndEdit && !busy) {
+        await _openPickedEditor(color);
+      }
     }
   }
 
@@ -1635,12 +1841,13 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void setContinuousPicker(bool value) {
-    continuousPicker = value;
-    _persist();
-    if (_session != null) _redraw();
-    _notify();
-  }
+  void setContinuousPicker(bool value) => setPickerBehavior(
+    pickerBehavior.copyWith(
+      primary: value
+          ? PickerMouseAction.pickAndContinue
+          : PickerMouseAction.pickAndClose,
+    ),
+  );
 
   void _rememberColor(RgbColor color) {
     _colors.remove(color);
@@ -1854,7 +2061,7 @@ class AppController extends ChangeNotifier {
   Future<void> copyColor([RgbColor? color]) async {
     final value = color ?? selectedColor;
     selectedColor = value;
-    await _copy(value.formatted(format));
+    await _copy(formatColor(value));
   }
 
   Future<void> copyMeasurement(MeasurementRecord record) => _copy(record.label);
@@ -1885,6 +2092,9 @@ class AppController extends ChangeNotifier {
     final json = jsonEncode({
       'version': 1,
       'format': format.name,
+      'colorOutputs': _colorOutputs.map((e) => e.toJson()).toList(),
+      'selectedOutputId': selectedOutputId,
+      'pickerBehavior': pickerBehavior.toJson(),
       'mode': mode.name,
       'tolerance': tolerance,
       'zoom': zoom,
@@ -1923,6 +2133,45 @@ class AppController extends ChangeNotifier {
         notice = '快捷键配置无效，已恢复默认值。';
       }
       continuousPicker = data['continuousPicker'] == true;
+      selectedOutputId = format.name;
+      if (data['colorOutputs'] is List) {
+        final restored = <ColorOutput>[];
+        for (final value in (data['colorOutputs'] as List).take(24)) {
+          try {
+            final output = ColorOutput.fromJson(value);
+            if (!restored.any(
+              (e) =>
+                  e.id == output.id ||
+                  e.name.toLowerCase() == output.name.toLowerCase(),
+            )) {
+              restored.add(output);
+            }
+          } catch (_) {
+            /* Keep other valid formats and history. */
+          }
+        }
+        if (restored.any((e) => e.enabled)) {
+          _colorOutputs
+            ..clear()
+            ..addAll(restored);
+        }
+        selectedOutputId = data['selectedOutputId'] is String
+            ? data['selectedOutputId'] as String
+            : selectedOutputId;
+      }
+      _ensureActiveOutput();
+      pickerBehavior = PickerBehavior(
+        primary: continuousPicker
+            ? PickerMouseAction.pickAndContinue
+            : PickerMouseAction.pickAndClose,
+      );
+      try {
+        if (data['pickerBehavior'] != null) {
+          pickerBehavior = PickerBehavior.fromJson(data['pickerBehavior']);
+        }
+      } catch (_) {}
+      continuousPicker =
+          pickerBehavior.primary == PickerMouseAction.pickAndContinue;
       try {
         contrastForeground = RgbColor.fromJson(data['contrastForeground']);
       } catch (_) {}

@@ -43,6 +43,7 @@ abstract class DesktopService {
   Future<DesktopStatus> initialize();
   Future<bool> requestPermission();
   Future<void> openPrivacySettings();
+  Future<void> showMainWindow();
   Future<CaptureSession> begin(String tool);
   Future<void> updateOverlay(Map<String, Object?> data);
   Future<void> finish(int sessionId);
@@ -89,6 +90,9 @@ class MacDesktopService implements DesktopService {
     );
   }
 
+  @override
+  Future<void> showMainWindow() =>
+      _methods.invokeMethod<void>('showMainWindow');
   @override
   Future<bool> requestPermission() async =>
       await _methods.invokeMethod<bool>('requestPermission') ?? false;
@@ -233,6 +237,8 @@ class MacDesktopService implements DesktopService {
 }
 
 class UnsupportedDesktopService implements DesktopService {
+  @override
+  Future<void> showMainWindow() async {}
   @override
   Future<void> replyToQuit(bool allow) async {}
   @override

@@ -7,3 +7,4 @@ export 'capture_controls.dart';
 export 'palette.dart';
 export 'contrast.dart';
 export 'image_project.dart';
+export 'color_output.dart';

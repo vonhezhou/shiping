@@ -209,6 +209,8 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       }
     case "requestPermission":
       result(CGRequestScreenCaptureAccess())
+    case "showMainWindow":
+      showMainWindow(); result(nil)
     case "openPrivacySettings":
       if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
         NSWorkspace.shared.open(url)
@@ -746,6 +748,7 @@ private final class CaptureOverlayView: NSView {
   private var pins: [(id: Int, rect: NSRect, label: String)] = []
   private var continuous = false
   private var pickedCount = 0
+  private var pickerActions = "左键取色 · 右键取消"
   private var editingPins = false
   private var selectedPin: Int?
   private var pinDrag: (id: Int, start: NSPoint, handle: String)?
@@ -790,7 +793,10 @@ private final class CaptureOverlayView: NSView {
   override func mouseDown(with event: NSEvent) { window?.makeKey(); send(event, phase: "down") }
   override func mouseDragged(with event: NSEvent) { send(event, phase: "drag") }
   override func mouseUp(with event: NSEvent) { send(event, phase: "up") }
-  override func rightMouseDown(with event: NSEvent) { onCancel?() }
+  override func rightMouseDown(with event: NSEvent) { if tool == "picker" { send(event,phase:"down") } else { onCancel?() } }
+  override func rightMouseUp(with event: NSEvent) { if tool == "picker" { send(event,phase:"up") } }
+  override func otherMouseDown(with event: NSEvent) { if tool == "picker", event.buttonNumber == 2 { send(event,phase:"down") } }
+  override func otherMouseUp(with event: NSEvent) { if tool == "picker", event.buttonNumber == 2 { send(event,phase:"up") } }
   override func keyDown(with event: NSEvent) {
     switch Int(event.keyCode) {
     case kVK_Escape: onCancel?()
@@ -852,7 +858,8 @@ private final class CaptureOverlayView: NSView {
     isPointerActive = true
     needsDisplay = true
     onEvent?(["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": phase,
-      "keep": event.modifierFlags.contains(.shift)])
+      "keep": event.modifierFlags.contains(.shift),
+      "button": event.buttonNumber == 1 ? "secondary" : event.buttonNumber == 2 ? "middle" : "primary"])
   }
   private func resizeHandle(_ rect: NSRect, at point: NSPoint) -> String? {
     let handles: [(String, NSPoint)] = [
@@ -898,6 +905,7 @@ private final class CaptureOverlayView: NSView {
   func updateOptions(_ data: [String: Any]) {
     if let value = data["tool"] as? String { tool = value }
     capturePurpose = data["capturePurpose"] as? String ?? ""
+    pickerActions = data["pickerActions"] as? String ?? pickerActions
     if let value = data["tolerance"] as? Int { tolerance = value }
     if let value = data["zoom"] as? Int { zoom = value }
     if let value = data["continuous"] as? Bool { continuous = value }
@@ -1128,8 +1136,8 @@ private final class CaptureOverlayView: NSView {
   }
 
   private func drawLoupe() {
-    let width: CGFloat = 300
-    let height: CGFloat = tool == "picker" ? 170 : 64
+    let width: CGFloat = tool == "picker" ? 380 : 300
+    let height: CGFloat = tool == "picker" ? 208 : 64
     var x = pointer.x + 26
     var y = pointer.y + 26
     if x + width > bounds.width - 12 { x = pointer.x - width - 26 }
@@ -1161,15 +1169,16 @@ private final class CaptureOverlayView: NSView {
         NSGraphicsContext.restoreGraphicsState()
       }
       selectedColor.setFill()
-      NSBezierPath(roundedRect: NSRect(x: box.minX + 130, y: box.minY + 12, width: 154, height: 99), xRadius: 7, yRadius: 7).fill()
+      NSBezierPath(roundedRect: NSRect(x: box.minX + 130, y: box.minY + 12, width: width - 146, height: 99), xRadius: 7, yRadius: 7).fill()
     }
     let labelY = tool == "picker" ? box.minY + 122 : box.minY + 12
     (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
       .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
     let hint = tool == "rectangle" ? (anchored ? "Enter 确认 · Shift 保留 · 方向键微调" : "拖拽 / Enter 定起点 · 方向键微调") :
       (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
-    (hint as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 21), withAttributes: [
-      .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.gray])
+    let actionHint = tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
+    (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y:labelY+21,width:width-28,height:60),withAttributes:[
+      .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }
 
 

@@ -82,6 +82,12 @@ class FakeDesktop extends DesktopService {
     quitAllowed = allow;
   }
 
+  int showMainCalls = 0;
+  @override
+  Future<void> showMainWindow() async {
+    showMainCalls++;
+  }
+
   ImageFileData? imageFile;
   Uint8List? exportedImage;
   @override
@@ -164,6 +170,7 @@ class FakeDesktop extends DesktopService {
     int session = 7,
     int display = 1,
     bool keep = false,
+    String button = 'primary',
   }) => input.add({
     'type': 'pointer',
     'sessionId': session,
@@ -172,6 +179,7 @@ class FakeDesktop extends DesktopService {
     'y': y,
     'phase': phase,
     'keep': keep,
+    'button': button,
   });
   @override
   Future<void> updateOverlay(Map<String, Object?> data) async {
