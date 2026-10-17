@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,6 +8,7 @@ import '../core/core.dart';
 
 part 'palette_widgets.dart';
 part 'v4_widgets.dart';
+part 'v5_widgets.dart';
 
 const _background = Color(0xFF111315);
 const _panel = Color(0xFF1B1E21);
@@ -31,6 +34,11 @@ class FrulerApp extends StatelessWidget {
         onPrimary: Color(0xFF182008),
         onSurface: Color(0xFFF1F3EF),
         outline: _line,
+      ),
+      chipTheme: ChipThemeData(
+        selectedColor: _accent.withValues(alpha: .22),
+        checkmarkColor: _accent,
+        side: const BorderSide(color: _line),
       ),
       fontFamily: 'PingFang SC',
       textTheme: const TextTheme(
@@ -71,6 +79,7 @@ class FrulerApp extends StatelessWidget {
                   _TopBar(controller: controller),
                   Expanded(
                     child: SingleChildScrollView(
+                      key: PageStorageKey(controller.section),
                       padding: const EdgeInsets.fromLTRB(34, 29, 34, 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -81,7 +90,8 @@ class FrulerApp extends StatelessWidget {
                             const SizedBox(height: 20),
                           ],
                           if (!controller.permissionGranted &&
-                              !controller.initializing) ...[
+                              !controller.initializing &&
+                              controller.section != AppSection.image) ...[
                             _PermissionBanner(controller: controller),
                             const SizedBox(height: 24),
                           ],
@@ -90,6 +100,9 @@ class FrulerApp extends StatelessWidget {
                               controller: controller,
                             ),
                             AppSection.ruler => _RulerPage(
+                              controller: controller,
+                            ),
+                            AppSection.image => _ImageWorkspace(
                               controller: controller,
                             ),
                             AppSection.settings => _SettingsPage(
@@ -159,6 +172,8 @@ class _Sidebar extends StatelessWidget {
         _nav(AppSection.picker, Icons.colorize_rounded, '取色器', '01'),
         const SizedBox(height: 6),
         _nav(AppSection.ruler, Icons.straighten_rounded, '屏幕尺子', '02'),
+        const SizedBox(height: 6),
+        _nav(AppSection.image, Icons.image_outlined, '图片工作区', '03'),
         const Spacer(),
         _nav(AppSection.settings, Icons.tune_rounded, '偏好设置', ''),
         const SizedBox(height: 20),
@@ -194,7 +209,7 @@ class _Sidebar extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(left: 10),
           child: Text(
-            'macOS  ·  v0.4.0',
+            'macOS  ·  v0.5.0',
             style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
           ),
         ),
@@ -262,6 +277,7 @@ class _TopBar extends StatelessWidget {
         Text(switch (controller.section) {
           AppSection.picker => '取色器',
           AppSection.ruler => '屏幕尺子',
+          AppSection.image => '图片工作区',
           AppSection.settings => '偏好设置',
         }, style: const TextStyle(fontSize: 11)),
         const Spacer(),
@@ -503,14 +519,7 @@ class _PickerPage extends StatelessWidget {
           subtitle: '${controller.palette.length} 色 · 收藏与命名',
         ),
         const SizedBox(height: 14),
-        if (controller.palette.isEmpty)
-          const _Empty(
-            icon: Icons.bookmark_border,
-            title: '留下值得复用的颜色',
-            description: '在色卡菜单中收藏或命名，颜色会保留在调色板中。',
-          )
-        else
-          _ColorGrid(controller: controller, saved: true),
+        _GroupedPalette(controller: controller),
         const SizedBox(height: 12),
         _ExportColors(controller: controller, saved: true),
         const SizedBox(height: 12),

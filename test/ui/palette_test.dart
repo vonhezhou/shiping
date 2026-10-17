@@ -52,7 +52,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('命名颜色'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField), '品牌主色');
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextFormField),
+      ),
+      '品牌主色',
+    );
     await tester.tap(find.text('保存名称'));
     await tester.pumpAndSettle();
     expect(controller.palette.single.name, '品牌主色');

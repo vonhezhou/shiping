@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:fruler/core/core.dart';
+import 'package:fruler/platform/image_document.dart';
 import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
@@ -24,6 +25,16 @@ class FakeDesktop extends DesktopService {
 
   void event(String type, [Map<String, Object?> data = const {}]) =>
       input.add({'type': type, 'sessionId': 7, ...data});
+  ImageFileData? imageFile;
+  Uint8List? exportedImage;
+  @override
+  Future<ImageFileData?> openImageFile() async => imageFile;
+  @override
+  Future<bool> exportImage(Uint8List png, {required bool save}) async {
+    exportedImage = png;
+    return fileResult;
+  }
+
   String? importText;
   @override
   Future<String?> openPaletteFile() async => importText;

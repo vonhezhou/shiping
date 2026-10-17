@@ -203,7 +203,7 @@ class _PaletteTools extends StatelessWidget {
                   '${entries.length} 色 · $conflicts 个已有颜色 · $duplicateNames 个与现有调色板同名的不同颜色',
                 ),
                 const Text(
-                  '按 RGB 去重；不同颜色的同名条目均保留。已有颜色的名称和收藏按以下规则合并。',
+                  '按 RGB 去重；不同颜色的同名条目均保留。已有颜色的名称、收藏和分组按以下规则合并。',
                   style: TextStyle(color: _muted, fontSize: 11),
                 ),
                 const SizedBox(height: 12),
@@ -213,11 +213,11 @@ class _PaletteTools extends StatelessWidget {
                   items: const [
                     DropdownMenuItem(
                       value: PaletteMerge.keepExisting,
-                      child: Text('相同颜色：保留已有名称和收藏'),
+                      child: Text('相同颜色：保留已有名称、收藏和分组'),
                     ),
                     DropdownMenuItem(
                       value: PaletteMerge.useImported,
-                      child: Text('相同颜色：使用导入的名称和收藏'),
+                      child: Text('相同颜色：使用导入的名称、收藏和分组'),
                     ),
                   ],
                   onChanged: (v) => setState(() => policy = v!),
@@ -236,7 +236,7 @@ class _PaletteTools extends StatelessWidget {
                             color: _rgbPaint(entry.color),
                           ),
                           title: Text(
-                            '${entry.name.isEmpty ? '未命名' : entry.name} · ${entry.color.hex}',
+                            '${entry.name.isEmpty ? '未命名' : entry.name} · ${entry.color.hex} · ${entry.group.isEmpty ? '未分组' : entry.group}',
                           ),
                           subtitle: controller.paletteEntry(entry.color) == null
                               ? null
@@ -285,7 +285,7 @@ class _PaletteTools extends StatelessWidget {
                     TextButton(
                       onPressed: () => setState(
                         () => selected.addAll(
-                          controller.palette.map((e) => e.color),
+                          controller.visiblePalette.map((e) => e.color),
                         ),
                       ),
                       child: const Text('全选'),
@@ -300,7 +300,7 @@ class _PaletteTools extends StatelessWidget {
                   height: 240,
                   child: ListView(
                     children: [
-                      for (final entry in controller.palette)
+                      for (final entry in controller.visiblePalette)
                         CheckboxListTile(
                           value: selected.contains(entry.color),
                           title: Text(
@@ -356,7 +356,9 @@ class _PaletteTools extends StatelessWidget {
         label: const Text('导入 JSON'),
       ),
       OutlinedButton.icon(
-        onPressed: controller.palette.isEmpty ? null : () => _batch(context),
+        onPressed: controller.visiblePalette.isEmpty
+            ? null
+            : () => _batch(context),
         icon: const Icon(Icons.copy_all_outlined, size: 16),
         label: const Text('批量复制'),
       ),
@@ -440,7 +442,7 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(
-                  '${r.measurement.pointLabel} · ${_modeLabels[r.measurement.mode]} · ${r.displayName}\n缩放 ${r.scaleX.toStringAsFixed(2)} × ${r.scaleY.toStringAsFixed(2)} · ${r.createdAt.toLocal().toString().split('.').first}',
+                  '${r.imageSource ? '原图像素' : r.measurement.pointLabel} · ${_modeLabels[r.measurement.mode]} · ${r.displayName}\n缩放 ${r.scaleX.toStringAsFixed(2)} × ${r.scaleY.toStringAsFixed(2)} · ${r.createdAt.toLocal().toString().split('.').first}',
                   style: const TextStyle(fontSize: 11, color: _muted),
                 ),
                 isThreeLine: true,

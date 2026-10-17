@@ -6,8 +6,9 @@ import 'package:flutter/services.dart';
 
 import '../core/core.dart';
 import '../platform/desktop_service.dart';
+import '../platform/image_document.dart';
 
-enum AppSection { picker, ruler, settings }
+enum AppSection { picker, ruler, image, settings }
 
 class MeasurementRecord {
   const MeasurementRecord({
@@ -16,12 +17,14 @@ class MeasurementRecord {
     required this.displayName,
     this.name = '',
     this.favorite = false,
+    this.imageSource = false,
   });
   final RulerMeasurement measurement;
   final DateTime createdAt;
   final String displayName;
   final String name;
   final bool favorite;
+  final bool imageSource;
   double get scaleX => measurement.rect.width / measurement.logicalWidth;
   double get scaleY => measurement.rect.height / measurement.logicalHeight;
   MeasurementRecord copyWith({String? name, bool? favorite}) =>
@@ -31,9 +34,10 @@ class MeasurementRecord {
         displayName: displayName,
         name: name ?? this.name,
         favorite: favorite ?? this.favorite,
+        imageSource: imageSource,
       );
 
-  String get label => measurement.label;
+  String get label => imageSource ? measurement.pixelLabel : measurement.label;
 
   Map<String, Object?> toJson() => {
     'rect': measurement.rect.toJson(),
@@ -44,6 +48,7 @@ class MeasurementRecord {
     'displayName': displayName,
     'name': name,
     'favorite': favorite,
+    'imageSource': imageSource,
   };
 
   factory MeasurementRecord.fromJson(Map<String, dynamic> json) {
@@ -75,18 +80,183 @@ class MeasurementRecord {
       displayName: json['displayName'] as String,
       name: json['name'] is String ? json['name'] as String : '',
       favorite: json['favorite'] == true,
+      imageSource: json['imageSource'] == true,
     );
   }
 }
 
 class AppController extends ChangeNotifier {
-  AppController(this.desktop);
+  AppController(this.desktop, {ImageDocumentCodec? imageCodec})
+    : imageCodec = imageCodec ?? ImageDocumentCodec();
+  final ImageDocumentCodec imageCodec;
   final DesktopService desktop;
+  ImageDocument? imageDocument;
+  Map<String, Object?> imageOverlay = {};
+  bool imageLoading = false;
+  bool _imageSession = false;
+  int _nextImageSession = -1;
+  bool get imageSessionActive => _imageSession;
+  String get imageTool => _imageSession ? _tool ?? 'picker' : 'picker';
+  Future<void> openImage() async {
+    if (busy || imageLoading) return;
+    imageLoading = true;
+    _notify();
+    try {
+      final file = await desktop.openImageFile();
+      imageLoading = false;
+      if (file != null) await loadImage(file);
+    } catch (e) {
+      _fail(e is FormatException ? e.message : _message(e));
+    } finally {
+      imageLoading = false;
+      _notify();
+    }
+  }
+
+  Future<void> loadImage(ImageFileData file) async {
+    if (busy || imageLoading || _disposed) return;
+    imageLoading = true;
+    error = null;
+    _notify();
+    try {
+      final document = await imageCodec.decode(file);
+      if (_disposed) return;
+      if (_imageSession) _resetSession();
+      imageDocument = document;
+      section = AppSection.image;
+      useImageTool('picker');
+      notice = '图片已打开：${document.name}';
+    } catch (e) {
+      _fail(e is FormatException ? e.message : '无法读取图片，请检查格式或文件内容');
+    } finally {
+      imageLoading = false;
+      _notify();
+    }
+  }
+
+  void useImageTool(String tool) {
+    if (busy ||
+        imageDocument == null ||
+        !['picker', ...RulerMode.values.map((e) => e.name)].contains(tool)) {
+      return;
+    }
+    if (!_imageSession) {
+      _resetSession();
+      _imageSession = true;
+      _session = CaptureSession(_nextImageSession--, [
+        CapturedDisplay(
+          id: 0,
+          name: '图片：${imageDocument!.name}',
+          frame: imageDocument!.frame,
+        ),
+      ]);
+    }
+    _tool = tool;
+    _contrastTarget = null;
+    _contrastPair = false;
+    if (tool != 'picker') mode = RulerMode.values.byName(tool);
+    _anchor = null;
+    _anchorDisplay = null;
+    _editingPins = false;
+    _keyboardRectangle = false;
+    section = AppSection.image;
+    _redraw();
+    _notify();
+  }
+
+  void imageEvent(String type, [Map<String, Object?> data = const {}]) {
+    if (!_imageSession) return;
+    _event({'type': type, 'sessionId': _session!.id, 'displayId': 0, ...data});
+  }
+
+  void closeImage() {
+    if (_imageSession) _resetSession();
+    imageDocument = null;
+    imageOverlay = {};
+    _notify();
+  }
+
   AppSection section = AppSection.picker;
   RgbColor selectedColor = const RgbColor(215, 250, 107);
   final List<RgbColor> _colors = [];
   final List<PaletteEntry> _palette = [];
   List<PaletteEntry> get palette => List.unmodifiable(_palette);
+  final List<String> _paletteGroups = [];
+  List<String> get paletteGroups => List.unmodifiable(_paletteGroups);
+  String? selectedPaletteGroup;
+  String paletteQuery = '';
+  List<PaletteEntry> get visiblePalette => _palette
+      .where(
+        (e) =>
+            (selectedPaletteGroup == null || e.group == selectedPaletteGroup) &&
+            '${e.name} ${e.color.hex} ${e.group}'.toLowerCase().contains(
+              paletteQuery.trim().toLowerCase(),
+            ),
+      )
+      .toList();
+  void filterPalette({String? query, String? group, bool setGroup = false}) {
+    if (query != null) paletteQuery = query;
+    if (setGroup) selectedPaletteGroup = group;
+    _notify();
+  }
+
+  bool createPaletteGroup(String name) {
+    name = name.trim();
+    if (name.isEmpty || name.length > 60 || _paletteGroups.contains(name)) {
+      _fail('分组名称需为 1–60 个字符，且不能重复');
+      return false;
+    }
+    _paletteGroups.add(name);
+    _persist();
+    _notify();
+    return true;
+  }
+
+  bool renamePaletteGroup(String old, String name) {
+    name = name.trim();
+    if (old == name) return true;
+    if (!_paletteGroups.contains(old) ||
+        name.isEmpty ||
+        name.length > 60 ||
+        _paletteGroups.contains(name)) {
+      _fail('分组名称需为 1–60 个字符，且不能重复');
+      return false;
+    }
+    _paletteGroups[_paletteGroups.indexOf(old)] = name;
+    for (var i = 0; i < _palette.length; i++) {
+      if (_palette[i].group == old) {
+        _palette[i] = _palette[i].copyWith(group: name);
+      }
+    }
+    if (selectedPaletteGroup == old) selectedPaletteGroup = name;
+    _persist();
+    _notify();
+    return true;
+  }
+
+  void dissolvePaletteGroup(String group) {
+    if (!_paletteGroups.remove(group)) return;
+    for (var i = 0; i < _palette.length; i++) {
+      if (_palette[i].group == group) {
+        _palette[i] = _palette[i].copyWith(group: '');
+      }
+    }
+    if (selectedPaletteGroup == group) selectedPaletteGroup = '';
+    _persist();
+    _notify();
+  }
+
+  void reorderPalette(RgbColor source, RgbColor target) {
+    if (paletteQuery.trim().isNotEmpty) return;
+    final from = _palette.indexWhere((e) => e.color == source),
+        to = _palette.indexWhere((e) => e.color == target);
+    if (from < 0 || to < 0 || from == to) return;
+    final entry = _palette.removeAt(from);
+    _palette.insert(to, entry);
+    _persist();
+    _notify();
+  }
+
   bool continuousPicker = false;
   RgbColor contrastForeground = const RgbColor(0, 0, 0);
   RgbColor contrastBackground = const RgbColor(255, 255, 255);
@@ -167,6 +337,12 @@ class AppController extends ChangeNotifier {
 
   void selectSection(AppSection value) {
     section = value;
+    if (value == AppSection.image &&
+        imageDocument != null &&
+        !_imageSession &&
+        !busy) {
+      useImageTool('picker');
+    }
     _notify();
   }
 
@@ -266,6 +442,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> _begin(String tool) async {
     if (busy ||
+        imageLoading ||
         initializing ||
         recordingShortcut ||
         savingShortcuts ||
@@ -276,6 +453,7 @@ class AppController extends ChangeNotifier {
       _fail('当前版本仅支持 macOS 14 及以上。');
       return;
     }
+    if (_imageSession) _resetSession();
     busy = true;
     _tool = tool;
     _committing = false;
@@ -322,6 +500,21 @@ class AppController extends ChangeNotifier {
   void _event(Map<Object?, Object?> event) {
     if (_disposed) return;
     switch (event['type']) {
+      case 'imageDropped':
+        if (event['name'] is String && event['bytes'] is Uint8List) {
+          unawaited(
+            loadImage(
+              ImageFileData(
+                event['name'] as String,
+                event['bytes'] as Uint8List,
+              ),
+            ),
+          );
+        }
+        return;
+      case 'imageDropFailed':
+        _fail(event['message'] as String? ?? '无法读取拖入的图片');
+        return;
       case 'shortcutRecorded':
         if (recordingShortcut) {
           try {
@@ -348,7 +541,7 @@ class AppController extends ChangeNotifier {
         _notify();
         return;
     }
-    if (!busy) return;
+    if (!busy && !_imageSession) return;
     if (_session == null) {
       // Native input may arrive while the capture response crosses the channel.
       if (_pending.length < 128) _pending.add(event);
@@ -517,6 +710,11 @@ class AppController extends ChangeNotifier {
   }
 
   void _updateOverlay(Map<String, Object?> data) {
+    if (_imageSession) {
+      imageOverlay = {...imageOverlay, ...data};
+      _notify();
+      return;
+    }
     unawaited(
       desktop.updateOverlay(data).catchError((Object e) {
         unawaited(_abort(e));
@@ -573,7 +771,8 @@ class AppController extends ChangeNotifier {
     }
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}'
-        : measurement?.label ?? '按住并拖拽，测量矩形区域';
+        : (_imageSession ? measurement?.pixelLabel : measurement?.label) ??
+              '按住并拖拽，测量矩形区域';
     _updateOverlay({
       ..._overlayOptions,
       'displayId': display.id,
@@ -595,7 +794,8 @@ class AppController extends ChangeNotifier {
         _commitMeasurement(
           measurement,
           display,
-          keep: _tool == 'rectangle' && event['keep'] == true,
+          keep:
+              _imageSession || (_tool == 'rectangle' && event['keep'] == true),
         ),
       );
     } else {
@@ -622,11 +822,13 @@ class AppController extends ChangeNotifier {
       }
       return;
     }
-    if (continuousPicker) {
+    if (continuousPicker || _imageSession) {
       try {
         await desktop.writeClipboard(color.formatted(format));
         if (_session?.id == sessionId) {
-          notice = '已连续取色 $_pickedCount 次，Esc 结束';
+          notice = _imageSession
+              ? '已从图片复制 ${color.hex}'
+              : '已连续取色 $_pickedCount 次，Esc 结束';
           error = null;
         }
       } catch (e) {
@@ -657,6 +859,7 @@ class AppController extends ChangeNotifier {
         measurement: measurement,
         createdAt: DateTime.now(),
         displayName: display.name,
+        imageSource: _imageSession,
       ),
     );
     _trimMeasurements();
@@ -672,7 +875,9 @@ class AppController extends ChangeNotifier {
       _anchorDisplay = null;
       _keyboardRectangle = false;
       try {
-        await desktop.writeClipboard(measurement.label);
+        await desktop.writeClipboard(
+          _imageSession ? measurement.pixelLabel : measurement.label,
+        );
         if (_session?.id == sessionId) {
           notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
         }
@@ -789,18 +994,23 @@ class AppController extends ChangeNotifier {
     if (pins.isEmpty) return;
     _committing = true;
     try {
-      final done = await desktop.exportAnnotations(
-        session.id,
-        displayId,
-        pins,
-        save: save,
-      );
-      if (done) {
+      final done = _imageSession && imageDocument != null
+          ? await desktop.exportImage(
+              await imageCodec.renderAnnotations(imageDocument!, pins),
+              save: save,
+            )
+          : await desktop.exportAnnotations(
+              session.id,
+              displayId,
+              pins,
+              save: save,
+            );
+      if (done && _session?.id == session.id) {
         notice = save ? '标注图片已导出' : '标注图片已复制';
         error = null;
       }
     } catch (e) {
-      _fail('标注图片导出失败：${_message(e)}');
+      if (_session?.id == session.id) _fail('标注图片导出失败：${_message(e)}');
     } finally {
       if (_session?.id == session.id) {
         _committing = false;
@@ -819,7 +1029,7 @@ class AppController extends ChangeNotifier {
       if (_session?.id == id) error = '结果已保存，但复制失败：${_message(e)}';
     } finally {
       try {
-        if (id != null) await desktop.finish(id);
+        if (id != null && !_imageSession) await desktop.finish(id);
       } catch (e) {
         if (_session?.id == id) error = '无法关闭测量浮层，请按 Esc：${_message(e)}';
       }
@@ -834,7 +1044,7 @@ class AppController extends ChangeNotifier {
     _committing = true;
     final id = _session?.id;
     try {
-      if (id != null) await desktop.finish(id);
+      if (id != null && !_imageSession) await desktop.finish(id);
     } catch (_) {
       /* Preserve original failure. */
     }
@@ -844,6 +1054,8 @@ class AppController extends ChangeNotifier {
 
   void _resetSession() {
     _session = null;
+    _imageSession = false;
+    imageOverlay = {};
     _tool = null;
     _contrastTarget = null;
     _contrastPair = false;
@@ -949,13 +1161,22 @@ class AppController extends ChangeNotifier {
 
   PaletteEntry? paletteEntry(RgbColor color) =>
       _palette.where((e) => e.color == color).firstOrNull;
-  void savePaletteColor(RgbColor color, {String? name, bool? favorite}) {
+  void savePaletteColor(
+    RgbColor color, {
+    String? name,
+    bool? favorite,
+    String? group,
+  }) {
     final old = paletteEntry(color);
     final entry = PaletteEntry(
       color: color,
       name: name?.trim() ?? old?.name ?? '',
       favorite: favorite ?? old?.favorite ?? false,
+      group: group ?? old?.group ?? selectedPaletteGroup ?? '',
     );
+    if (entry.group.isNotEmpty && !_paletteGroups.contains(entry.group)) {
+      _paletteGroups.add(entry.group);
+    }
     final index = _palette.indexWhere((e) => e.color == color);
     if (index < 0) {
       _palette.add(entry);
@@ -980,7 +1201,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> exportColors(PaletteExport format, {required bool saved}) async {
     final entries = saved
-        ? List<PaletteEntry>.of(_palette)
+        ? visiblePalette
         : _colors
               .map((c) => paletteEntry(c) ?? PaletteEntry(color: c))
               .toList();
@@ -1014,6 +1235,11 @@ class AppController extends ChangeNotifier {
     _palette
       ..clear()
       ..addAll(merged);
+    for (final e in _palette) {
+      if (e.group.isNotEmpty && !_paletteGroups.contains(e.group)) {
+        _paletteGroups.add(e.group);
+      }
+    }
     notice = '已合并 ${entries.length} 个颜色';
     error = null;
     _persist();
@@ -1170,6 +1396,7 @@ class AppController extends ChangeNotifier {
       'contrastForeground': contrastForeground.toJson(),
       'contrastBackground': contrastBackground.toJson(),
       'palette': _palette.map((e) => e.toJson()).toList(),
+      'paletteGroups': _paletteGroups,
       'shortcuts': shortcuts.toJson(),
       'colors': _colors.map((c) => c.toJson()).toList(),
       'measurements': _measurements.map((r) => r.toJson()).toList(),
@@ -1206,10 +1433,21 @@ class AppController extends ChangeNotifier {
       try {
         contrastBackground = RgbColor.fromJson(data['contrastBackground']);
       } catch (_) {}
+      for (final value in (data['paletteGroups'] as List? ?? [])) {
+        if (value is String &&
+            value.trim().isNotEmpty &&
+            value.trim().length <= 60 &&
+            !_paletteGroups.contains(value.trim())) {
+          _paletteGroups.add(value.trim());
+        }
+      }
       for (final value in (data['palette'] as List? ?? [])) {
         try {
           final entry = PaletteEntry.fromJson(value);
           if (!_palette.any((e) => e.color == entry.color)) _palette.add(entry);
+          if (entry.group.isNotEmpty && !_paletteGroups.contains(entry.group)) {
+            _paletteGroups.add(entry.group);
+          }
         } catch (_) {
           /* Preserve other palette entries. */
         }
@@ -1273,7 +1511,9 @@ class AppController extends ChangeNotifier {
     _disposed = true;
     _subscription?.cancel();
     final id = _session?.id;
-    if (id != null) unawaited(desktop.finish(id).catchError((Object _) {}));
+    if (id != null && !_imageSession) {
+      unawaited(desktop.finish(id).catchError((Object _) {}));
+    }
     super.dispose();
   }
 }

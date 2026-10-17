@@ -329,6 +329,37 @@ class _ColorTile extends StatelessWidget {
                         await _rename(context);
                       case 'save':
                         controller.savePaletteColor(color);
+                      case 'group':
+                        final group = await _chooseGroup(
+                          context,
+                          controller,
+                          entry?.group ?? '',
+                        );
+                        if (group != null) {
+                          controller.savePaletteColor(color, group: group);
+                        }
+                      case 'earlier':
+                        final entries = controller.visiblePalette;
+                        final index = entries.indexWhere(
+                          (e) => e.color == color,
+                        );
+                        if (index > 0) {
+                          controller.reorderPalette(
+                            color,
+                            entries[index - 1].color,
+                          );
+                        }
+                      case 'later':
+                        final entries = controller.visiblePalette;
+                        final index = entries.indexWhere(
+                          (e) => e.color == color,
+                        );
+                        if (index >= 0 && index < entries.length - 1) {
+                          controller.reorderPalette(
+                            color,
+                            entries[index + 1].color,
+                          );
+                        }
                       case 'delete':
                         if (saved) {
                           controller.removePaletteColor(color);
@@ -345,6 +376,19 @@ class _ColorTile extends StatelessWidget {
                       child: Text(entry?.favorite == true ? '取消收藏' : '收藏颜色'),
                     ),
                     const PopupMenuItem(value: 'name', child: Text('命名颜色')),
+                    if (saved) ...[
+                      const PopupMenuItem(value: 'group', child: Text('移动到分组')),
+                      PopupMenuItem(
+                        value: 'earlier',
+                        enabled: controller.paletteQuery.trim().isEmpty,
+                        child: const Text('向前排序'),
+                      ),
+                      PopupMenuItem(
+                        value: 'later',
+                        enabled: controller.paletteQuery.trim().isEmpty,
+                        child: const Text('向后排序'),
+                      ),
+                    ],
                     if (!saved && entry == null)
                       const PopupMenuItem(value: 'save', child: Text('保存到调色板')),
                     PopupMenuItem(
@@ -374,7 +418,9 @@ class _ExportColors extends StatelessWidget {
       for (final format in PaletteExport.values)
         TextButton.icon(
           onPressed:
-              (saved ? controller.palette.isEmpty : controller.colors.isEmpty)
+              (saved
+                  ? controller.visiblePalette.isEmpty
+                  : controller.colors.isEmpty)
               ? null
               : () => controller.exportColors(format, saved: saved),
           icon: const Icon(Icons.file_download_outlined, size: 16),

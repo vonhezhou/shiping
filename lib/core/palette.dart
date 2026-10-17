@@ -7,14 +7,25 @@ class PaletteEntry {
     required this.color,
     this.name = '',
     this.favorite = false,
+    this.group = '',
   });
   final RgbColor color;
   final String name;
   final bool favorite;
+  final String group;
+  PaletteEntry copyWith({String? name, bool? favorite, String? group}) =>
+      PaletteEntry(
+        color: color,
+        name: name ?? this.name,
+        favorite: favorite ?? this.favorite,
+        group: group ?? this.group,
+      );
+
   Map<String, Object> toJson() => {
     'color': color.toJson(),
     'name': name,
     'favorite': favorite,
+    'group': group,
   };
   factory PaletteEntry.fromJson(Object? value) {
     if (value is! Map ||
@@ -26,6 +37,7 @@ class PaletteEntry {
       color: RgbColor.fromJson(value['color']),
       name: (value['name'] as String).trim(),
       favorite: value['favorite'] as bool,
+      group: value['group'] is String ? (value['group'] as String).trim() : '',
     );
   }
 }
@@ -43,6 +55,7 @@ String exportPalette(List<PaletteEntry> entries, PaletteExport format) {
               'hex': e.color.hex,
               'rgb': e.color.toJson(),
               'favorite': e.favorite,
+              'group': e.group,
             },
           )
           .toList(),
@@ -65,7 +78,10 @@ List<PaletteEntry> importPalette(String text) {
     if (item is! Map ||
         item['name'] is! String ||
         item['favorite'] is! bool ||
-        (item['name'] as String).length > 200) {
+        (item['name'] as String).length > 200 ||
+        (item['group'] != null &&
+            (item['group'] is! String ||
+                (item['group'] as String).trim().length > 60))) {
       throw const FormatException('颜色条目的名称或收藏状态无效');
     }
     final color = RgbColor.fromJson(item['rgb']);
@@ -81,6 +97,7 @@ List<PaletteEntry> importPalette(String text) {
         color: color,
         name: (item['name'] as String).trim(),
         favorite: item['favorite'] as bool,
+        group: (item['group'] as String? ?? '').trim(),
       ),
     );
   }

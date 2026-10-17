@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/core.dart';
+import 'image_document.dart';
 
 class DesktopStatus {
   const DesktopStatus({
@@ -49,6 +50,8 @@ abstract class DesktopService {
   Future<void> saveState(String json);
   Future<void> writeClipboard(String text);
   Future<String?> openPaletteFile();
+  Future<ImageFileData?> openImageFile();
+  Future<bool> exportImage(Uint8List png, {required bool save});
   Future<bool> saveTextFile(String filename, String text);
   Future<bool> exportAnnotations(
     int sessionId,
@@ -126,6 +129,23 @@ class MacDesktopService implements DesktopService {
       Clipboard.setData(ClipboardData(text: text));
 
   @override
+  Future<ImageFileData?> openImageFile() async {
+    final data = await _methods.invokeMapMethod<String, Object?>(
+      'openImageFile',
+    );
+    return data == null
+        ? null
+        : ImageFileData(data['name'] as String, data['bytes'] as Uint8List);
+  }
+
+  @override
+  Future<bool> exportImage(Uint8List png, {required bool save}) async =>
+      await _methods.invokeMethod<bool>('exportImage', {
+        'png': png,
+        'save': save,
+      }) ??
+      false;
+  @override
   Future<String?> openPaletteFile() async =>
       await _methods.invokeMethod<String>('openPaletteFile');
   @override
@@ -165,6 +185,10 @@ class MacDesktopService implements DesktopService {
 }
 
 class UnsupportedDesktopService implements DesktopService {
+  @override
+  Future<ImageFileData?> openImageFile() async => null;
+  @override
+  Future<bool> exportImage(Uint8List png, {required bool save}) async => false;
   @override
   Future<String?> openPaletteFile() async => null;
   @override

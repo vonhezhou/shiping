@@ -4,7 +4,7 @@ import ScreenCaptureKit
 import Carbon.HIToolbox
 import UniformTypeIdentifiers
 
-class MainFlutterWindow: NSWindow {
+class MainFlutterWindow: NSWindow, NSDraggingDestination {
   private var desktopBridge: FrulerDesktopBridge?
 
   override func awakeFromNib() {
@@ -15,12 +15,39 @@ class MainFlutterWindow: NSWindow {
     setContentSize(NSSize(width: 1100, height: 760))
     minSize = NSSize(width: 920, height: 680)
     center()
+    registerForDraggedTypes([.fileURL])
     isReleasedWhenClosed = false
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     desktopBridge = FrulerDesktopBridge(window: self, messenger: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()
+  }
+  func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly:true]) as? [URL] ?? []
+    return urls.count == 1 && ["png","jpg","jpeg","webp"].contains(urls[0].pathExtension.lowercased()) ? .copy : []
+  }
+  func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
+  func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly:true]) as? [URL], urls.count == 1 else { return false }
+    desktopBridge?.acceptImageDrop(urls[0])
+    return true
+  }
+}
+
+private enum ImageFileInput {
+  static func read(_ url: URL) throws -> [String:Any] {
+    let accessed = url.startAccessingSecurityScopedResource()
+    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+    let values = try url.resourceValues(forKeys:[.fileSizeKey,.isRegularFileKey])
+    guard values.isRegularFile == true, (values.fileSize ?? 0) <= 32 * 1024 * 1024 else {
+      throw NSError(domain:"fruler.image",code:1,userInfo:[NSLocalizedDescriptionKey:"请选择不超过 32 MB 的图片文件"])
+    }
+    let bytes = try Data(contentsOf:url)
+    guard bytes.count <= 32 * 1024 * 1024 else {
+      throw NSError(domain:"fruler.image",code:1,userInfo:[NSLocalizedDescriptionKey:"图片文件不能超过 32 MB"])
+    }
+    return ["name":url.lastPathComponent,"bytes":FlutterStandardTypedData(bytes:bytes)]
   }
 }
 
@@ -110,6 +137,11 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     return nil
   }
 
+  func acceptImageDrop(_ url: URL) {
+    do { var data = try ImageFileInput.read(url); data["type"]="imageDropped"; sink?(data) }
+    catch { sink?(["type":"imageDropFailed","message":error.localizedDescription]) }
+  }
+
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
     switch call.method {
@@ -161,6 +193,32 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         UserDefaults.standard.set(json, forKey: stateKey)
       }
       result(nil)
+    case "openImageFile":
+      let panel = NSOpenPanel()
+      panel.allowedContentTypes = [.png,.jpeg,.webP]
+      panel.allowsMultipleSelection = false
+      panel.canChooseDirectories = false
+      NSApp.activate(ignoringOtherApps:true)
+      guard panel.runModal() == .OK, let url = panel.url else { result(nil); return }
+      do { result(try ImageFileInput.read(url)) }
+      catch { result(FlutterError(code:"image_read_failed",message:error.localizedDescription,details:nil)) }
+    case "exportImage":
+      guard let bytes = args["png"] as? FlutterStandardTypedData else {
+        result(FlutterError(code:"image_export_failed",message:"图片数据无效",details:nil)); return
+      }
+      if args["save"] as? Bool == true {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "fruler-image-annotations.png"
+        panel.allowedContentTypes = [.png]
+        NSApp.activate(ignoringOtherApps:true)
+        guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
+        do { try bytes.data.write(to:url,options:.atomic); result(true) }
+        catch { result(FlutterError(code:"image_export_failed",message:error.localizedDescription,details:nil)) }
+      } else {
+        NSPasteboard.general.clearContents()
+        if NSPasteboard.general.setData(bytes.data,forType:.png) { result(true) }
+        else { result(FlutterError(code:"clipboard_failed",message:"无法写入图片剪贴板",details:nil)) }
+      }
     case "openPaletteFile":
       let panel = NSOpenPanel()
       panel.allowedContentTypes = [.json]
