@@ -2,6 +2,7 @@ import Cocoa
 import FlutterMacOS
 import ScreenCaptureKit
 import Carbon.HIToolbox
+import UniformTypeIdentifiers
 
 class MainFlutterWindow: NSWindow {
   private var desktopBridge: FrulerDesktopBridge?
@@ -159,6 +160,47 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         UserDefaults.standard.set(json, forKey: stateKey)
       }
       result(nil)
+    case "saveTextFile":
+      guard let filename = args["filename"] as? String, let text = args["text"] as? String else {
+        result(FlutterError(code: "invalid_export", message: "导出内容无效", details: nil)); return
+      }
+      let panel = NSSavePanel()
+      panel.nameFieldStringValue = filename
+      panel.allowedContentTypes = [UTType(filenameExtension: (filename as NSString).pathExtension) ?? .plainText]
+      panel.canCreateDirectories = true
+      NSApp.activate(ignoringOtherApps: true)
+      guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
+      do { try Data(text.utf8).write(to: url, options: .atomic); result(true) }
+      catch { result(FlutterError(code: "export_failed", message: error.localizedDescription, details: nil)) }
+    case "exportAnnotations":
+      guard let id = args["sessionId"] as? Int, id == session,
+            let display = args["displayId"] as? UInt32,
+            let overlay = overlays[display]?.overlay,
+            let pins = args["annotations"] as? [[String: Any]],
+            let png = AnnotationRenderer.png(image: overlay.snapshot.image, annotations: pins) else {
+        result(FlutterError(code: "invalid_export", message: "没有可导出的标注", details: nil)); return
+      }
+      if args["save"] as? Bool == true {
+        for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil) }
+        defer {
+          if session == id {
+            for panel in overlays.values { panel.orderFrontRegardless() }
+            overlays[display]?.makeKeyAndOrderFront(nil)
+          }
+        }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "fruler-measurement.png"
+        panel.allowedContentTypes = [.png]
+        panel.canCreateDirectories = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
+        do { try png.write(to: url, options: .atomic); result(true) }
+        catch { result(FlutterError(code: "export_failed", message: error.localizedDescription, details: nil)) }
+      } else {
+        NSPasteboard.general.clearContents()
+        if NSPasteboard.general.setData(png, forType: .png) { result(true) }
+        else { result(FlutterError(code: "clipboard_failed", message: "无法写入图片剪贴板", details: nil)) }
+      }
     case "begin":
       guard let tool = args["tool"] as? String,
             ["picker", "rectangle", "horizontal", "vertical", "cross"].contains(tool) else {
@@ -529,7 +571,19 @@ private final class CaptureOverlayView: NSView {
   private var anchored = false
   private var cursorHidden = false
   private var scrollRemainder: CGFloat = 0
-  private var pins: [(rect: NSRect, label: String)] = []
+  private var pins: [(id: Int, rect: NSRect, label: String)] = []
+  private var continuous = false
+  private var pickedCount = 0
+  private var editingPins = false
+  private var selectedPin: Int?
+  private let editbar = NSView()
+  private let continuousButton = NSButton(checkboxWithTitle: "连续取色", target: nil, action: nil)
+  private let editButton = NSButton(title: "编辑标注", target: nil, action: nil)
+  private let undoButton = NSButton(title: "撤销", target: nil, action: nil)
+  private let deleteButton = NSButton(title: "删除选中", target: nil, action: nil)
+  private let copyImageButton = NSButton(title: "复制图片", target: nil, action: nil)
+  private let saveImageButton = NSButton(title: "导出 PNG", target: nil, action: nil)
+  private let pinSelector = NSPopUpButton(frame: .zero, pullsDown: false)
   private var modeButtons: [String: NSButton] = [:]
   private let toolbar = NSView()
   private let infoLabel = NSTextField(labelWithString: "")
@@ -565,6 +619,10 @@ private final class CaptureOverlayView: NSView {
   override func keyDown(with event: NSEvent) {
     switch Int(event.keyCode) {
     case kVK_Escape: onCancel?()
+    case kVK_ANSI_Z where event.modifierFlags.contains(.command):
+      onEvent?(["type": "undoPins"])
+    case kVK_Delete, kVK_ForwardDelete:
+      if editingPins { onEvent?(["type": "deletePin"]) }
     case kVK_Return, kVK_ANSI_KeypadEnter:
       onEvent?(["type": "confirm", "keep": event.modifierFlags.contains(.shift)])
     case kVK_LeftArrow: onEvent?(["type": "nudge", "dx": -1, "dy": 0])
@@ -592,7 +650,14 @@ private final class CaptureOverlayView: NSView {
 
   private func send(_ event: NSEvent, phase: String) {
     let location = convert(event.locationInWindow, from: nil)
-    guard !toolbar.frame.contains(location) else { return }
+    guard !toolbar.frame.contains(location), (editbar.isHidden || !editbar.frame.contains(location)) else { return }
+    if editingPins && tool != "picker" {
+      if phase == "down" {
+        let pin = pins.reversed().first { $0.rect.insetBy(dx: -4, dy: -4).contains(location) }
+        onEvent?(["type": "selectPin", "id": pin?.id as Any? ?? NSNull()])
+      }
+      return
+    }
     releaseCursor()
     pointer = location
     isPointerActive = true
@@ -637,18 +702,35 @@ private final class CaptureOverlayView: NSView {
     if let value = data["tool"] as? String { tool = value }
     if let value = data["tolerance"] as? Int { tolerance = value }
     if let value = data["zoom"] as? Int { zoom = value }
+    if let value = data["continuous"] as? Bool { continuous = value }
+    if let value = data["pickedCount"] as? Int { pickedCount = value }
+    if let value = data["editingPins"] as? Bool { editingPins = value }
+    selectedPin = data["selectedPin"] as? Int
+    continuousButton.state = continuous ? .on : .off
+    continuousButton.isHidden = tool != "picker"
+    editbar.isHidden = tool == "picker"
+    editButton.title = editingPins ? "返回绘制" : "编辑标注"
+    undoButton.isEnabled = data["canUndoPins"] as? Bool == true
     if let values = data["pinned"] as? [[String: Any]] {
       pins = values.enumerated().compactMap { index, item in
         guard item["displayId"] as? UInt32 == snapshot.displayID,
               let rect = item["rect"] as? [String: Int],
               let left = rect["left"], let top = rect["top"], let right = rect["right"], let bottom = rect["bottom"] else { return nil }
         let sx = bounds.width / Double(snapshot.width), sy = bounds.height / Double(snapshot.height)
-        return (NSRect(x: Double(left) * sx, y: Double(top) * sy,
+        return (item["id"] as? Int ?? index + 1, NSRect(x: Double(left) * sx, y: Double(top) * sy,
           width: Double(right - left) * sx, height: Double(bottom - top) * sy),
-          "\(index + 1) · \(item["label"] as? String ?? "")")
+          "\(item["id"] as? Int ?? index + 1) · \(item["label"] as? String ?? "")")
       }
       clearButton.title = "清除标注 \(values.count)"
       clearButton.isEnabled = !values.isEmpty
+      let titles = ["选择本屏标注"] + pins.map { $0.label }
+      if pinSelector.itemTitles != titles {
+        pinSelector.removeAllItems(); pinSelector.addItems(withTitles: titles)
+      }
+      pinSelector.selectItem(at: pins.firstIndex(where: { $0.id == selectedPin }).map { $0 + 1 } ?? 0)
+      deleteButton.isEnabled = pins.contains(where: { $0.id == selectedPin })
+      copyImageButton.isEnabled = !pins.isEmpty
+      saveImageButton.isEnabled = !pins.isEmpty
     }
     for (mode, button) in modeButtons {
       let selected = mode == tool
@@ -658,7 +740,7 @@ private final class CaptureOverlayView: NSView {
       button.setAccessibilityValue(selected ? "已选中" : "")
     }
     clearButton.isHidden = tool == "picker"
-    infoLabel.stringValue = tool == "picker" ? "取色器 · \(zoom)× · 滚轮缩放" :
+    infoLabel.stringValue = tool == "picker" ? "取色 · \(zoom)× · 已采集 \(pickedCount)" :
       tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
     toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
     needsDisplay = true
@@ -698,6 +780,10 @@ private final class CaptureOverlayView: NSView {
     infoLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
     infoLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     stack.addArrangedSubview(infoLabel)
+    continuousButton.target = self
+    continuousButton.action = #selector(toggleContinuous)
+    continuousButton.font = .systemFont(ofSize: 11)
+    stack.addArrangedSubview(continuousButton)
     clearButton.target = self
     clearButton.action = #selector(clearPins)
     clearButton.bezelStyle = .rounded
@@ -717,8 +803,54 @@ private final class CaptureOverlayView: NSView {
       stack.topAnchor.constraint(equalTo: toolbar.topAnchor, constant: 8),
       stack.bottomAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: -8)
     ])
+    setupEditbar()
     updateOptions(["tool": tool])
   }
+
+  private func setupEditbar() {
+    editbar.translatesAutoresizingMaskIntoConstraints = false
+    editbar.wantsLayer = true
+    editbar.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.93).cgColor
+    editbar.layer?.cornerRadius = 10
+    addSubview(editbar)
+    let stack = NSStackView()
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
+    editbar.addSubview(stack)
+    let actions: [(NSButton, Selector)] = [(editButton, #selector(togglePinEditing)),
+      (undoButton, #selector(undoPin)), (deleteButton, #selector(deletePin)),
+      (copyImageButton, #selector(copyAnnotationImage)), (saveImageButton, #selector(saveAnnotationImage))]
+    for (button, action) in actions {
+      button.target = self; button.action = action; button.bezelStyle = .rounded
+      button.font = .systemFont(ofSize: 11); stack.addArrangedSubview(button)
+    }
+    pinSelector.target = self; pinSelector.action = #selector(selectAnnotation)
+    pinSelector.font = .systemFont(ofSize: 11)
+    pinSelector.widthAnchor.constraint(equalToConstant: 180).isActive = true
+    stack.insertArrangedSubview(pinSelector, at: 1)
+    NSLayoutConstraint.activate([
+      editbar.centerXAnchor.constraint(equalTo: centerXAnchor),
+      editbar.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
+      stack.leadingAnchor.constraint(equalTo: editbar.leadingAnchor, constant: 12),
+      stack.trailingAnchor.constraint(equalTo: editbar.trailingAnchor, constant: -12),
+      stack.topAnchor.constraint(equalTo: editbar.topAnchor, constant: 8),
+      stack.bottomAnchor.constraint(equalTo: editbar.bottomAnchor, constant: -8)
+    ])
+  }
+  private func emitControl(_ type: String, data: [String: Any] = [:]) {
+    var event = data; event["type"] = type; onEvent?(event)
+    window?.makeFirstResponder(self)
+  }
+  @objc private func toggleContinuous() { emitControl("continuousChanged", data: ["enabled": continuousButton.state == .on]) }
+  @objc private func togglePinEditing() { emitControl("editPins") }
+  @objc private func undoPin() { emitControl("undoPins") }
+  @objc private func deletePin() { emitControl("deletePin") }
+  @objc private func selectAnnotation() {
+    let index = pinSelector.indexOfSelectedItem - 1
+    emitControl("selectPin", data: ["id": pins.indices.contains(index) ? pins[index].id as Any : NSNull()])
+  }
+  @objc private func copyAnnotationImage() { emitControl("exportPins", data: ["save": false]) }
+  @objc private func saveAnnotationImage() { emitControl("exportPins", data: ["save": true]) }
 
   @objc private func changeMode(_ sender: NSButton) {
     if let mode = sender.identifier?.rawValue { onEvent?(["type": "modeChanged", "tool": mode]) }
@@ -740,12 +872,18 @@ private final class CaptureOverlayView: NSView {
     for pin in pins {
       accent.withAlphaComponent(0.08).setFill(); pin.rect.fill()
       accent.setStroke()
-      let outline = NSBezierPath(rect: pin.rect); outline.lineWidth = 1.5; outline.stroke()
+      let outline = NSBezierPath(rect: pin.rect); outline.lineWidth = pin.id == selectedPin ? 3 : 1.5; outline.stroke()
+      if pin.id == selectedPin {
+        for point in [NSPoint(x: pin.rect.minX,y: pin.rect.minY), NSPoint(x: pin.rect.maxX,y: pin.rect.minY),
+          NSPoint(x: pin.rect.minX,y: pin.rect.maxY), NSPoint(x: pin.rect.maxX,y: pin.rect.maxY)] {
+          accent.setFill(); NSRect(x: point.x - 3,y: point.y - 3,width: 6,height: 6).fill()
+        }
+      }
       let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
         .foregroundColor: accent, .backgroundColor: NSColor.black.withAlphaComponent(0.85)]
       (pin.label as NSString).draw(at: NSPoint(x: pin.rect.minX + 4, y: max(4, pin.rect.minY - 20)), withAttributes: attrs)
     }
-    guard isPointerActive else { return }
+    guard isPointerActive, !editingPins else { return }
     if let rect = measuredRect { drawMeasurement(rect) }
     drawCrosshair()
     drawLoupe()
@@ -827,7 +965,7 @@ private final class CaptureOverlayView: NSView {
     (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
       .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
     let hint = tool == "rectangle" ? (anchored ? "Enter 确认 · Shift 保留 · 方向键微调" : "拖拽 / Enter 定起点 · 方向键微调") :
-      "点击 / Enter 复制 · 方向键微调 · Esc 取消"
+      (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
     (hint as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 21), withAttributes: [
       .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.gray])
   }
@@ -837,4 +975,59 @@ private final class CaptureOverlayView: NSView {
 
 private extension Int {
   func clamped(_ minValue: Int, _ maxValue: Int) -> Int { Swift.min(maxValue, Swift.max(minValue, self)) }
+}
+
+/// Render a local crop from the frozen frame, at screenshot-pixel resolution.
+private enum AnnotationRenderer {
+  static func labelFrame(rect: NSRect, size: NSSize, canvas: NSRect, occupied: [NSRect]) -> NSRect {
+    let x = min(max(0, rect.minX), max(0, canvas.width - size.width))
+    let y = max(0, rect.minY - 22), step = size.height + 4
+    let aboveCount = Int(y / step) + 1
+    let fallback = NSRect(x: x, y: y, width: size.width, height: size.height)
+    for index in 0..<(aboveCount + Int(canvas.height / step) + 2) {
+      let candidateY = index < aboveCount ? y - CGFloat(index) * step :
+        max(rect.maxY + 8, y + step) + CGFloat(index - aboveCount) * step
+      guard candidateY >= 0, candidateY + size.height <= canvas.height else { continue }
+      let candidate = NSRect(x: x, y: candidateY, width: size.width, height: size.height)
+      if !occupied.contains(where: { $0.insetBy(dx: -2, dy: -2).intersects(candidate) }) { return candidate }
+    }
+    return fallback
+  }
+  static func png(image: CGImage, annotations: [[String: Any]]) -> Data? {
+    let canvas = NSRect(x: 0,y: 0,width: image.width,height: image.height)
+    let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 13,weight: .semibold),
+      .foregroundColor: NSColor(srgbRed: 215/255,green: 250/255,blue: 107/255,alpha: 1),
+      .backgroundColor: NSColor.black.withAlphaComponent(0.85)]
+    var items: [(NSRect, String, NSRect)] = []
+    var crop = NSRect.null
+    for annotation in annotations {
+      guard let data = annotation["rect"] as? [String: Int], let left = data["left"], let top = data["top"],
+            let right = data["right"], let bottom = data["bottom"], left >= 0, top >= 0,
+            right <= image.width, bottom <= image.height, right > left, bottom > top else { continue }
+      let rect = NSRect(x: left,y: top,width: right-left,height: bottom-top)
+      let label = "\(annotation["id"] as? Int ?? items.count + 1) · \(annotation["label"] as? String ?? "")"
+      let size = (label as NSString).size(withAttributes: attrs)
+      let labelRect = labelFrame(rect: rect, size: size, canvas: canvas, occupied: items.map { $0.2 })
+      items.append((rect,label,labelRect))
+      crop = crop.union(rect).union(labelRect)
+    }
+    guard !items.isEmpty else { return nil }
+    crop = crop.insetBy(dx: -16,dy: -16).intersection(canvas).integral
+    guard let context = CGContext(data: nil,width: Int(crop.width),height: Int(crop.height),bitsPerComponent: 8,
+      bytesPerRow: 0,space: CGColorSpace(name: CGColorSpace.sRGB)!,bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    context.translateBy(x: 0,y: crop.height); context.scaleBy(x: 1,y: -1)
+    context.translateBy(x: -crop.minX,y: -crop.minY)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context,flipped: true)
+    NSImage(cgImage: image,size: canvas.size).draw(in: canvas,from: .zero,operation: .copy,fraction: 1,respectFlipped: true,
+      hints: [.interpolation: NSImageInterpolation.none])
+    let accent = NSColor(srgbRed: 215/255,green: 250/255,blue: 107/255,alpha: 1)
+    for (rect,label,labelRect) in items {
+      accent.setStroke(); let outline = NSBezierPath(rect: rect); outline.lineWidth = 2; outline.stroke()
+      (label as NSString).draw(at: labelRect.origin,withAttributes: attrs)
+    }
+    NSGraphicsContext.restoreGraphicsState()
+    guard let result = context.makeImage() else { return nil }
+    return NSBitmapImageRep(cgImage: result).representation(using: .png,properties: [:])
+  }
 }

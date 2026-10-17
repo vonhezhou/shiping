@@ -4,11 +4,13 @@
 
 ## 当前功能
 
-- 取色：4×–32× 可调像素放大镜、HEX / RGB / HSL、点击自动复制、最多 64 条颜色历史。
-- 测量：浮动工具栏现场切换模式、Shift 连续保留多个矩形标注、矩形拖拽、水平间距、垂直间距、交叉测距；自动测量根据光标处像素的颜色识别连续边界，可通过滚轮调整颜色容差（0–255，每档 15）。
+- 取色：4×–32× 可调像素放大镜；单次或连续采集；HEX / RGB / HSL / Flutter `Color(...)` / CSS 复制格式；最多 64 条去重的最近颜色。
+- 颜色编辑：输入 3 位或 6 位 HEX，调整 RGB / HSL，确认后加入最近记录；取消不修改颜色。
+- 我的调色板：收藏、命名、单条删除，独立于最近记录保存；最近记录与调色板分别支持 JSON / CSS 文件导出。分组暂未实现。
+- 测量：浮动工具栏现场切换模式、Shift 连续保留多个矩形标注、选中和删除单个标注、撤销标注操作、复制和保存带尺寸的局部 PNG、矩形拖拽、水平间距、垂直间距、交叉测距；自动测量根据光标处像素的颜色识别连续边界，可通过滚轮调整颜色容差（0–255，每档 15）。
 - 同时显示截图像素 `px` 与 macOS 逻辑点 `pt`，处理每块显示器各自的缩放比例。矩形框选限于单块显示器。
 - 菜单栏常驻、可自定义全局快捷键、方向键逐截图像素微调、Enter 确认、Esc 或鼠标右键取消；关闭主窗口后仍可从菜单栏打开或退出。
-- 按次冻结屏幕快照，不持续录屏；屏幕图像仅保留在内存中，退出工具后释放，不上传、不写入磁盘。颜色、测量历史和偏好设置保存在本机。
+- 按次冻结屏幕快照，不持续录屏；屏幕图像在内存中保留到工具退出，不上传；只有用户主动复制或导出标注时，才将局部图片写入剪贴板或用户选择的文件。颜色、测量历史、调色板和偏好设置保存在本机。
 
 Windows / Linux 尚未实现。仅生成对应平台工程不会获得完整取色、测量能力，仍需实现下文的平台适配层。
 
@@ -55,9 +57,18 @@ flutter --no-version-check run -d macos
 | 逐像素微调 | 方向键每次移动一个截图像素，支持连续按键；鼠标移动后恢复鼠标定位 |
 | 键盘确认 | 取色 / 自动测距按 `Enter`；矩形第一次 `Enter` 定起点，移动后第二次确认 |
 | 自定义全局快捷键 | 偏好设置点击当前组合，按下修饰键与字母 / 数字，再按 `Enter` 或「保存」；`Esc` 取消 |
+| 连续取色 | 在工作台或取色浮层勾选「连续取色」；每次点击 / Enter 复制并加入最近记录，Esc / 右键结束 |
+| 编辑颜色 | 工作台「编辑颜色」或色卡菜单；支持 HEX 输入与 RGB / HSL 滑块，保存后加入最近记录 |
+| 收藏、命名与删除 | 色卡右侧菜单；收藏、命名或「保存到调色板」会建立独立的调色板条目 |
+| 调色板导出 | 最近记录或我的调色板下方「导出 JSON / CSS」，在系统保存对话框中选择位置 |
+| 选择与删除标注 | 浮层第二行的「选择本屏标注」，或「编辑标注」后点击框；「删除选中」或编辑模式下 Delete 删除 |
+| 撤销标注 | 「撤销」或 `⌘ Z`，支持撤销添加、删除和清除，保留最近 64 次操作 |
+| 复制 / 保存标注图 | 「复制图片」或「导出 PNG」；选中时仅导出选中框，否则导出当前屏全部保留框 |
 | 取消 | `Esc` 或鼠标右键 |
 
-快捷键表中的组合为默认值。自定义组合必须包含 Command / Control / Option 中至少一个修饰键，可附加 Shift，按物理 US 键位识别字母与数字。录制期间临时暂停本应用的全局快捷键及菜单等效键；取消会恢复。系统保留组合会被拒绝，使用 Carbon 独占注册；修改冲突时尝试恢复原配置，并显示实际注册状态。重启时若保存的组合已被占用，保留偏好并显示未注册，不启用其他组合。倍率、容差和快捷键随偏好设置持久化，兼容第一版历史。标注只存在于当前会话，Esc 退出后释放；已确认的测量仍保存在历史中。
+快捷键表中的组合为默认值。自定义组合必须包含 Command / Control / Option 中至少一个修饰键，可附加 Shift，按物理 US 键位识别字母与数字。录制期间临时暂停本应用的全局快捷键及菜单等效键；取消会恢复。系统保留组合会被拒绝，使用 Carbon 独占注册；修改冲突时尝试恢复原配置，并显示实际注册状态。重启时若保存的组合已被占用，保留偏好并显示未注册，不启用其他组合。倍率、容差、快捷键和连续取色开关随偏好设置持久化，兼容前两版历史。标注只存在于当前会话，Esc 退出后释放；已确认的测量仍保存在历史中。标注撤销只作用于当前浮层，不删除测量历史。图片导出使用冻结截图的原始像素，以尺寸标签和框的联合区域加边距裁剪；相邻标签会尝试错开排布，不包含工具栏或光标；不同显示器分别导出，取消保存后可继续测量。
+
+最近记录删除或清空不会删除调色板；从调色板删除也不会移除最近记录。取消收藏仍保留调色板条目，删除请使用「从调色板删除」。JSON 保留名称、RGB、HEX 和收藏状态；CSS 使用 `--fruler-1` 等编号变量，不将用户名称拼入 CSS 语法。
 
 ### 授权与快捷键排查
 
@@ -105,7 +116,13 @@ flutter --no-version-check analyze --no-pub
 flutter --no-version-check test --no-pub
 ```
 
-测试分为核心算法、应用会话和桌面布局三部分，使用 `FakeDesktop` 隔离原生服务，不需要录屏权限或启动真实捕获浮层。它们不能代替屏幕授权、多屏缩放、全屏应用覆盖和实际全局快捷键的实机验收。
+测试覆盖核心算法、应用会话、调色板及桌面布局，使用 `FakeDesktop` 隔离原生服务，不需要录屏权限或启动真实捕获浮层。它们不能代替屏幕授权、多屏缩放、全屏应用覆盖和实际全局快捷键的实机验收。
+
+macOS 原生 PNG 渲染回归使用合成图像，不读取真实屏幕，校验裁剪、方向、颜色与无效标注。需要系统 `python3` 和 Xcode 的 Swift 工具链：
+
+```sh
+python3 tool/test_annotation_export.py
+```
 
 仅运行某一组测试：
 
@@ -127,7 +144,8 @@ swift tool/generate_icon.swift
 lib/
   main.dart                       # 创建平台服务和控制器，启动 Flutter
   core/
-    color_value.dart              # RGB 值与 HEX / RGB / HSL 格式
+    color_value.dart              # HEX 解析、RGB / HSL 转换与开发代码格式
+    palette.dart                  # 命名、收藏模型与 JSON / CSS 导出
     pixel_frame.dart              # RGBA 帧、像素取样、逻辑坐标与像素换算
     ruler.dart                    # 测量模式、半开矩形和颜色边界检测
     capture_controls.dart         # 倍率、容差与逐像素坐标微调
@@ -139,6 +157,7 @@ lib/
     desktop_service.dart          # 平台接口、macOS 通道适配、不支持平台的实现
   ui/
     fruler_app.dart                # 取色器、尺子、偏好设置和绘制组件
+    palette_widgets.dart          # 颜色编辑对话框、色卡菜单与导出入口
 macos/
   Runner/
     MainFlutterWindow.swift       # 原生桥接、截图、浮层、菜单栏和快捷键
@@ -152,8 +171,10 @@ test/
   app/                            # 会话、复制、权限错误和历史恢复测试
   ui/                             # 桌面布局与导航测试
   fake_desktop.dart               # 测试用平台服务
+  macos/                          # PNG 渲染合成图像回归夹具
 tool/
   generate_icon.swift             # 可重复执行的 macOS 图标生成脚本
+  test_annotation_export.py       # 调用生产 PNG 渲染实现执行原生回归
 ```
 
 `lib/core/` 不依赖 Flutter 或 macOS，可以直接复用于其他平台；`lib/app/` 使用 Flutter 的状态通知机制，但通过 `DesktopService` 调用系统能力。Swift 不承载颜色转换或边界检测规则。
@@ -177,6 +198,8 @@ tool/
 | `updateOverlay` | 根据 Dart 返回的颜色、标签和像素矩形更新浮层 |
 | `finish(sessionId)` | 关闭浮层、释放屏幕帧，恢复必要的焦点；旧会话不能关闭新会话 |
 | `loadState` / `saveState` | 读写控制器提供的 JSON；macOS 当前使用 `UserDefaults` 的 `fruler.state.v1` |
+| `saveTextFile(filename, text)` | 通过平台保存对话框导出调色板；取消返回 false，成功返回 true，写入失败抛错 |
+| `exportAnnotations(sessionId, displayId, annotations, save)` | 从冻结帧绘制带编号、尺寸的局部图；save=true 保存 PNG，否则写图片剪贴板；不重新截图 |
 | `writeClipboard` | 写入文本剪贴板；现有 macOS 实现使用 Flutter `Clipboard` |
 
 ### 2. 保持帧、坐标和会话契约
@@ -201,6 +224,9 @@ CaptureSession
 - `updateOverlay` 同时携带 `tool`、`tolerance`、`zoom`、`pinned[]`；每个标注有 `displayId`、截图像素 `rect` 和 `label`。未带 `displayId` 的更新只刷新各屏的全局控件，不移动采样位置。`keyboard` 表示虚拟键盘光标，`anchored` 表示矩形已定起点。
 - 快捷键录制可通过 Flutter 键盘事件处理；macOS 也发送 `shortcutRecorded(chord)`，以原生事件自带的修饰键和物理键位为准，避免输入法或遗漏修饰键变化事件影响录制。此事件只在录制期间生效。
 - 快捷键 `bindings` 为 `{picker, ruler}`，每项含 `key`（A–Z / 0–9）和布尔修饰键 `meta/control/alt/shift`。新平台应按其按键映射实现，不把 macOS Carbon keycode 写入 Dart。注册失败不能覆盖已保存组合。
+- 第三版增加 `continuousChanged(enabled)`、`editPins`、`selectPin(id)`、`deletePin`、`undoPins` 和 `exportPins(displayId, save)` 会话事件。保留框含稳定 `id`；`selectPin(null)` 取消选择。`updateOverlay` 增加 `continuous`、`pickedCount`、`editingPins`、`selectedPin`、`canUndoPins`。
+- 本地 JSON 继续使用 `fruler.state.v1`，新增可选 `continuousPicker` 和 `palette[]`；缺失时按旧版本迁移，单条损坏记录独立跳过。调色板条目包含 `color`、`name` 和 `favorite`，不存屏幕图像。
+- macOS 的文件保存只启用 `com.apple.security.files.user-selected.read-write`，文件位置由系统保存对话框选择，不申请整盘文件访问。
 - 其他事件为 `activate`（含 `tool`）、`cancelled`（含 `sessionId`）、`permissionChanged`（含 `permission`）。取消后须释放平台资源，并让控制器离开忙碌状态。
 - 输入可能早于 `begin` 的返回结果到达，控制器会暂存事件；后续仍依赖正确的会话 ID 过滤旧事件。屏幕重配、休眠等导致会话失效时，应关闭浮层并通知取消。
 

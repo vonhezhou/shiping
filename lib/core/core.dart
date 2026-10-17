@@ -3,3 +3,5 @@ export 'pixel_frame.dart';
 export 'ruler.dart';
 export 'shortcut.dart';
 export 'capture_controls.dart';
+
+export 'palette.dart';

@@ -48,6 +48,13 @@ abstract class DesktopService {
   Future<String?> loadState();
   Future<void> saveState(String json);
   Future<void> writeClipboard(String text);
+  Future<bool> saveTextFile(String filename, String text);
+  Future<bool> exportAnnotations(
+    int sessionId,
+    int displayId,
+    List<Map<String, Object?>> annotations, {
+    required bool save,
+  });
   Future<bool> configureShortcuts(ShortcutBindings bindings);
   Future<bool> setShortcutRecording(bool recording);
 }
@@ -118,6 +125,27 @@ class MacDesktopService implements DesktopService {
       Clipboard.setData(ClipboardData(text: text));
 
   @override
+  Future<bool> saveTextFile(String filename, String text) async =>
+      await _methods.invokeMethod<bool>('saveTextFile', {
+        'filename': filename,
+        'text': text,
+      }) ??
+      false;
+  @override
+  Future<bool> exportAnnotations(
+    int sessionId,
+    int displayId,
+    List<Map<String, Object?>> annotations, {
+    required bool save,
+  }) async =>
+      await _methods.invokeMethod<bool>('exportAnnotations', {
+        'sessionId': sessionId,
+        'displayId': displayId,
+        'annotations': annotations,
+        'save': save,
+      }) ??
+      false;
+  @override
   Future<bool> configureShortcuts(ShortcutBindings bindings) async =>
       await _methods.invokeMethod<bool>(
         'configureShortcuts',
@@ -133,6 +161,15 @@ class MacDesktopService implements DesktopService {
 }
 
 class UnsupportedDesktopService implements DesktopService {
+  @override
+  Future<bool> saveTextFile(String filename, String text) async => false;
+  @override
+  Future<bool> exportAnnotations(
+    int sessionId,
+    int displayId,
+    List<Map<String, Object?>> annotations, {
+    required bool save,
+  }) async => false;
   @override
   Future<bool> configureShortcuts(ShortcutBindings bindings) async => false;
   @override

@@ -24,6 +24,30 @@ class FakeDesktop extends DesktopService {
 
   void event(String type, [Map<String, Object?> data = const {}]) =>
       input.add({'type': type, 'sessionId': 7, ...data});
+  String? exportedName;
+  String? exportedText;
+  List<Map<String, Object?>>? exportedAnnotations;
+  bool fileResult = true;
+  Object? exportError;
+  @override
+  Future<bool> saveTextFile(String filename, String text) async {
+    exportedName = filename;
+    exportedText = text;
+    return fileResult;
+  }
+
+  @override
+  Future<bool> exportAnnotations(
+    int sessionId,
+    int displayId,
+    List<Map<String, Object?>> annotations, {
+    required bool save,
+  }) async {
+    if (exportError != null) throw exportError!;
+    exportedAnnotations = annotations;
+    return fileResult;
+  }
+
   String? saved;
   String? clipboard;
   int beginCalls = 0;
@@ -32,6 +56,7 @@ class FakeDesktop extends DesktopService {
   bool permission = true;
   Object? beginError;
   Object? clipboardError;
+  Completer<void>? pendingClipboard;
   Completer<CaptureSession>? pendingCapture;
   Map<String, Object?>? lastOverlay;
   CaptureSession capture = CaptureSession(7, [
@@ -99,6 +124,7 @@ class FakeDesktop extends DesktopService {
   Future<void> writeClipboard(String text) async {
     if (clipboardError != null) throw clipboardError!;
     clipboard = text;
+    if (pendingClipboard != null) await pendingClipboard!.future;
   }
 
   @override

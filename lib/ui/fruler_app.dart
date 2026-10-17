@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../app/app_controller.dart';
 import '../core/core.dart';
 
+part 'palette_widgets.dart';
+
 const _background = Color(0xFF111315);
 const _panel = Color(0xFF1B1E21);
 const _line = Color(0xFF303438);
@@ -191,7 +193,7 @@ class _Sidebar extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(left: 10),
           child: Text(
-            'macOS  ·  v0.2.0',
+            'macOS  ·  v0.3.0',
             style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
           ),
         ),
@@ -344,6 +346,31 @@ class _PickerPage extends StatelessWidget {
             label: Text(controller.busy ? '工具使用中…' : '开始取色'),
           ),
         ),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () => _editColor(context, controller, color),
+              icon: const Icon(Icons.tune, size: 16),
+              label: const Text('编辑颜色'),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Switch(
+                  value: controller.continuousPicker,
+                  onChanged: controller.busy
+                      ? null
+                      : controller.setContinuousPicker,
+                ),
+                const Text('连续取色 · Esc 结束', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
         Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
@@ -421,21 +448,20 @@ class _PickerPage extends StatelessWidget {
                         const SizedBox(height: 12),
                         const Divider(color: _line, height: 1),
                         const SizedBox(height: 13),
-                        Row(
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             const Text(
                               '自动复制',
                               style: TextStyle(fontSize: 10, color: _muted),
                             ),
-                            const Spacer(),
                             for (final f in ColorFormat.values)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 5),
-                                child: _Chip(
-                                  label: f.name.toUpperCase(),
-                                  selected: controller.format == f,
-                                  onTap: () => controller.setFormat(f),
-                                ),
+                              _Chip(
+                                label: f.label,
+                                selected: controller.format == f,
+                                onTap: () => controller.setFormat(f),
                               ),
                           ],
                         ),
@@ -467,48 +493,25 @@ class _PickerPage extends StatelessWidget {
             description: '从屏幕取到的颜色会保存在这里，点击色卡即可再次复制。',
           )
         else
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final c in controller.colors)
-                Tooltip(
-                  message: '复制 ${c.formatted(controller.format)}',
-                  child: InkWell(
-                    onTap: () => controller.copyColor(c),
-                    borderRadius: BorderRadius.circular(9),
-                    child: Container(
-                      width: 111,
-                      clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(color: _line),
-                      ),
-                      child: Column(
-                        children: [
-                          Container(
-                            height: 51,
-                            color: Color.fromARGB(255, c.r, c.g, c.b),
-                          ),
-                          Container(
-                            color: _panel,
-                            alignment: Alignment.center,
-                            height: 32,
-                            child: Text(
-                              c.hex,
-                              style: const TextStyle(
-                                fontFamily: 'Menlo',
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          _ColorGrid(controller: controller, saved: false),
+        const SizedBox(height: 12),
+        _ExportColors(controller: controller, saved: false),
+        const SizedBox(height: 28),
+        _SectionTitle(
+          title: '我的调色板',
+          subtitle: '${controller.palette.length} 色 · 收藏与命名',
+        ),
+        const SizedBox(height: 14),
+        if (controller.palette.isEmpty)
+          const _Empty(
+            icon: Icons.bookmark_border,
+            title: '留下值得复用的颜色',
+            description: '在色卡菜单中收藏或命名，颜色会保留在调色板中。',
+          )
+        else
+          _ColorGrid(controller: controller, saved: true),
+        const SizedBox(height: 12),
+        _ExportColors(controller: controller, saved: true),
       ],
     );
   }
@@ -532,9 +535,9 @@ class _ColorRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 38,
+            width: 48,
             child: Text(
-              format.name.toUpperCase(),
+              format.label,
               style: const TextStyle(fontSize: 9, color: _muted),
             ),
           ),
@@ -602,7 +605,7 @@ class _RulerPage extends StatelessWidget {
       _Hint(
         icon: Icons.info_outline_rounded,
         text: controller.mode == RulerMode.rectangle
-            ? '拖拽框选；Shift 保留多个标注。也可按 Enter 定起点，方向键移动，再按 Enter 确认。浮动栏或 1–4 切换模式。'
+            ? '拖拽框选；Shift 保留多个标注。也可按 Enter 定起点，方向键移动，再按 Enter 确认。浮动栏或 1–4 切换模式；编辑标注可选择、删除、撤销和导出图片。'
             : '自动识别同色边界；滚轮调容差，方向键逐像素移动，Enter 复制。浮动栏或 1–4 切换模式，Esc 取消。',
       ),
       const SizedBox(height: 28),
@@ -769,7 +772,7 @@ class _SettingsPage extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              '仅在启动取色或测量时抓取屏幕快照。图像只保留在内存中，退出工具即释放，不上传、不写入磁盘。',
+              '启动工具时冻结屏幕快照，退出后释放，不上传。仅在你复制或导出标注时，将局部图片写入剪贴板或所选文件。',
               style: TextStyle(fontSize: 11, color: _muted, height: 1.7),
             ),
             const SizedBox(height: 18),
@@ -865,7 +868,7 @@ class _SettingsPage extends StatelessWidget {
       const SizedBox(height: 20),
       const _Hint(
         icon: Icons.layers_outlined,
-        text: 'fruler 0.2.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
+        text: 'fruler 0.3.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
       ),
     ],
   );

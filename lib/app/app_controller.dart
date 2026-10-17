@@ -66,6 +66,15 @@ class AppController extends ChangeNotifier {
   AppSection section = AppSection.picker;
   RgbColor selectedColor = const RgbColor(215, 250, 107);
   final List<RgbColor> _colors = [];
+  final List<PaletteEntry> _palette = [];
+  List<PaletteEntry> get palette => List.unmodifiable(_palette);
+  bool continuousPicker = false;
+  int _pickedCount = 0;
+  int _nextPinId = 0;
+  int? _selectedPin;
+  bool _editingPins = false;
+  final List<List<Map<String, Object?>>> _pinUndo = [];
+
   final List<MeasurementRecord> _measurements = [];
   List<RgbColor> get colors => List.unmodifiable(_colors);
   List<MeasurementRecord> get measurements => List.unmodifiable(_measurements);
@@ -209,6 +218,10 @@ class AppController extends ChangeNotifier {
     _anchorDisplay = null;
     _pending.clear();
     _pins.clear();
+    _pinUndo.clear();
+    _selectedPin = null;
+    _editingPins = false;
+    _pickedCount = 0;
     _lastPointer = null;
     _keyboardRectangle = false;
     _keyboardCursor = false;
@@ -278,13 +291,50 @@ class AppController extends ChangeNotifier {
     }
     if (event['sessionId'] != _session!.id) return;
     if (event['type'] == 'cancelled') {
+      final count = _tool == 'picker' ? _pickedCount : 0;
       _resetSession();
-      notice = '已取消';
+      notice = count > 0 ? '取色已结束，已采集 $count 次' : '已取消';
       _notify();
       return;
     }
     if (_committing) return;
     switch (event['type']) {
+      case 'continuousChanged':
+        setContinuousPicker(event['enabled'] == true);
+        return;
+      case 'editPins':
+        _editingPins = !_editingPins;
+        _anchor = null;
+        _anchorDisplay = null;
+        _redraw();
+        return;
+      case 'selectPin':
+        final id = event['id'];
+        _selectedPin = _pins.any((p) => p['id'] == id) ? id as int : null;
+        _redraw();
+        return;
+      case 'deletePin':
+        if (_selectedPin != null && _pins.any((p) => p['id'] == _selectedPin)) {
+          _rememberPins();
+          _pins.removeWhere((p) => p['id'] == _selectedPin);
+          _selectedPin = null;
+          _redraw();
+        }
+        return;
+      case 'undoPins':
+        if (_pinUndo.isNotEmpty) {
+          _pins
+            ..clear()
+            ..addAll(_pinUndo.removeLast());
+          _selectedPin = null;
+          _redraw();
+        }
+        return;
+      case 'exportPins':
+        unawaited(
+          _exportPins(event['displayId'] as int, save: event['save'] == true),
+        );
+        return;
       case 'modeChanged':
         final next = RulerMode.values
             .where((m) => m.name == event['tool'])
@@ -292,6 +342,7 @@ class AppController extends ChangeNotifier {
         if (_tool != 'picker' && next != null) {
           _tool = next.name;
           mode = next;
+          _editingPins = false;
           _anchor = null;
           _anchorDisplay = null;
           _keyboardRectangle = false;
@@ -346,6 +397,8 @@ class AppController extends ChangeNotifier {
         });
         return;
       case 'clearPins':
+        if (_pins.isNotEmpty) _rememberPins();
+        _selectedPin = null;
         _pins.clear();
         _redraw();
         return;
@@ -360,6 +413,11 @@ class AppController extends ChangeNotifier {
     'tool': _tool,
     'tolerance': tolerance,
     'zoom': zoom,
+    'continuous': continuousPicker,
+    'pickedCount': _pickedCount,
+    'selectedPin': _selectedPin,
+    'editingPins': _editingPins,
+    'canUndoPins': _pinUndo.isNotEmpty,
     'pinned': List<Map<String, Object?>>.of(_pins),
   };
 
@@ -443,7 +501,7 @@ class AppController extends ChangeNotifier {
       'keyboard': event['keyboard'] == true,
       'anchored': _anchor != null,
     });
-    if (phase != 'up') return;
+    if (phase != 'up' || _editingPins) return;
     if (_tool == 'picker') {
       unawaited(_commitColor(color));
     } else if (measurement != null &&
@@ -463,12 +521,31 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _commitColor(RgbColor color) async {
+    final sessionId = _session!.id;
     _committing = true;
     selectedColor = color;
-    _colors.remove(color);
-    _colors.insert(0, color);
-    if (_colors.length > 64) _colors.removeLast();
-    await _complete(color.formatted(format));
+    _rememberColor(color);
+    _pickedCount++;
+    if (continuousPicker) {
+      try {
+        await desktop.writeClipboard(color.formatted(format));
+        if (_session?.id == sessionId) {
+          notice = '已连续取色 $_pickedCount 次，Esc 结束';
+          error = null;
+        }
+      } catch (e) {
+        if (_session?.id == sessionId) error = '颜色已保存，但复制失败：${_message(e)}';
+      } finally {
+        if (_session?.id == sessionId) {
+          _committing = false;
+          _redraw();
+        }
+        _persist();
+        _notify();
+      }
+    } else {
+      await _complete(color.formatted(format));
+    }
   }
 
   Future<void> _commitMeasurement(
@@ -476,6 +553,7 @@ class AppController extends ChangeNotifier {
     CapturedDisplay display, {
     bool keep = false,
   }) async {
+    final sessionId = _session!.id;
     _committing = true;
     _measurements.insert(
       0,
@@ -487,7 +565,9 @@ class AppController extends ChangeNotifier {
     );
     if (_measurements.length > 32) _measurements.removeLast();
     if (keep) {
+      _rememberPins();
       _pins.add({
+        'id': ++_nextPinId,
         'displayId': display.id,
         'rect': measurement.rect.toJson(),
         'label': measurement.pixelLabel,
@@ -497,12 +577,16 @@ class AppController extends ChangeNotifier {
       _keyboardRectangle = false;
       try {
         await desktop.writeClipboard(measurement.label);
-        notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
+        if (_session?.id == sessionId) {
+          notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
+        }
       } catch (e) {
-        error = '标注已保留，但复制失败：${_message(e)}';
+        if (_session?.id == sessionId) error = '标注已保留，但复制失败：${_message(e)}';
       } finally {
-        _committing = false;
-        if (_session != null) _redraw();
+        if (_session?.id == sessionId) {
+          _committing = false;
+          _redraw();
+        }
         _persist();
         _notify();
       }
@@ -511,20 +595,58 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  void _rememberPins() {
+    _pinUndo.add(List<Map<String, Object?>>.of(_pins));
+    if (_pinUndo.length > 64) _pinUndo.removeAt(0);
+  }
+
+  Future<void> _exportPins(int displayId, {required bool save}) async {
+    final session = _session;
+    if (session == null || _committing) return;
+    final selected = _pins
+        .where((p) => p['id'] == _selectedPin && p['displayId'] == displayId)
+        .toList();
+    final pins = selected.isNotEmpty
+        ? selected
+        : _pins.where((p) => p['displayId'] == displayId).toList();
+    if (pins.isEmpty) return;
+    _committing = true;
+    try {
+      final done = await desktop.exportAnnotations(
+        session.id,
+        displayId,
+        pins,
+        save: save,
+      );
+      if (done) {
+        notice = save ? '标注图片已导出' : '标注图片已复制';
+        error = null;
+      }
+    } catch (e) {
+      _fail('标注图片导出失败：${_message(e)}');
+    } finally {
+      if (_session?.id == session.id) {
+        _committing = false;
+        _redraw();
+      }
+      _notify();
+    }
+  }
+
   Future<void> _complete(String text) async {
+    final id = _session?.id;
     try {
       await desktop.writeClipboard(text);
-      notice = '已复制 $text';
+      if (_session?.id == id) notice = '已复制 $text';
     } catch (e) {
-      error = '结果已保存，但复制失败：${_message(e)}';
+      if (_session?.id == id) error = '结果已保存，但复制失败：${_message(e)}';
     } finally {
-      final id = _session?.id;
       try {
         if (id != null) await desktop.finish(id);
       } catch (e) {
-        error = '无法关闭测量浮层，请按 Esc：${_message(e)}';
+        if (_session?.id == id) error = '无法关闭测量浮层，请按 Esc：${_message(e)}';
       }
-      _resetSession();
+      if (_session?.id == id) _resetSession();
       _persist();
       _notify();
     }
@@ -552,6 +674,10 @@ class AppController extends ChangeNotifier {
     _committing = false;
     _pending.clear();
     _pins.clear();
+    _pinUndo.clear();
+    _selectedPin = null;
+    _editingPins = false;
+    _pickedCount = 0;
     _lastPointer = null;
     _keyboardRectangle = false;
     _keyboardCursor = false;
@@ -621,6 +747,78 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  void setContinuousPicker(bool value) {
+    continuousPicker = value;
+    _persist();
+    if (_session != null) _redraw();
+    _notify();
+  }
+
+  void _rememberColor(RgbColor color) {
+    _colors.remove(color);
+    _colors.insert(0, color);
+    if (_colors.length > 64) _colors.removeLast();
+  }
+
+  void addEditedColor(RgbColor color) {
+    selectedColor = color;
+    _rememberColor(color);
+    _persist();
+    _notify();
+  }
+
+  PaletteEntry? paletteEntry(RgbColor color) =>
+      _palette.where((e) => e.color == color).firstOrNull;
+  void savePaletteColor(RgbColor color, {String? name, bool? favorite}) {
+    final old = paletteEntry(color);
+    final entry = PaletteEntry(
+      color: color,
+      name: name?.trim() ?? old?.name ?? '',
+      favorite: favorite ?? old?.favorite ?? false,
+    );
+    final index = _palette.indexWhere((e) => e.color == color);
+    if (index < 0) {
+      _palette.add(entry);
+    } else {
+      _palette[index] = entry;
+    }
+    _persist();
+    _notify();
+  }
+
+  void removeRecentColor(RgbColor color) {
+    _colors.remove(color);
+    _persist();
+    _notify();
+  }
+
+  void removePaletteColor(RgbColor color) {
+    _palette.removeWhere((e) => e.color == color);
+    _persist();
+    _notify();
+  }
+
+  Future<void> exportColors(PaletteExport format, {required bool saved}) async {
+    final entries = saved
+        ? List<PaletteEntry>.of(_palette)
+        : _colors
+              .map((c) => paletteEntry(c) ?? PaletteEntry(color: c))
+              .toList();
+    if (entries.isEmpty) return;
+    try {
+      if (await desktop.saveTextFile(
+        'fruler-${saved ? 'palette' : 'recent'}.${format.name}',
+        exportPalette(entries, format),
+      )) {
+        notice = '颜色已导出';
+        error = null;
+        _notify();
+      }
+    } catch (e) {
+      _fail('颜色导出失败：${_message(e)}');
+    }
+  }
+
   Future<void> copyColor([RgbColor? color]) async {
     final value = color ?? selectedColor;
     selectedColor = value;
@@ -658,6 +856,8 @@ class AppController extends ChangeNotifier {
       'mode': mode.name,
       'tolerance': tolerance,
       'zoom': zoom,
+      'continuousPicker': continuousPicker,
+      'palette': _palette.map((e) => e.toJson()).toList(),
       'shortcuts': shortcuts.toJson(),
       'colors': _colors.map((c) => c.toJson()).toList(),
       'measurements': _measurements.map((r) => r.toJson()).toList(),
@@ -686,6 +886,15 @@ class AppController extends ChangeNotifier {
         }
       } catch (_) {
         notice = '快捷键配置无效，已恢复默认值。';
+      }
+      continuousPicker = data['continuousPicker'] == true;
+      for (final value in (data['palette'] as List? ?? [])) {
+        try {
+          final entry = PaletteEntry.fromJson(value);
+          if (!_palette.any((e) => e.color == entry.color)) _palette.add(entry);
+        } catch (_) {
+          /* Preserve other palette entries. */
+        }
       }
       final savedZoom = data['zoom'];
       if (savedZoom is int && CaptureControls.zoomLevels.contains(savedZoom)) {
