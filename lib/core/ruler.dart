@@ -117,3 +117,37 @@ class EdgeDetector {
     );
   }
 }
+
+/// Move as a whole or resize named edges; preserve at least one screenshot pixel.
+PixelRect transformAnnotation(
+  PixelRect rect,
+  int dx,
+  int dy,
+  int width,
+  int height, {
+  String handle = 'move',
+}) {
+  if (handle == 'move') {
+    final x = dx.clamp(-rect.left, width - rect.right);
+    final y = dy.clamp(-rect.top, height - rect.bottom);
+    return PixelRect(
+      left: rect.left + x,
+      top: rect.top + y,
+      right: rect.right + x,
+      bottom: rect.bottom + y,
+    );
+  }
+  final left = handle.contains('w')
+      ? (rect.left + dx).clamp(0, rect.right - 1)
+      : rect.left;
+  final right = handle.contains('e')
+      ? (rect.right + dx).clamp(rect.left + 1, width)
+      : rect.right;
+  final top = handle.contains('n')
+      ? (rect.top + dy).clamp(0, rect.bottom - 1)
+      : rect.top;
+  final bottom = handle.contains('s')
+      ? (rect.bottom + dy).clamp(rect.top + 1, height)
+      : rect.bottom;
+  return PixelRect(left: left, top: top, right: right, bottom: bottom);
+}

@@ -6,11 +6,16 @@
 
 - 取色：4×–32× 可调像素放大镜；单次或连续采集；HEX / RGB / HSL / Flutter `Color(...)` / CSS 复制格式；最多 64 条去重的最近颜色。
 - 颜色编辑：输入 3 位或 6 位 HEX，调整 RGB / HSL，确认后加入最近记录；取消不修改颜色。
-- 我的调色板：收藏、命名、单条删除，独立于最近记录保存；最近记录与调色板分别支持 JSON / CSS 文件导出。分组暂未实现。
+- 我的调色板：收藏、命名、单条删除，独立于最近记录保存；JSON / CSS 导出，JSON 导入预览与冲突合并，多选复制 CSS 变量或 Flutter 颜色列表。分组暂未实现。
+- 颜色对比度：编辑或从屏幕依次选取前景 / 背景色，实时文字预览、比值和普通 / 大号文字的 WCAG AA / AAA 结果。
 - 测量：浮动工具栏现场切换模式、Shift 连续保留多个矩形标注、选中和删除单个标注、撤销标注操作、复制和保存带尺寸的局部 PNG、矩形拖拽、水平间距、垂直间距、交叉测距；自动测量根据光标处像素的颜色识别连续边界，可通过滚轮调整颜色容差（0–255，每档 15）。
+- 标注编辑：拖动移动、拖拽四角或四边调整，方向键移动一个截图像素，Shift + 方向键调整右 / 下边界；支持整次拖拽撤销，限制在所属显示器内，至少保留 1×1 像素。
+- 测量历史：命名、收藏、搜索、单条删除，按当前筛选结果导出 CSV / JSON；记录模式、原始像素 / 逻辑尺寸、显示器、时间和两轴缩放。最近 32 条非收藏记录加全部收藏。
 - 同时显示截图像素 `px` 与 macOS 逻辑点 `pt`，处理每块显示器各自的缩放比例。矩形框选限于单块显示器。
 - 菜单栏常驻、可自定义全局快捷键、方向键逐截图像素微调、Enter 确认、Esc 或鼠标右键取消；关闭主窗口后仍可从菜单栏打开或退出。
 - 按次冻结屏幕快照，不持续录屏；屏幕图像在内存中保留到工具退出，不上传；只有用户主动复制或导出标注时，才将局部图片写入剪贴板或用户选择的文件。颜色、测量历史、调色板和偏好设置保存在本机。
+
+同一应用标识的多个 macOS 副本只允许一个运行：后启动的副本在创建 Flutter 引擎、注册快捷键之前退出，并尝试唤起已有主窗口。锁由操作系统在进程结束时释放，崩溃后也无需清理。Debug 与 Release 的应用标识不同，可分别运行，仍可能发生快捷键冲突。
 
 Windows / Linux 尚未实现。仅生成对应平台工程不会获得完整取色、测量能力，仍需实现下文的平台适配层。
 
@@ -64,9 +69,20 @@ flutter --no-version-check run -d macos
 | 选择与删除标注 | 浮层第二行的「选择本屏标注」，或「编辑标注」后点击框；「删除选中」或编辑模式下 Delete 删除 |
 | 撤销标注 | 「撤销」或 `⌘ Z`，支持撤销添加、删除和清除，保留最近 64 次操作 |
 | 复制 / 保存标注图 | 「复制图片」或「导出 PNG」；选中时仅导出选中框，否则导出当前屏全部保留框 |
+| 调整已有标注 | 「编辑标注」后拖动框；先选中框，再拖边 / 角调整；方向键移动，Shift + 方向键调整右 / 下边界 |
+| 测量历史管理 | 尺子页搜索、只看收藏，星标收藏；记录菜单命名 / 删除；导出当前筛选结果 |
+| 颜色对比度 | 取色页底部编辑两色、使用当前颜色、分别从屏幕选取，或「依次取两色」 |
+| 导入调色板 | 「导入 JSON」选择 fruler 导出的文件；预览后选择保留已有或采用导入的名称 / 收藏，再合并 |
+| 批量复制 | 「批量复制」中多选或全选，复制 CSS 变量或 Flutter `<Color>[...]` |
 | 取消 | `Esc` 或鼠标右键 |
 
 快捷键表中的组合为默认值。自定义组合必须包含 Command / Control / Option 中至少一个修饰键，可附加 Shift，按物理 US 键位识别字母与数字。录制期间临时暂停本应用的全局快捷键及菜单等效键；取消会恢复。系统保留组合会被拒绝，使用 Carbon 独占注册；修改冲突时尝试恢复原配置，并显示实际注册状态。重启时若保存的组合已被占用，保留偏好并显示未注册，不启用其他组合。倍率、容差、快捷键和连续取色开关随偏好设置持久化，兼容前两版历史。标注只存在于当前会话，Esc 退出后释放；已确认的测量仍保存在历史中。标注撤销只作用于当前浮层，不删除测量历史。图片导出使用冻结截图的原始像素，以尺寸标签和框的联合区域加边距裁剪；相邻标签会尝试错开排布，不包含工具栏或光标；不同显示器分别导出，取消保存后可继续测量。
+
+第四版标注编辑只修改当前冻结会话的框和导出图片，测量历史保留确认当时的原始结果；移动 / 调整不会重复添加历史。一次鼠标拖拽对应一次撤销，键盘每次调整也可撤销。历史收藏不会被最近 32 条非收藏记录淘汰；取消收藏后重新受该上限约束。CSV 字段加引号并转义，可能作为公式执行的文本加单引号前缀；JSON 保留完整矩形与两轴缩放。
+
+对比度按 [W3C WCAG 相对亮度与对比度定义](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum)计算不透明 sRGB 两色；普通文字 AA ≥ 4.5、AAA ≥ 7，大号文字 AA ≥ 3、AAA ≥ 4.5，判断使用未舍入比值。大号为至少 18pt，或粗体 14pt。依次取两色复用同一张冻结截图：第一次确认前景、第二次确认背景并结束；此流程暂时覆盖连续取色行为，不改变其偏好。Esc 结束时已确认的一色仍保留。前景与背景也随偏好保存。
+
+JSON 导入只接受 fruler version 1 导出格式，文件最多 2 MB、4096 色。整份校验通过后才预览，取消不修改调色板。相同 RGB 按所选规则保留已有或覆盖名称与收藏；不同颜色即使同名也均保留。文件内重复 RGB、损坏条目、HEX / RGB 不一致或不支持的版本会整份拒绝，防止部分导入。批量代码按调色板顺序输出，不把名称拼入代码。
 
 最近记录删除或清空不会删除调色板；从调色板删除也不会移除最近记录。取消收藏仍保留调色板条目，删除请使用「从调色板删除」。JSON 保留名称、RGB、HEX 和收藏状态；CSS 使用 `--fruler-1` 等编号变量，不将用户名称拼入 CSS 语法。
 
@@ -118,10 +134,11 @@ flutter --no-version-check test --no-pub
 
 测试覆盖核心算法、应用会话、调色板及桌面布局，使用 `FakeDesktop` 隔离原生服务，不需要录屏权限或启动真实捕获浮层。它们不能代替屏幕授权、多屏缩放、全屏应用覆盖和实际全局快捷键的实机验收。
 
-macOS 原生 PNG 渲染回归使用合成图像，不读取真实屏幕，校验裁剪、方向、颜色与无效标注。需要系统 `python3` 和 Xcode 的 Swift 工具链：
+单实例回归提取生产锁实现，以独立进程验证互斥和退出释放，不启动界面；macOS 原生 PNG 渲染回归使用合成图像，不读取真实屏幕，校验裁剪、方向、颜色与无效标注。需要系统 `python3` 和 Xcode 的 Swift 工具链：
 
 ```sh
 python3 tool/test_annotation_export.py
+python3 tool/test_single_instance.py
 ```
 
 仅运行某一组测试：
@@ -145,7 +162,8 @@ lib/
   main.dart                       # 创建平台服务和控制器，启动 Flutter
   core/
     color_value.dart              # HEX 解析、RGB / HSL 转换与开发代码格式
-    palette.dart                  # 命名、收藏模型与 JSON / CSS 导出
+    palette.dart                  # 命名、收藏、导入合并与 JSON / CSS / Flutter 输出
+    contrast.dart                 # sRGB 相对亮度与 WCAG 对比度
     pixel_frame.dart              # RGBA 帧、像素取样、逻辑坐标与像素换算
     ruler.dart                    # 测量模式、半开矩形和颜色边界检测
     capture_controls.dart         # 倍率、容差与逐像素坐标微调
@@ -158,10 +176,11 @@ lib/
   ui/
     fruler_app.dart                # 取色器、尺子、偏好设置和绘制组件
     palette_widgets.dart          # 颜色编辑对话框、色卡菜单与导出入口
+    v4_widgets.dart               # 对比度、导入预览、批量复制与历史管理
 macos/
   Runner/
     MainFlutterWindow.swift       # 原生桥接、截图、浮层、菜单栏和快捷键
-    AppDelegate.swift             # 应用生命周期和关闭窗口后的常驻行为
+    AppDelegate.swift             # 生命周期、常驻行为及跨副本进程锁
     Configs/AppInfo.xcconfig      # 产品名和 Release 应用标识
     Info.plist                    # 应用元数据与屏幕权限用途说明
   Runner.xcodeproj/               # 原生工程与各构建配置
@@ -175,6 +194,7 @@ test/
 tool/
   generate_icon.swift             # 可重复执行的 macOS 图标生成脚本
   test_annotation_export.py       # 调用生产 PNG 渲染实现执行原生回归
+  test_single_instance.py         # 跨进程验证生产实例锁
 ```
 
 `lib/core/` 不依赖 Flutter 或 macOS，可以直接复用于其他平台；`lib/app/` 使用 Flutter 的状态通知机制，但通过 `DesktopService` 调用系统能力。Swift 不承载颜色转换或边界检测规则。
@@ -198,6 +218,7 @@ tool/
 | `updateOverlay` | 根据 Dart 返回的颜色、标签和像素矩形更新浮层 |
 | `finish(sessionId)` | 关闭浮层、释放屏幕帧，恢复必要的焦点；旧会话不能关闭新会话 |
 | `loadState` / `saveState` | 读写控制器提供的 JSON；macOS 当前使用 `UserDefaults` 的 `fruler.state.v1` |
+| `openPaletteFile()` | 通过系统文件对话框读取用户选中的 UTF-8 JSON；取消返回 null，限制 2 MB；内容由 Dart 完整校验并预览 |
 | `saveTextFile(filename, text)` | 通过平台保存对话框导出调色板；取消返回 false，成功返回 true，写入失败抛错 |
 | `exportAnnotations(sessionId, displayId, annotations, save)` | 从冻结帧绘制带编号、尺寸的局部图；save=true 保存 PNG，否则写图片剪贴板；不重新截图 |
 | `writeClipboard` | 写入文本剪贴板；现有 macOS 实现使用 Flutter `Clipboard` |
@@ -226,6 +247,9 @@ CaptureSession
 - 快捷键 `bindings` 为 `{picker, ruler}`，每项含 `key`（A–Z / 0–9）和布尔修饰键 `meta/control/alt/shift`。新平台应按其按键映射实现，不把 macOS Carbon keycode 写入 Dart。注册失败不能覆盖已保存组合。
 - 第三版增加 `continuousChanged(enabled)`、`editPins`、`selectPin(id)`、`deletePin`、`undoPins` 和 `exportPins(displayId, save)` 会话事件。保留框含稳定 `id`；`selectPin(null)` 取消选择。`updateOverlay` 增加 `continuous`、`pickedCount`、`editingPins`、`selectedPin`、`canUndoPins`。
 - 本地 JSON 继续使用 `fruler.state.v1`，新增可选 `continuousPicker` 和 `palette[]`；缺失时按旧版本迁移，单条损坏记录独立跳过。调色板条目包含 `color`、`name` 和 `favorite`，不存屏幕图像。
+- 第四版 `pinDrag` 包含 `id`、`displayId`、`phase: start/update/end`；update/end 的 `dx/dy` 为相对手势起点的本屏逻辑坐标位移，`handle` 为 move/n/s/e/w/ne/nw/se/sw。Dart 按该屏 scaleX/scaleY 换算截图像素并限制边界。`nudge` 新增 `resize` 布尔值，仅在编辑状态调整选中框；旧平台不发送时默认移动。
+- `updateOverlay.capturePurpose` 显示本次前景 / 背景取色用途；非空时隐藏连续取色切换。第四版 JSON 新增可选 contrastForeground / contrastBackground，以及测量记录 name / favorite；旧数据默认黑白对比、未命名和未收藏。
+- 新平台应在创建引擎及系统服务之前实现同等的单实例保护与激活已有窗口机制；macOS 当前使用沙盒容器内的 flock，不能直接复制文件路径假设到 Windows / Linux。
 - macOS 的文件保存只启用 `com.apple.security.files.user-selected.read-write`，文件位置由系统保存对话框选择，不申请整盘文件访问。
 - 其他事件为 `activate`（含 `tool`）、`cancelled`（含 `sessionId`）、`permissionChanged`（含 `permission`）。取消后须释放平台资源，并让控制器离开忙碌状态。
 - 输入可能早于 `begin` 的返回结果到达，控制器会暂存事件；后续仍依赖正确的会话 ID 过滤旧事件。屏幕重配、休眠等导致会话失效时，应关闭浮层并通知取消。

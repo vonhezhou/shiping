@@ -14,10 +14,25 @@ class MeasurementRecord {
     required this.measurement,
     required this.createdAt,
     required this.displayName,
+    this.name = '',
+    this.favorite = false,
   });
   final RulerMeasurement measurement;
   final DateTime createdAt;
   final String displayName;
+  final String name;
+  final bool favorite;
+  double get scaleX => measurement.rect.width / measurement.logicalWidth;
+  double get scaleY => measurement.rect.height / measurement.logicalHeight;
+  MeasurementRecord copyWith({String? name, bool? favorite}) =>
+      MeasurementRecord(
+        measurement: measurement,
+        createdAt: createdAt,
+        displayName: displayName,
+        name: name ?? this.name,
+        favorite: favorite ?? this.favorite,
+      );
+
   String get label => measurement.label;
 
   Map<String, Object?> toJson() => {
@@ -27,6 +42,8 @@ class MeasurementRecord {
     'logicalHeight': measurement.logicalHeight,
     'createdAt': createdAt.toIso8601String(),
     'displayName': displayName,
+    'name': name,
+    'favorite': favorite,
   };
 
   factory MeasurementRecord.fromJson(Map<String, dynamic> json) {
@@ -56,6 +73,8 @@ class MeasurementRecord {
       ),
       createdAt: DateTime.parse(json['createdAt'] as String),
       displayName: json['displayName'] as String,
+      name: json['name'] is String ? json['name'] as String : '',
+      favorite: json['favorite'] == true,
     );
   }
 }
@@ -69,6 +88,14 @@ class AppController extends ChangeNotifier {
   final List<PaletteEntry> _palette = [];
   List<PaletteEntry> get palette => List.unmodifiable(_palette);
   bool continuousPicker = false;
+  RgbColor contrastForeground = const RgbColor(0, 0, 0);
+  RgbColor contrastBackground = const RgbColor(255, 255, 255);
+  ColorContrast get contrast =>
+      ColorContrast(contrastForeground, contrastBackground);
+  String? _contrastTarget;
+  bool _contrastPair = false;
+  ({int id, PixelRect original, List<Map<String, Object?>> snapshot})? _pinDrag;
+
   int _pickedCount = 0;
   int _nextPinId = 0;
   int? _selectedPin;
@@ -193,7 +220,45 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> pickColor() => _begin('picker');
+  Future<void> pickColor() {
+    if (busy) return Future.value();
+    _contrastTarget = null;
+    _contrastPair = false;
+    return _begin('picker');
+  }
+
+  Future<void> pickContrast({
+    required bool foreground,
+    bool pair = false,
+  }) async {
+    if (busy || initializing || recordingShortcut || savingShortcuts) return;
+    _contrastTarget = foreground ? 'foreground' : 'background';
+    _contrastPair = pair;
+    await _begin('picker');
+    if (!busy) {
+      _contrastTarget = null;
+      _contrastPair = false;
+    }
+  }
+
+  void setContrastColor(RgbColor color, {required bool foreground}) {
+    if (foreground) {
+      contrastForeground = color;
+    } else {
+      contrastBackground = color;
+    }
+    _persist();
+    _notify();
+  }
+
+  void swapContrast() {
+    final old = contrastForeground;
+    contrastForeground = contrastBackground;
+    contrastBackground = old;
+    _persist();
+    _notify();
+  }
+
   Future<void> startRuler([RulerMode? value]) {
     if (value != null) selectMode(value);
     return _begin(mode.name);
@@ -302,6 +367,9 @@ class AppController extends ChangeNotifier {
       case 'continuousChanged':
         setContinuousPicker(event['enabled'] == true);
         return;
+      case 'pinDrag':
+        _dragPin(event);
+        return;
       case 'editPins':
         _editingPins = !_editingPins;
         _anchor = null;
@@ -363,6 +431,14 @@ class AppController extends ChangeNotifier {
         _notify();
         return;
       case 'nudge':
+        if (_editingPins) {
+          _nudgePin(
+            (event['dx'] as int).clamp(-1, 1),
+            (event['dy'] as int).clamp(-1, 1),
+            event['resize'] == true,
+          );
+          return;
+        }
         final position = _lastPointer;
         if (position == null) return;
         final display = _session!.displays
@@ -384,6 +460,7 @@ class AppController extends ChangeNotifier {
         });
         return;
       case 'confirm':
+        if (_editingPins) return;
         final position = _lastPointer;
         if (position == null) return;
         final start = _tool == 'rectangle' && _anchor == null;
@@ -413,7 +490,10 @@ class AppController extends ChangeNotifier {
     'tool': _tool,
     'tolerance': tolerance,
     'zoom': zoom,
-    'continuous': continuousPicker,
+    'continuous': _contrastTarget == null && continuousPicker,
+    'capturePurpose': _contrastTarget == null
+        ? ''
+        : (_contrastTarget == 'foreground' ? '选取前景色' : '选取背景色'),
     'pickedCount': _pickedCount,
     'selectedPin': _selectedPin,
     'editingPins': _editingPins,
@@ -457,6 +537,10 @@ class AppController extends ChangeNotifier {
     _keyboardCursor = event['keyboard'] == true;
     final phase = event['phase'] as String;
     final frame = display.frame;
+    if (_editingPins) {
+      _updateOverlay({..._overlayOptions, 'displayId': display.id});
+      return;
+    }
     final pixel = frame.logicalToPixel(x, y);
     final color = frame.pixelAt(pixel.x, pixel.y);
     RulerMeasurement? measurement;
@@ -526,6 +610,18 @@ class AppController extends ChangeNotifier {
     selectedColor = color;
     _rememberColor(color);
     _pickedCount++;
+    if (_contrastTarget != null) {
+      final foreground = _contrastTarget == 'foreground';
+      setContrastColor(color, foreground: foreground);
+      if (_contrastPair && foreground) {
+        _contrastTarget = 'background';
+        _committing = false;
+        _redraw();
+      } else {
+        await _complete(color.formatted(format));
+      }
+      return;
+    }
     if (continuousPicker) {
       try {
         await desktop.writeClipboard(color.formatted(format));
@@ -563,7 +659,7 @@ class AppController extends ChangeNotifier {
         displayName: display.name,
       ),
     );
-    if (_measurements.length > 32) _measurements.removeLast();
+    _trimMeasurements();
     if (keep) {
       _rememberPins();
       _pins.add({
@@ -593,6 +689,87 @@ class AppController extends ChangeNotifier {
     } else {
       await _complete(measurement.label);
     }
+  }
+
+  PixelRect _pinRect(Map<String, Object?> pin) {
+    final r = pin['rect'] as Map;
+    return PixelRect(
+      left: r['left'] as int,
+      top: r['top'] as int,
+      right: r['right'] as int,
+      bottom: r['bottom'] as int,
+    );
+  }
+
+  void _replacePin(int index, PixelRect rect) {
+    _pins[index] = {
+      ..._pins[index],
+      'rect': rect.toJson(),
+      'label': '${rect.width} × ${rect.height} px',
+    };
+  }
+
+  void _dragPin(Map<Object?, Object?> event) {
+    if (!_editingPins) return;
+    final index = _pins.indexWhere(
+      (p) => p['id'] == event['id'] && p['displayId'] == event['displayId'],
+    );
+    if (index < 0) return;
+    if (event['phase'] == 'start') {
+      _selectedPin = event['id'] as int;
+      _pinDrag = (
+        id: _selectedPin!,
+        original: _pinRect(_pins[index]),
+        snapshot: List.of(_pins),
+      );
+    } else {
+      final drag = _pinDrag;
+      if (drag == null || drag.id != event['id']) return;
+      final display = _session!.displays.firstWhere(
+        (d) => d.id == event['displayId'],
+      );
+      final dx = (event['dx'] as num?)?.toDouble() ?? 0,
+          dy = (event['dy'] as num?)?.toDouble() ?? 0;
+      if (!dx.isFinite || !dy.isFinite) return;
+      final rect = transformAnnotation(
+        drag.original,
+        (dx * display.frame.scaleX).round(),
+        (dy * display.frame.scaleY).round(),
+        display.frame.width,
+        display.frame.height,
+        handle: event['handle'] as String? ?? 'move',
+      );
+      _replacePin(index, rect);
+      if (event['phase'] == 'end') {
+        if (jsonEncode(drag.original.toJson()) != jsonEncode(rect.toJson())) {
+          _pinUndo.add(drag.snapshot);
+          if (_pinUndo.length > 64) _pinUndo.removeAt(0);
+        }
+        _pinDrag = null;
+      }
+    }
+    _redraw();
+  }
+
+  void _nudgePin(int dx, int dy, bool resize) {
+    final index = _pins.indexWhere((p) => p['id'] == _selectedPin);
+    if (index < 0) return;
+    final frame = _session!.displays
+        .firstWhere((d) => d.id == _pins[index]['displayId'])
+        .frame;
+    final old = _pinRect(_pins[index]);
+    final rect = transformAnnotation(
+      old,
+      dx,
+      dy,
+      frame.width,
+      frame.height,
+      handle: resize ? 'se' : 'move',
+    );
+    if (jsonEncode(old.toJson()) == jsonEncode(rect.toJson())) return;
+    _rememberPins();
+    _replacePin(index, rect);
+    _redraw();
   }
 
   void _rememberPins() {
@@ -668,6 +845,9 @@ class AppController extends ChangeNotifier {
   void _resetSession() {
     _session = null;
     _tool = null;
+    _contrastTarget = null;
+    _contrastPair = false;
+    _pinDrag = null;
     busy = false;
     _anchor = null;
     _anchorDisplay = null;
@@ -819,6 +999,136 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<List<PaletteEntry>?> readPaletteImport() async {
+    try {
+      final text = await desktop.openPaletteFile();
+      return text == null ? null : importPalette(text);
+    } catch (e) {
+      _fail(e is FormatException ? e.message : '无法读取调色板文件：${_message(e)}');
+      return null;
+    }
+  }
+
+  void applyPaletteImport(List<PaletteEntry> entries, PaletteMerge policy) {
+    final merged = mergePalette(_palette, entries, policy);
+    _palette
+      ..clear()
+      ..addAll(merged);
+    notice = '已合并 ${entries.length} 个颜色';
+    error = null;
+    _persist();
+    _notify();
+  }
+
+  Future<void> copyPaletteSelection(
+    Set<RgbColor> colors, {
+    required bool flutter,
+  }) async {
+    final entries = _palette.where((e) => colors.contains(e.color)).toList();
+    if (entries.isNotEmpty) {
+      await _copy(
+        copyPalette(entries, flutter: flutter),
+        message: '已复制 ${entries.length} 色的 ${flutter ? 'Flutter' : 'CSS'} 代码',
+      );
+    }
+  }
+
+  List<MeasurementRecord> filterMeasurements(
+    String query, {
+    bool favoritesOnly = false,
+  }) {
+    final q = query.trim().toLowerCase();
+    return _measurements
+        .where(
+          (r) =>
+              (!favoritesOnly || r.favorite) &&
+              '${r.name} ${r.label} ${r.displayName} ${r.measurement.mode.name} ${r.createdAt.toIso8601String()}'
+                  .toLowerCase()
+                  .contains(q),
+        )
+        .toList();
+  }
+
+  void updateMeasurement(
+    MeasurementRecord record, {
+    String? name,
+    bool? favorite,
+  }) {
+    final i = _measurements.indexOf(record);
+    if (i < 0) return;
+    _measurements[i] = record.copyWith(name: name?.trim(), favorite: favorite);
+    _trimMeasurements();
+    _persist();
+    _notify();
+  }
+
+  void removeMeasurement(MeasurementRecord record) {
+    _measurements.remove(record);
+    _persist();
+    _notify();
+  }
+
+  void _trimMeasurements() {
+    while (_measurements.where((r) => !r.favorite).length > 32) {
+      _measurements.removeAt(_measurements.lastIndexWhere((r) => !r.favorite));
+    }
+  }
+
+  Future<void> exportMeasurements(
+    List<MeasurementRecord> records, {
+    required bool csv,
+  }) async {
+    if (records.isEmpty) return;
+    String cell(Object value) {
+      var text = value.toString();
+      if (RegExp(r'^[=+@\-\t\r]').hasMatch(text)) text = "'$text";
+      return '"${text.replaceAll('"', '""')}"';
+    }
+
+    final text = csv
+        ? [
+            'name,favorite,mode,width_px,height_px,width_pt,height_pt,scale_x,scale_y,display,created_at',
+            for (final r in records)
+              [
+                r.name,
+                r.favorite,
+                r.measurement.mode.name,
+                r.measurement.rect.width,
+                r.measurement.rect.height,
+                r.measurement.logicalWidth,
+                r.measurement.logicalHeight,
+                r.scaleX,
+                r.scaleY,
+                r.displayName,
+                r.createdAt.toIso8601String(),
+              ].map(cell).join(','),
+          ].join('\r\n')
+        : const JsonEncoder.withIndent('  ').convert({
+            'version': 1,
+            'measurements': records
+                .map(
+                  (r) => {
+                    ...r.toJson(),
+                    'scaleX': r.scaleX,
+                    'scaleY': r.scaleY,
+                  },
+                )
+                .toList(),
+          });
+    try {
+      if (await desktop.saveTextFile(
+        'fruler-measurements.${csv ? 'csv' : 'json'}',
+        text,
+      )) {
+        notice = '已导出 ${records.length} 条测量记录';
+        error = null;
+        _notify();
+      }
+    } catch (e) {
+      _fail('测量记录导出失败：${_message(e)}');
+    }
+  }
+
   Future<void> copyColor([RgbColor? color]) async {
     final value = color ?? selectedColor;
     selectedColor = value;
@@ -826,10 +1136,10 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> copyMeasurement(MeasurementRecord record) => _copy(record.label);
-  Future<void> _copy(String text) async {
+  Future<void> _copy(String text, {String? message}) async {
     try {
       await desktop.writeClipboard(text);
-      notice = '已复制 $text';
+      notice = message ?? '已复制 $text';
       error = null;
       _notify();
     } catch (e) {
@@ -857,6 +1167,8 @@ class AppController extends ChangeNotifier {
       'tolerance': tolerance,
       'zoom': zoom,
       'continuousPicker': continuousPicker,
+      'contrastForeground': contrastForeground.toJson(),
+      'contrastBackground': contrastBackground.toJson(),
       'palette': _palette.map((e) => e.toJson()).toList(),
       'shortcuts': shortcuts.toJson(),
       'colors': _colors.map((c) => c.toJson()).toList(),
@@ -888,6 +1200,12 @@ class AppController extends ChangeNotifier {
         notice = '快捷键配置无效，已恢复默认值。';
       }
       continuousPicker = data['continuousPicker'] == true;
+      try {
+        contrastForeground = RgbColor.fromJson(data['contrastForeground']);
+      } catch (_) {}
+      try {
+        contrastBackground = RgbColor.fromJson(data['contrastBackground']);
+      } catch (_) {}
       for (final value in (data['palette'] as List? ?? [])) {
         try {
           final entry = PaletteEntry.fromJson(value);
@@ -910,7 +1228,7 @@ class AppController extends ChangeNotifier {
           /* Ignore a corrupt record, preserving other history. */
         }
       }
-      for (final value in (data['measurements'] as List? ?? []).take(32)) {
+      for (final value in (data['measurements'] as List? ?? [])) {
         try {
           _measurements.add(
             MeasurementRecord.fromJson(value as Map<String, dynamic>),

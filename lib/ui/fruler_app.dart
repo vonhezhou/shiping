@@ -5,6 +5,7 @@ import '../app/app_controller.dart';
 import '../core/core.dart';
 
 part 'palette_widgets.dart';
+part 'v4_widgets.dart';
 
 const _background = Color(0xFF111315);
 const _panel = Color(0xFF1B1E21);
@@ -193,7 +194,7 @@ class _Sidebar extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(left: 10),
           child: Text(
-            'macOS  ·  v0.3.0',
+            'macOS  ·  v0.4.0',
             style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
           ),
         ),
@@ -512,6 +513,10 @@ class _PickerPage extends StatelessWidget {
           _ColorGrid(controller: controller, saved: true),
         const SizedBox(height: 12),
         _ExportColors(controller: controller, saved: true),
+        const SizedBox(height: 12),
+        _PaletteTools(controller: controller),
+        const SizedBox(height: 28),
+        _ContrastPanel(controller: controller),
       ],
     );
   }
@@ -605,41 +610,11 @@ class _RulerPage extends StatelessWidget {
       _Hint(
         icon: Icons.info_outline_rounded,
         text: controller.mode == RulerMode.rectangle
-            ? '拖拽框选；Shift 保留多个标注。也可按 Enter 定起点，方向键移动，再按 Enter 确认。浮动栏或 1–4 切换模式；编辑标注可选择、删除、撤销和导出图片。'
+            ? '拖拽框选；Shift 保留多个标注。也可按 Enter 定起点，方向键移动，再按 Enter 确认。浮动栏或 1–4 切换模式；编辑标注后拖动框或边角；方向键移动，Shift + 方向键调尺寸，支持撤销和导出。'
             : '自动识别同色边界；滚轮调容差，方向键逐像素移动，Enter 复制。浮动栏或 1–4 切换模式，Esc 取消。',
       ),
       const SizedBox(height: 28),
-      _SectionTitle(
-        title: '测量记录',
-        subtitle: '像素 px / 逻辑点 pt',
-        onClear: controller.measurements.isEmpty
-            ? null
-            : controller.clearMeasurements,
-      ),
-      const SizedBox(height: 14),
-      if (controller.measurements.isEmpty)
-        const _Empty(
-          icon: Icons.square_foot_rounded,
-          title: '下一次测量，从这里开始',
-          description: '支持不同缩放比例的显示器，同时保留像素和逻辑点尺寸。',
-        )
-      else
-        Container(
-          decoration: BoxDecoration(
-            color: _panel,
-            border: Border.all(color: _line),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            children: [
-              for (final record in controller.measurements)
-                _MeasurementRow(
-                  record: record,
-                  onCopy: () => controller.copyMeasurement(record),
-                ),
-            ],
-          ),
-        ),
+      _MeasurementHistory(controller: controller),
     ],
   );
 }
@@ -698,51 +673,6 @@ class _ModeCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    ),
-  );
-}
-
-class _MeasurementRow extends StatelessWidget {
-  const _MeasurementRow({required this.record, required this.onCopy});
-  final MeasurementRecord record;
-  final VoidCallback onCopy;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onCopy,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 15),
-      child: Row(
-        children: [
-          Icon(_modeIcons[record.measurement.mode], size: 17, color: _accent),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  record.measurement.pixelLabel,
-                  style: const TextStyle(fontFamily: 'Menlo', fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${record.measurement.pointLabel}  ·  ${record.displayName}',
-                  style: const TextStyle(color: _muted, fontSize: 10),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${record.createdAt.hour.toString().padLeft(2, '0')}:${record.createdAt.minute.toString().padLeft(2, '0')}',
-            style: const TextStyle(
-              fontFamily: 'Menlo',
-              fontSize: 10,
-              color: _muted,
-            ),
-          ),
-          const SizedBox(width: 20),
-          const Icon(Icons.copy_rounded, size: 14, color: _muted),
-        ],
       ),
     ),
   );

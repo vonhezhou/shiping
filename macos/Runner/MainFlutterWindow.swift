@@ -8,6 +8,7 @@ class MainFlutterWindow: NSWindow {
   private var desktopBridge: FrulerDesktopBridge?
 
   override func awakeFromNib() {
+    guard FrulerInstance.acquire() else { NSApp.terminate(nil); return }
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
     title = "fruler"
@@ -160,6 +161,24 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         UserDefaults.standard.set(json, forKey: stateKey)
       }
       result(nil)
+    case "openPaletteFile":
+      let panel = NSOpenPanel()
+      panel.allowedContentTypes = [.json]
+      panel.allowsMultipleSelection = false
+      panel.canChooseDirectories = false
+      NSApp.activate(ignoringOtherApps: true)
+      guard panel.runModal() == .OK, let url = panel.url else { result(nil); return }
+      do {
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size <= 2 * 1024 * 1024 else {
+          result(FlutterError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil)); return
+        }
+        let text = try String(contentsOf: url, encoding: .utf8)
+        guard text.utf8.count <= 2 * 1024 * 1024 else {
+          result(FlutterError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil)); return
+        }
+        result(text)
+      } catch { result(FlutterError(code: "import_failed", message: error.localizedDescription, details: nil)) }
     case "saveTextFile":
       guard let filename = args["filename"] as? String, let text = args["text"] as? String else {
         result(FlutterError(code: "invalid_export", message: "导出内容无效", details: nil)); return
@@ -576,6 +595,8 @@ private final class CaptureOverlayView: NSView {
   private var pickedCount = 0
   private var editingPins = false
   private var selectedPin: Int?
+  private var pinDrag: (id: Int, start: NSPoint, handle: String)?
+  private var capturePurpose = ""
   private let editbar = NSView()
   private let continuousButton = NSButton(checkboxWithTitle: "连续取色", target: nil, action: nil)
   private let editButton = NSButton(title: "编辑标注", target: nil, action: nil)
@@ -625,10 +646,10 @@ private final class CaptureOverlayView: NSView {
       if editingPins { onEvent?(["type": "deletePin"]) }
     case kVK_Return, kVK_ANSI_KeypadEnter:
       onEvent?(["type": "confirm", "keep": event.modifierFlags.contains(.shift)])
-    case kVK_LeftArrow: onEvent?(["type": "nudge", "dx": -1, "dy": 0])
-    case kVK_RightArrow: onEvent?(["type": "nudge", "dx": 1, "dy": 0])
-    case kVK_UpArrow: onEvent?(["type": "nudge", "dx": 0, "dy": -1])
-    case kVK_DownArrow: onEvent?(["type": "nudge", "dx": 0, "dy": 1])
+    case kVK_LeftArrow: onEvent?(["type": "nudge", "dx": -1, "dy": 0, "resize": event.modifierFlags.contains(.shift)])
+    case kVK_RightArrow: onEvent?(["type": "nudge", "dx": 1, "dy": 0, "resize": event.modifierFlags.contains(.shift)])
+    case kVK_UpArrow: onEvent?(["type": "nudge", "dx": 0, "dy": -1, "resize": event.modifierFlags.contains(.shift)])
+    case kVK_DownArrow: onEvent?(["type": "nudge", "dx": 0, "dy": 1, "resize": event.modifierFlags.contains(.shift)])
     case kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4:
       guard tool != "picker", !event.isARepeat else { return }
       let modes = [kVK_ANSI_1: "rectangle", kVK_ANSI_2: "horizontal", kVK_ANSI_3: "vertical", kVK_ANSI_4: "cross"]
@@ -650,11 +671,25 @@ private final class CaptureOverlayView: NSView {
 
   private func send(_ event: NSEvent, phase: String) {
     let location = convert(event.locationInWindow, from: nil)
-    guard !toolbar.frame.contains(location), (editbar.isHidden || !editbar.frame.contains(location)) else { return }
+    if pinDrag == nil {
+      guard !toolbar.frame.contains(location), (editbar.isHidden || !editbar.frame.contains(location)) else { return }
+    }
     if editingPins && tool != "picker" {
+      releaseCursor()
       if phase == "down" {
-        let pin = pins.reversed().first { $0.rect.insetBy(dx: -4, dy: -4).contains(location) }
+        let selected = pins.first { $0.id == selectedPin }
+        let selectedHandle = selected.flatMap { resizeHandle($0.rect, at: location) }
+        let pin = selectedHandle != nil ? selected : pins.reversed().first { $0.rect.insetBy(dx: -4, dy: -4).contains(location) }
         onEvent?(["type": "selectPin", "id": pin?.id as Any? ?? NSNull()])
+        if let pin = pin {
+          let handle = selectedHandle ?? "move"
+          pinDrag = (pin.id, location, handle)
+          onEvent?(["type": "pinDrag", "id": pin.id, "phase": "start"])
+        }
+      } else if let drag = pinDrag, phase == "drag" || phase == "up" {
+        onEvent?(["type": "pinDrag", "id": drag.id, "phase": phase == "up" ? "end" : "update",
+          "handle": drag.handle, "dx": location.x - drag.start.x, "dy": location.y - drag.start.y])
+        if phase == "up" { pinDrag = nil }
       }
       return
     }
@@ -664,6 +699,14 @@ private final class CaptureOverlayView: NSView {
     needsDisplay = true
     onEvent?(["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": phase,
       "keep": event.modifierFlags.contains(.shift)])
+  }
+  private func resizeHandle(_ rect: NSRect, at point: NSPoint) -> String? {
+    let handles: [(String, NSPoint)] = [
+      ("nw", NSPoint(x: rect.minX, y: rect.minY)), ("ne", NSPoint(x: rect.maxX, y: rect.minY)),
+      ("sw", NSPoint(x: rect.minX, y: rect.maxY)), ("se", NSPoint(x: rect.maxX, y: rect.maxY)),
+      ("n", NSPoint(x: rect.midX, y: rect.minY)), ("s", NSPoint(x: rect.midX, y: rect.maxY)),
+      ("w", NSPoint(x: rect.minX, y: rect.midY)), ("e", NSPoint(x: rect.maxX, y: rect.midY))]
+    return handles.first { abs($0.1.x - point.x) <= 5 && abs($0.1.y - point.y) <= 5 }?.0
   }
   func sendCurrentPointer() {
     guard let window = window else { return }
@@ -700,6 +743,7 @@ private final class CaptureOverlayView: NSView {
 
   func updateOptions(_ data: [String: Any]) {
     if let value = data["tool"] as? String { tool = value }
+    capturePurpose = data["capturePurpose"] as? String ?? ""
     if let value = data["tolerance"] as? Int { tolerance = value }
     if let value = data["zoom"] as? Int { zoom = value }
     if let value = data["continuous"] as? Bool { continuous = value }
@@ -707,7 +751,7 @@ private final class CaptureOverlayView: NSView {
     if let value = data["editingPins"] as? Bool { editingPins = value }
     selectedPin = data["selectedPin"] as? Int
     continuousButton.state = continuous ? .on : .off
-    continuousButton.isHidden = tool != "picker"
+    continuousButton.isHidden = tool != "picker" || !capturePurpose.isEmpty
     editbar.isHidden = tool == "picker"
     editButton.title = editingPins ? "返回绘制" : "编辑标注"
     undoButton.isEnabled = data["canUndoPins"] as? Bool == true
@@ -740,8 +784,8 @@ private final class CaptureOverlayView: NSView {
       button.setAccessibilityValue(selected ? "已选中" : "")
     }
     clearButton.isHidden = tool == "picker"
-    infoLabel.stringValue = tool == "picker" ? "取色 · \(zoom)× · 已采集 \(pickedCount)" :
-      tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
+    infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? "取色" : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
+      editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
     toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
     needsDisplay = true
   }
@@ -875,7 +919,9 @@ private final class CaptureOverlayView: NSView {
       let outline = NSBezierPath(rect: pin.rect); outline.lineWidth = pin.id == selectedPin ? 3 : 1.5; outline.stroke()
       if pin.id == selectedPin {
         for point in [NSPoint(x: pin.rect.minX,y: pin.rect.minY), NSPoint(x: pin.rect.maxX,y: pin.rect.minY),
-          NSPoint(x: pin.rect.minX,y: pin.rect.maxY), NSPoint(x: pin.rect.maxX,y: pin.rect.maxY)] {
+          NSPoint(x: pin.rect.minX,y: pin.rect.maxY), NSPoint(x: pin.rect.maxX,y: pin.rect.maxY),
+          NSPoint(x: pin.rect.midX,y: pin.rect.minY), NSPoint(x: pin.rect.midX,y: pin.rect.maxY),
+          NSPoint(x: pin.rect.minX,y: pin.rect.midY), NSPoint(x: pin.rect.maxX,y: pin.rect.midY)] {
           accent.setFill(); NSRect(x: point.x - 3,y: point.y - 3,width: 6,height: 6).fill()
         }
       }

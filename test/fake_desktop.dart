@@ -24,6 +24,9 @@ class FakeDesktop extends DesktopService {
 
   void event(String type, [Map<String, Object?> data = const {}]) =>
       input.add({'type': type, 'sessionId': 7, ...data});
+  String? importText;
+  @override
+  Future<String?> openPaletteFile() async => importText;
   String? exportedName;
   String? exportedText;
   List<Map<String, Object?>>? exportedAnnotations;

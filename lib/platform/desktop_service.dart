@@ -48,6 +48,7 @@ abstract class DesktopService {
   Future<String?> loadState();
   Future<void> saveState(String json);
   Future<void> writeClipboard(String text);
+  Future<String?> openPaletteFile();
   Future<bool> saveTextFile(String filename, String text);
   Future<bool> exportAnnotations(
     int sessionId,
@@ -125,6 +126,9 @@ class MacDesktopService implements DesktopService {
       Clipboard.setData(ClipboardData(text: text));
 
   @override
+  Future<String?> openPaletteFile() async =>
+      await _methods.invokeMethod<String>('openPaletteFile');
+  @override
   Future<bool> saveTextFile(String filename, String text) async =>
       await _methods.invokeMethod<bool>('saveTextFile', {
         'filename': filename,
@@ -161,6 +165,8 @@ class MacDesktopService implements DesktopService {
 }
 
 class UnsupportedDesktopService implements DesktopService {
+  @override
+  Future<String?> openPaletteFile() async => null;
   @override
   Future<bool> saveTextFile(String filename, String text) async => false;
   @override
