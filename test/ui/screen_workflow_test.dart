@@ -95,7 +95,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(c.markup.items.length, 1);
       // Desktop cursor feedback follows hit targets and active drags.
-      await tester.tap(find.byKey(const ValueKey('annotation-tool-select')));
+      await tester.tap(find.byKey(const ValueKey('annotation-group-line')));
       await tester.pumpAndSettle();
       final cursorMouse = TestGesture(
         dispatcher: tester.sendEventToBinding,

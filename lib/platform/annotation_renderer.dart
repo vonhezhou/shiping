@@ -14,7 +14,7 @@ class AnnotationRenderer {
   static void paint(
     ui.Canvas canvas,
     ui.Image image,
-    ui.Image mosaic,
+    Map<int, ui.Image> mosaics,
     List<Annotation> items,
   ) {
     final full = ui.Rect.fromLTWH(
@@ -99,39 +99,89 @@ class AnnotationRenderer {
           canvas.restore();
           text.dispose();
         case AnnotationKind.mosaic:
-          canvas.save();
-          canvas.clipRect(b);
-          canvas.drawImageRect(
-            mosaic,
-            ui.Rect.fromLTWH(
-              0,
-              0,
-              mosaic.width.toDouble(),
-              mosaic.height.toDouble(),
-            ),
-            full,
-            ui.Paint()..filterQuality = ui.FilterQuality.none,
-          );
-          canvas.restore();
         case AnnotationKind.blur:
           canvas.save();
-          canvas.clipRect(b);
-          canvas.saveLayer(
-            full,
-            ui.Paint()
-              ..imageFilter = ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          );
-          canvas.drawImage(image, ui.Offset.zero, ui.Paint());
-          canvas.restore();
+          if (a.effectBrush) {
+            canvas.clipPath(effectMask(a));
+          } else {
+            canvas.clipRect(b);
+          }
+          if (a.kind == AnnotationKind.mosaic) {
+            final mosaic = mosaics[a.effectStrength]!;
+            canvas.drawImageRect(
+              mosaic,
+              ui.Rect.fromLTWH(
+                0,
+                0,
+                mosaic.width.toDouble(),
+                mosaic.height.toDouble(),
+              ),
+              full,
+              ui.Paint()..filterQuality = ui.FilterQuality.none,
+            );
+          } else {
+            final sigma = blurRadius[a.effectStrength - 1];
+            canvas.saveLayer(
+              full,
+              ui.Paint()
+                ..imageFilter = ui.ImageFilter.blur(
+                  sigmaX: sigma,
+                  sigmaY: sigma,
+                ),
+            );
+            canvas.drawImage(image, ui.Offset.zero, ui.Paint());
+            canvas.restore();
+          }
           canvas.restore();
       }
     }
     canvas.restore();
   }
 
-  static Future<ui.Image> pixelate(ui.Image image) async {
-    final w = math.max(1, (image.width / 12).ceil()),
-        h = math.max(1, (image.height / 12).ceil());
+  static const mosaicBlockSize = [4.0, 8.0, 12.0, 20.0, 32.0];
+  static const blurRadius = [2.0, 5.0, 10.0, 16.0, 24.0];
+
+  /// Union of round caps and segment strips; also covers a stationary click.
+  static ui.Path effectMask(Annotation a) {
+    final path = ui.Path();
+    final radius = a.width / 2;
+    for (final p in a.points) {
+      path.addOval(ui.Rect.fromCircle(center: p, radius: radius));
+    }
+    for (var i = 1; i < a.points.length; i++) {
+      final p = a.points[i - 1], q = a.points[i];
+      final delta = q - p;
+      if (delta.distance == 0) continue;
+      final n = ui.Offset(-delta.dy, delta.dx) * (radius / delta.distance);
+      path.addPolygon([p - n, q - n, q + n, p + n], true);
+    }
+    return path;
+  }
+
+  static Future<Map<int, ui.Image>> prepareMosaics(ui.Image image) async {
+    final result = <int, ui.Image>{};
+    try {
+      for (var strength = 1; strength <= 5; strength++) {
+        result[strength] = await pixelate(
+          image,
+          blockSize: mosaicBlockSize[strength - 1],
+        );
+      }
+      return result;
+    } catch (_) {
+      for (final image in result.values) {
+        image.dispose();
+      }
+      rethrow;
+    }
+  }
+
+  static Future<ui.Image> pixelate(
+    ui.Image image, {
+    double blockSize = 12,
+  }) async {
+    final w = math.max(1, (image.width / blockSize).ceil()),
+        h = math.max(1, (image.height / blockSize).ceil());
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder).drawImageRect(
       image,
@@ -151,11 +201,11 @@ class AnnotationRenderer {
     final codec = await ui.instantiateImageCodec(png);
     final image = (await codec.getNextFrame()).image;
     codec.dispose();
-    ui.Image? mosaic;
+    Map<int, ui.Image>? mosaics;
     try {
-      mosaic = await pixelate(image);
+      mosaics = await prepareMosaics(image);
       final recorder = ui.PictureRecorder();
-      paint(ui.Canvas(recorder), image, mosaic, items);
+      paint(ui.Canvas(recorder), image, mosaics, items);
       final picture = recorder.endRecording();
       ui.Image output;
       try {
@@ -174,7 +224,9 @@ class AnnotationRenderer {
         output.dispose();
       }
     } finally {
-      mosaic?.dispose();
+      for (final mosaic in mosaics?.values ?? <ui.Image>[]) {
+        mosaic.dispose();
+      }
       image.dispose();
     }
   }

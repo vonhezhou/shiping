@@ -39,6 +39,8 @@ class Annotation {
     this.filled = false,
     this.bold = false,
     this.italic = false,
+    this.effectBrush = false,
+    this.effectStrength = 3,
   }) : points = List.unmodifiable(points);
   final AnnotationKind kind;
   final List<Offset> points;
@@ -46,6 +48,20 @@ class Annotation {
   final double width, fontSize;
   final String text;
   final bool filled, bold, italic;
+  final bool effectBrush;
+
+  /// 1–5: mosaic block size or Gaussian blur radius, independent of brush width.
+  final int effectStrength;
+  bool get isEffect =>
+      kind == AnnotationKind.mosaic || kind == AnnotationKind.blur;
+  bool get isPath =>
+      effectBrush && isEffect ||
+      [
+        AnnotationKind.line,
+        AnnotationKind.arrow,
+        AnnotationKind.pencil,
+        AnnotationKind.marker,
+      ].contains(kind);
 
   Rect get bounds {
     var l = points.first.dx, r = l, t = points.first.dy, b = t;
@@ -67,6 +83,8 @@ class Annotation {
     bool? filled,
     bool? bold,
     bool? italic,
+    bool? effectBrush,
+    int? effectStrength,
   }) => Annotation(
     kind: kind,
     points: points ?? this.points,
@@ -77,6 +95,8 @@ class Annotation {
     filled: filled ?? this.filled,
     bold: bold ?? this.bold,
     italic: italic ?? this.italic,
+    effectBrush: effectBrush ?? this.effectBrush,
+    effectStrength: effectStrength ?? this.effectStrength,
   );
 
   Annotation move(Offset delta, Size size) {
@@ -109,12 +129,7 @@ class Annotation {
 
   bool hitTest(Offset p, double tolerance) {
     if (!bounds.inflate(tolerance + width / 2).contains(p)) return false;
-    if ([
-      AnnotationKind.line,
-      AnnotationKind.arrow,
-      AnnotationKind.pencil,
-      AnnotationKind.marker,
-    ].contains(kind)) {
+    if (isPath) {
       for (var i = 1; i < points.length; i++) {
         final a = points[i - 1], d = points[i] - a;
         final length = d.distanceSquared;
@@ -155,12 +170,7 @@ class Annotation {
       return true;
     }
 
-    if ([
-      AnnotationKind.line,
-      AnnotationKind.arrow,
-      AnnotationKind.pencil,
-      AnnotationKind.marker,
-    ].contains(kind)) {
+    if (isPath) {
       for (var i = 1; i < points.length; i++) {
         if (segment(points[i - 1], points[i])) return true;
       }
@@ -196,6 +206,8 @@ class Annotation {
     'filled': filled,
     'bold': bold,
     'italic': italic,
+    'effectBrush': effectBrush,
+    'effectStrength': effectStrength,
   };
 
   static List<Annotation> decodeList(Object? value, int width, int height) {
@@ -211,10 +223,16 @@ class Annotation {
           .firstOrNull;
       final raw = v['points'], color = v['color'], stroke = v['width'];
       final font = v['fontSize'], text = v['text'];
+      final effectBrush = v['effectBrush'] ?? false;
+      final strength = v['effectStrength'] ?? 3;
       final filled = v['filled'] ?? false,
           bold = v['bold'] ?? false,
           italic = v['italic'] ?? false;
-      if (filled is! bool ||
+      if (effectBrush is! bool ||
+          strength is! int ||
+          strength < 1 ||
+          strength > 5 ||
+          filled is! bool ||
           bold is! bool ||
           italic is! bool ||
           kind == null ||
@@ -257,6 +275,8 @@ class Annotation {
       if (kind != AnnotationKind.pencil &&
           kind != AnnotationKind.marker &&
           kind != AnnotationKind.line &&
+          !(effectBrush &&
+              (kind == AnnotationKind.mosaic || kind == AnnotationKind.blur)) &&
           points.length != 2) {
         throw const FormatException('标注端点数量无效');
       }
@@ -270,6 +290,8 @@ class Annotation {
         filled: filled,
         bold: bold,
         italic: italic,
+        effectBrush: effectBrush,
+        effectStrength: strength,
       );
     }).toList();
   }

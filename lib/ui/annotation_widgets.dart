@@ -9,11 +9,14 @@ class _AnnotationEditor extends StatefulWidget {
 
 class _AnnotationEditorState extends State<_AnnotationEditor> {
   final focus = FocusNode();
-  ui.Image? image, mosaic;
+  ui.Image? image;
+  Map<int, ui.Image> mosaics = {};
   String? loadError;
   String tool = 'select';
   String lastShape = 'rectangle', lastLine = 'arrow', lastEffect = 'mosaic';
   bool filled = false, bold = false, italic = false, toolbarVisible = true;
+  bool effectBrush = false;
+  int effectStrength = 3;
   final textInput = TextEditingController();
   final textFocus = FocusNode();
   Rect? textRect;
@@ -30,6 +33,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           bool filled,
           bool bold,
           bool italic,
+          bool effectBrush,
+          int effectStrength,
         })
       >{};
   int color = 0xFFFF0000;
@@ -79,7 +84,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }
 
   Future<void> load() async {
-    ui.Image? decoded, pixels;
+    ui.Image? decoded;
+    Map<int, ui.Image> pixels = {};
     try {
       final codec = await ui.instantiateImageCodec(c.imageDocument!.png);
       try {
@@ -87,19 +93,23 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       } finally {
         codec.dispose();
       }
-      pixels = await AnnotationRenderer.pixelate(decoded);
+      pixels = await AnnotationRenderer.prepareMosaics(decoded);
       if (!mounted) {
         decoded.dispose();
-        pixels.dispose();
+        for (final image in pixels.values) {
+          image.dispose();
+        }
         return;
       }
       setState(() {
         image = decoded;
-        mosaic = pixels;
+        mosaics = pixels;
       });
     } catch (_) {
       decoded?.dispose();
-      pixels?.dispose();
+      for (final image in pixels.values) {
+        image.dispose();
+      }
       if (mounted) setState(() => loadError = '截图加载失败，请重新框选');
     }
   }
@@ -107,7 +117,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   @override
   void dispose() {
     image?.dispose();
-    mosaic?.dispose();
+    for (final image in mosaics.values) {
+      image.dispose();
+    }
     textInput.dispose();
     textFocus.dispose();
     focus.dispose();
@@ -150,6 +162,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     filled: filled,
     bold: bold,
     italic: italic,
+    effectBrush: effectBrush,
+    effectStrength: effectStrength,
   );
 
   String styleKey(String value) => ['rectangle', 'ellipse'].contains(value)
@@ -170,6 +184,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       filled: filled,
       bold: bold,
       italic: italic,
+      effectBrush: effectBrush,
+      effectStrength: effectStrength,
     );
     cancelGesture();
     final next = styles[styleKey(value)];
@@ -177,11 +193,19 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       tool = value;
       selected = null;
       color = next?.color ?? 0xFFFF0000;
-      width = next?.width ?? (value == 'marker' ? 12 : 3);
+      width =
+          next?.width ??
+          (value == 'marker'
+              ? 12
+              : ['mosaic', 'blur'].contains(value)
+              ? 24
+              : 3);
       fontSize = next?.fontSize ?? 24;
       filled = next?.filled ?? false;
       bold = next?.bold ?? false;
       italic = next?.italic ?? false;
+      effectBrush = next?.effectBrush ?? false;
+      effectStrength = next?.effectStrength ?? 3;
       if (['rectangle', 'ellipse'].contains(value)) lastShape = value;
       if (['line', 'arrow'].contains(value)) lastLine = value;
       if (['mosaic', 'blur'].contains(value)) lastEffect = value;
@@ -238,6 +262,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     bool? nextFilled,
     bool? nextBold,
     bool? nextItalic,
+    int? nextEffectStrength,
   }) {
     setState(() {
       color = nextColor ?? color;
@@ -246,6 +271,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       filled = nextFilled ?? filled;
       bold = nextBold ?? bold;
       italic = nextItalic ?? italic;
+      effectStrength = nextEffectStrength ?? effectStrength;
     });
     if (!textEditing && selected != null && selected! < items.length) {
       final next = List<Annotation>.of(items);
@@ -256,6 +282,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         filled: nextFilled,
         bold: nextBold,
         italic: nextItalic,
+        effectStrength: nextEffectStrength,
       );
       commit(next);
     }
@@ -365,7 +392,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     if (tool == 'text' ||
         (selected != null && items[selected!].kind == AnnotationKind.text)) {
       style(nextFont: (fontSize + direction).clamp(8, 200));
-    } else if (!['select', 'eraser', 'mosaic', 'blur'].contains(tool)) {
+    } else if (!['select', 'eraser'].contains(tool) &&
+        (!['mosaic', 'blur'].contains(tool) || effectBrush)) {
       style(nextWidth: (width + direction).clamp(1, 80));
     }
   }
@@ -549,6 +577,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         filled = original!.filled;
         bold = original!.bold;
         italic = original!.italic;
+        effectBrush = original!.effectBrush;
+        effectStrength = original!.effectStrength;
       }
     } else {
       selected = null;
@@ -577,7 +607,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         preview = original!.move(p - start!, imageSize);
       }
     } else if (preview != null) {
-      final free = tool == 'pencil' || tool == 'marker';
+      final free = preview!.isPath && tool != 'line' && tool != 'arrow';
       final end = constrainedAnnotationEnd(
         preview!.kind,
         start!,
@@ -645,13 +675,18 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       beginText(annotation.bounds);
       return;
     }
-    if (annotation.bounds.width < 1 && annotation.bounds.height < 1) return;
+    if (!annotation.effectBrush &&
+        annotation.bounds.width < 1 &&
+        annotation.bounds.height < 1) {
+      return;
+    }
     if ([
           AnnotationKind.rectangle,
           AnnotationKind.ellipse,
           AnnotationKind.mosaic,
           AnnotationKind.blur,
         ].contains(annotation.kind) &&
+        !annotation.effectBrush &&
         annotation.bounds.isEmpty) {
       return;
     }
@@ -869,8 +904,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     IconData icon,
     VoidCallback? action, {
     bool active = false,
-    bool colorDot = false,
-    int? dotColor,
   }) => IconButton(
     key: ValueKey(id),
     tooltip: label,
@@ -891,25 +924,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       backgroundColor: active ? toolbarBlue : Colors.transparent,
     ),
     selectedIcon: toolIcon(icon, Colors.white),
-    icon: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        toolIcon(icon, action == null ? const Color(0xFF777777) : Colors.white),
-        if (colorDot)
-          Positioned(
-            right: -4,
-            top: -3,
-            child: Container(
-              width: 5,
-              height: 5,
-              decoration: BoxDecoration(
-                color: Color(dotColor ?? color),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: .5),
-              ),
-            ),
-          ),
-      ],
+    icon: toolIcon(
+      icon,
+      action == null ? const Color(0xFF777777) : Colors.white,
     ),
     onPressed: action,
   );
@@ -1072,6 +1089,49 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ],
   );
 
+  void setEffectMode(bool brush) {
+    final kind = propertyKind;
+    cancelGesture();
+    setState(() {
+      tool = kind;
+      selected = null;
+      effectBrush = brush;
+    });
+    focus.requestFocus();
+  }
+
+  Widget effectStrengthMenu() => PopupMenuButton<int>(
+    key: const ValueKey('annotation-effect-strength'),
+    tooltip: propertyKind == 'mosaic' ? '色块大小' : '模糊程度',
+    color: toolbarSurface,
+    padding: EdgeInsets.zero,
+    onSelected: (value) => style(nextEffectStrength: value),
+    itemBuilder: (_) => [
+      for (var value = 1; value <= 5; value++)
+        PopupMenuItem(
+          key: ValueKey('annotation-effect-strength-$value'),
+          value: value,
+          child: Text(
+            '$value  ${const ['很轻', '轻', '中', '强', '很强'][value - 1]}',
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+    ],
+    child: MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: SizedBox(
+        width: 64,
+        height: 30,
+        child: Center(
+          child: Text(
+            '强度 $effectStrength ▾',
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+      ),
+    ),
+  );
+
   Widget propertyBar() {
     final kind = propertyKind;
     final shape = ['rectangle', 'ellipse'].contains(kind);
@@ -1082,7 +1142,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!effect && kind != 'text') numericMenu(font: false),
+          if ((!effect && kind != 'text') || (effect && effectBrush))
+            numericMenu(font: false),
           if (shape) ...[
             toolbarButton(
               'annotation-fill',
@@ -1140,6 +1201,23 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               () => selectTool('blur'),
               active: kind == 'blur',
             ),
+            divider,
+            toolbarButton(
+              'annotation-effect-brush',
+              '涂画',
+              Icons.brush_outlined,
+              () => setEffectMode(true),
+              active: effectBrush,
+            ),
+            toolbarButton(
+              'annotation-effect-rectangle',
+              '框选',
+              Icons.crop_square,
+              () => setEffectMode(false),
+              active: !effectBrush,
+            ),
+            divider,
+            effectStrengthMenu(),
           ] else ...[
             if (kind == 'text') ...[
               toolbarButton(
@@ -1185,10 +1263,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             ['rectangle', 'ellipse'].contains(tool) ? 'select' : lastShape,
           ),
           active: ['rectangle', 'ellipse'].contains(tool),
-          colorDot: true,
-          dotColor: ['rectangle', 'ellipse'].contains(tool)
-              ? color
-              : styles['shape']?.color ?? 0xFFFF0000,
         ),
         toolbarButton(
           'annotation-group-line',
@@ -1198,10 +1272,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             ['line', 'arrow'].contains(tool) ? 'select' : lastLine,
           ),
           active: ['line', 'arrow'].contains(tool),
-          colorDot: true,
-          dotColor: ['line', 'arrow'].contains(tool)
-              ? color
-              : styles['line']?.color ?? 0xFFFF0000,
         ),
         toolbarButton(
           'annotation-tool-pencil',
@@ -1240,13 +1310,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           () => selectTool(tool == 'eraser' ? 'select' : 'eraser'),
           active: tool == 'eraser',
         ),
-        toolbarButton(
-          'annotation-tool-select',
-          '选择 / 编辑 · 右键结束当前工具',
-          Icons.near_me_outlined,
-          () => selectTool('select'),
-          active: tool == 'select' && selected != null,
-        ),
         divider,
         toolbarButton(
           'annotation-undo',
@@ -1267,7 +1330,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             Icons.delete_outline,
             deleteSelected,
           ),
-        const Spacer(),
         divider,
         toolbarButton(
           'cancel-screenshot',
@@ -1401,7 +1463,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final toolbarWidth = math.min(488.0, constraints.maxWidth - 24);
+          final toolbarWidth = math.min(
+            412.0 + (selected != null ? 30 : 0),
+            constraints.maxWidth - 24,
+          );
           final totalHeight = hasProperties ? 76.0 : 36.0;
           final above =
               rect.bottom + totalHeight + 8 > constraints.maxHeight &&
@@ -1466,7 +1531,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                                 : CustomPaint(
                                     painter: _AnnotationPainter(
                                       image!,
-                                      mosaic!,
+                                      mosaics,
                                       visibleItems,
                                       textEditing ? null : selected,
                                       scale,
@@ -1574,20 +1639,21 @@ class _SelectionShadePainter extends CustomPainter {
 class _AnnotationPainter extends CustomPainter {
   _AnnotationPainter(
     this.image,
-    this.mosaic,
+    this.mosaics,
     this.items,
     this.selected,
     this.scale,
     this.eraserRegion,
   );
-  final ui.Image image, mosaic;
+  final ui.Image image;
+  final Map<int, ui.Image> mosaics;
   final List<Annotation> items;
   final int? selected;
   final double scale;
   final Rect? eraserRegion;
   @override
   void paint(Canvas canvas, Size size) {
-    AnnotationRenderer.paint(canvas, image, mosaic, items);
+    AnnotationRenderer.paint(canvas, image, mosaics, items);
     if (eraserRegion != null) {
       canvas.drawRect(
         eraserRegion!,

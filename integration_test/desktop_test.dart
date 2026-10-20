@@ -316,7 +316,47 @@ void main() {
           if (kind == AnnotationKind.rectangle) {
             expect(c.markup.items.last.filled, true);
           }
+          if ([AnnotationKind.mosaic, AnnotationKind.blur].contains(kind)) {
+            expect(c.markup.items.last.effectBrush, false);
+            await click(
+              tester,
+              find.byKey(const ValueKey('annotation-effect-brush')),
+            );
+            await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+            await click(
+              tester,
+              find.byKey(const ValueKey('annotation-effect-strength')),
+            );
+            await click(
+              tester,
+              find.byKey(const ValueKey('annotation-effect-strength-5')),
+            );
+            await mouseDrag(
+              tester,
+              tester.getCenter(canvas) - const Offset(100, 60),
+              const Offset(60, 40),
+            );
+            await tester.pumpAndSettle();
+            final brush = c.markup.items.last;
+            expect(brush.kind, kind);
+            expect(brush.effectBrush, true);
+            expect(brush.effectStrength, 5);
+            expect(brush.width, greaterThan(24));
+            expect(brush.points.length, greaterThan(2));
+            await click(tester, find.byKey(const ValueKey('annotation-undo')));
+            expect(c.markup.items.last.effectBrush, false);
+            await click(tester, find.byKey(const ValueKey('annotation-redo')));
+            expect(c.markup.items.last, brush);
+            await click(
+              tester,
+              find.byKey(const ValueKey('annotation-effect-rectangle')),
+            );
+          }
         }
+        expect(
+          find.byKey(const ValueKey('annotation-tool-select')),
+          findsNothing,
+        );
         await click(tester, find.byKey(const ValueKey('annotation-tool-text')));
         await click(tester, canvas);
         expect(find.byType(AlertDialog), findsNothing);
@@ -335,12 +375,12 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
         await tester.pumpAndSettle();
-        expect(c.markup.items.length, 9);
+        expect(c.markup.items.length, 11);
         expect(c.markup.items.last.text, '原位标注\n第二行');
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
-        expect(c.markup.items.length, 8);
+        expect(c.markup.items.length, 10);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));
-        expect(c.markup.items.length, 9);
+        expect(c.markup.items.length, 11);
         // Erase all intersecting objects in the same native capture panel.
         final beforeErase = List<Annotation>.of(c.markup.items);
         await click(
@@ -379,7 +419,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.screenshotEditing, true);
         expect(c.busy, true);
-        expect(c.markup.items.length, 9);
+        expect(c.markup.items.length, 11);
         expect(
           (await driver.invokeMapMethod<String, Object?>(
             'status',

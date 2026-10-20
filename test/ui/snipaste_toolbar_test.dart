@@ -58,7 +58,22 @@ void main() {
       expect(tester.getSize(toolbar).height, lessThanOrEqualTo(40));
       expect(tester.getSize(toolbar).width, lessThan(500));
       expect(tester.getRect(toolbar).right, closeTo(500, 1));
+      final redo = find.byKey(const ValueKey('annotation-redo'));
+      final cancel = find.byKey(const ValueKey('cancel-screenshot'));
+      expect(
+        tester.getRect(cancel).left - tester.getRect(redo).right,
+        lessThanOrEqualTo(12),
+        reason: '历史与完成操作之间只保留紧凑的分隔线',
+      );
+      for (final id in ['annotation-group-shape', 'annotation-group-line']) {
+        final button = tester.widget<IconButton>(find.byKey(ValueKey(id)));
+        expect(button.icon, isNot(isA<Stack>()), reason: '工具图标不显示更新红点');
+      }
       expect(find.byKey(const ValueKey('annotation-properties')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('annotation-tool-select')),
+        findsNothing,
+      );
       // Before annotating, selection movement and handles reuse the frozen frame.
       final cropCanvas = find.byKey(const ValueKey('annotation-canvas'));
       await tester.dragFrom(
@@ -132,6 +147,13 @@ void main() {
       expect(shape.bounds.width, shape.bounds.height);
       expect(shape.toJson()['filled'], true);
       expect(shape.width, 4);
+      expect(
+        tester.getRect(cancel).left -
+            tester
+                .getRect(find.byKey(const ValueKey('annotation-delete')))
+                .right,
+        lessThanOrEqualTo(12),
+      );
       await tester.tap(find.byKey(const ValueKey('annotation-group-line')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('annotation-group-shape')));
@@ -226,6 +248,86 @@ void main() {
       expect(input, findsNothing);
       expect(c.markup.items.last.text, '原位文字\n第二行');
       expect(c.screenshotEditing, true);
+      for (final kind in ['mosaic', 'blur']) {
+        if (find.byKey(ValueKey('annotation-tool-$kind')).evaluate().isEmpty) {
+          await tester.tap(
+            find.byKey(const ValueKey('annotation-group-effect')),
+          );
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byKey(ValueKey('annotation-tool-$kind')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('annotation-effect-brush')));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-strength')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-strength-5')),
+        );
+        await tester.pumpAndSettle();
+        await tester.dragFrom(
+          origin + const Offset(30, 30),
+          const Offset(120, 80),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        final brush = c.markup.items.last;
+        expect(brush.kind.name, kind);
+        expect(brush.toJson()['effectBrush'], true);
+        expect(brush.toJson()['effectStrength'], 5);
+        expect(brush.width, greaterThan(24));
+        expect(brush.points.length, greaterThan(2));
+        final count = c.markup.items.length;
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-strength')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-strength-1')),
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.length, count);
+        expect(c.markup.items.last.toJson()['effectStrength'], 1);
+        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last, brush);
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-rectangle')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-strength')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-strength-5')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('annotation-width')), findsNothing);
+        await tester.dragFrom(
+          origin + const Offset(200, 30),
+          const Offset(60, 50),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.toJson()['effectBrush'], false);
+        expect(c.markup.items.last.toJson()['effectStrength'], 5);
+        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last, brush);
+        await tester.tap(find.byKey(const ValueKey('annotation-redo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.toJson()['effectBrush'], false);
+        expect(
+          tester
+              .getRect(find.byKey(const ValueKey('annotation-properties')))
+              .right,
+          lessThanOrEqualTo(size.width),
+        );
+      }
       expect(c.busy, true);
       expect(d.showMainCalls, 0);
       expect(tester.takeException(), isNull);

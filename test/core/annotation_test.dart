@@ -5,6 +5,56 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('效果笔刷路径、强度和旧数据兼容，命中与框擦沿笔迹检测', () {
+    final json = Annotation(
+      kind: AnnotationKind.mosaic,
+      points: const [Offset(10, 10), Offset(90, 90)],
+      width: 12,
+    ).toJson()..addAll({'effectBrush': true, 'effectStrength': 5});
+    final a = Annotation.decodeList([json], 100, 100).single;
+    expect(a.toJson(), json);
+    expect(a.hitTest(const Offset(10, 80), 1), false);
+    expect(a.intersects(const Rect.fromLTRB(10, 70, 20, 80)), false);
+    expect(a.hitTest(const Offset(50, 50), 1), true);
+    expect(
+      a
+          .move(const Offset(0, 5), const Size(100, 100))
+          .toJson()['effectStrength'],
+      5,
+    );
+    final legacy = Map.of(json)
+      ..remove('effectBrush')
+      ..remove('effectStrength');
+    expect(
+      Annotation.decodeList([legacy], 100, 100).single.toJson()['effectBrush'],
+      false,
+    );
+    expect(
+      Annotation.decodeList(
+        [legacy],
+        100,
+        100,
+      ).single.toJson()['effectStrength'],
+      3,
+    );
+    for (final value in [0, 6, 2.5, '3']) {
+      expect(
+        () => Annotation.decodeList(
+          [Map.of(json)..['effectStrength'] = value],
+          100,
+          100,
+        ),
+        throwsFormatException,
+      );
+    }
+    final path = Map.of(json)
+      ..['points'] = [
+        [10, 10],
+        [50, 10],
+        [90, 90],
+      ];
+    expect(Annotation.decodeList([path], 100, 100).single.points, hasLength(3));
+  });
   Annotation arrow() => Annotation(
     kind: AnnotationKind.arrow,
     points: const [Offset(10, 20), Offset(70, 80)],

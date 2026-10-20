@@ -6,6 +6,95 @@ import 'package:fruler/platform/annotation_renderer.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('效果强度改变像素，笔刷保留空白角落、支持单点，预览与导出一致', () async {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawColor(const ui.Color(0xFF000000), ui.BlendMode.src);
+    for (var x = 0; x < 96; x += 10) {
+      canvas.drawRect(
+        ui.Rect.fromLTWH(x.toDouble(), 0, 5, 96),
+        ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+      );
+    }
+    final picture = recorder.endRecording();
+    final base = await picture.toImage(96, 96);
+    picture.dispose();
+    final png = (await base.toByteData(format: ui.ImageByteFormat.png))!.buffer
+        .asUint8List();
+    final before = (await base.toByteData())!.buffer.asUint8List();
+    addTearDown(base.dispose);
+    final mosaics = await AnnotationRenderer.prepareMosaics(base);
+    addTearDown(() {
+      for (final image in mosaics.values) {
+        image.dispose();
+      }
+    });
+    for (final kind in [AnnotationKind.mosaic, AnnotationKind.blur]) {
+      final outputs = <List<int>>[];
+      for (final strength in [1, 5]) {
+        final a = Annotation.decodeList(
+          [
+            Annotation(
+                kind: kind,
+                points: const [ui.Offset(20, 20), ui.Offset(70, 70)],
+                width: 16,
+              ).toJson()
+              ..addAll({'effectBrush': true, 'effectStrength': strength}),
+          ],
+          96,
+          96,
+        ).single;
+        final codec = await ui.instantiateImageCodec(
+          await AnnotationRenderer.export(png, [a]),
+        );
+        final image = (await codec.getNextFrame()).image;
+        final pixels = (await image.toByteData())!.buffer.asUint8List();
+        final previewRecorder = ui.PictureRecorder();
+        AnnotationRenderer.paint(ui.Canvas(previewRecorder), base, mosaics, [
+          a,
+        ]);
+        final previewPicture = previewRecorder.endRecording();
+        final preview = await previewPicture.toImage(96, 96);
+        expect(
+          (await preview.toByteData())!.buffer.asUint8List(),
+          orderedEquals(pixels),
+        );
+        preview.dispose();
+        previewPicture.dispose();
+        outputs.add(pixels.toList());
+        final untouched = (65 * 96 + 25) * 4;
+        expect(
+          pixels.sublist(untouched, untouched + 4),
+          before.sublist(untouched, untouched + 4),
+        );
+        expect(pixels, isNot(orderedEquals(before)));
+        image.dispose();
+        codec.dispose();
+      }
+      expect(outputs.first, isNot(orderedEquals(outputs.last)));
+      final dot = Annotation.decodeList(
+        [
+          Annotation(
+            kind: kind,
+            points: const [ui.Offset(40, 40), ui.Offset(40, 40)],
+            width: 24,
+          ).toJson()..['effectBrush'] = true,
+        ],
+        96,
+        96,
+      ).single;
+      final codec = await ui.instantiateImageCodec(
+        await AnnotationRenderer.export(png, [dot]),
+      );
+      final image = (await codec.getNextFrame()).image;
+      expect(
+        (await image.toByteData())!.buffer.asUint8List(),
+        isNot(orderedEquals(before)),
+      );
+      image.dispose();
+      codec.dispose();
+    }
+  });
   test('填充形状和多段折线真正写入导出像素，不依赖 UI 预览', () async {
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder).drawColor(const ui.Color(0xFF000000), ui.BlendMode.src);
