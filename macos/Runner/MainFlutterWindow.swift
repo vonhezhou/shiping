@@ -155,7 +155,14 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         result(["panels":self.overlays.count,"active":self.session != nil,
           "permission":CGPreflightScreenCaptureAccess(),"bundleId":Bundle.main.bundleIdentifier ?? "",
           "mainVisible":self.mainWindow?.isVisible == true,"editing":self.screenshotHost != nil,
+          "rulerViews":self.overlays.values.map { $0.overlay.integrationState },
           "windowNumber":self.screenshotHost?.windowNumber ?? self.overlays.values.first?.windowNumber ?? -1])
+      case "rulerLayout":
+        guard let panel = self.overlays.values.first,
+          let width = args["width"] as? Double, let height = args["height"] as? Double else {
+          result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
+        }
+        result(panel.overlay.integrationLayout(width: width, height: height))
       case "pointer":
         guard let id=args["displayId"] as? UInt32, let panel=self.overlays[id],
           let x=args["x"] as? Double, let y=args["y"] as? Double, let phase=args["phase"] as? String,
@@ -171,7 +178,9 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       case "key":
         guard let panel=self.overlays.values.first(where:{$0.isKeyWindow}) ?? self.overlays.values.first,
           let code=args["keyCode"] as? UInt16,
-          let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:[],
+          let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:
+            (args["command"] as? Bool == true ? NSEvent.ModifierFlags.command : []).union(
+              args["shift"] as? Bool == true ? .shift : []),
             timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
             context:nil,characters:"",charactersIgnoringModifiers:"",isARepeat:false,keyCode:code) else {
           result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
@@ -183,6 +192,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         self.clipboardBackup=(NSPasteboard.general.pasteboardItems ?? []).map { item in
           Dictionary(uniqueKeysWithValues:item.types.compactMap { type in item.data(forType:type).map { (type,$0) } })
         };result(nil)
+      case "clipboardText": result(NSPasteboard.general.string(forType:.string))
       case "clipboardPng": result(NSPasteboard.general.data(forType:.png).map { FlutterStandardTypedData(bytes:$0) })
       case "restoreClipboard":
         if let backup=self.clipboardBackup {
@@ -756,6 +766,7 @@ private final class CaptureOverlayView: NSView {
   private var capturePurpose = ""
   private let editbar = NSView()
   private let continuousButton = NSButton(checkboxWithTitle: "连续取色", target: nil, action: nil)
+  private let copySizeButton = NSButton(title: "复制尺寸 ⌘C", target: nil, action: nil)
   private let editButton = NSButton(title: "编辑标注", target: nil, action: nil)
   private let redoButton = NSButton(title:"重做",target:nil,action:nil)
   private let undoButton = NSButton(title: "撤销", target: nil, action: nil)
@@ -801,10 +812,12 @@ private final class CaptureOverlayView: NSView {
   override func keyDown(with event: NSEvent) {
     switch Int(event.keyCode) {
     case kVK_Escape: onCancel?()
+    case kVK_ANSI_C where tool == "rectangle" && event.modifierFlags.contains(.command):
+      onEvent?(["type": "copyMeasurement"])
     case kVK_ANSI_Z where event.modifierFlags.contains(.command):
       onEvent?(["type": event.modifierFlags.contains(.shift) ? "redoPins" : "undoPins"])
     case kVK_Delete, kVK_ForwardDelete:
-      if editingPins { onEvent?(["type": "deletePin"]) }
+      if editingPins || (tool == "rectangle" && selectedPin != nil) { onEvent?(["type": "deletePin"]) }
     case kVK_Return, kVK_ANSI_KeypadEnter:
       onEvent?(["type": "confirm", "keep": event.modifierFlags.contains(.shift)])
     case kVK_LeftArrow: onEvent?(["type": "nudge", "dx": -1, "dy": 0, "resize": event.modifierFlags.contains(.shift)])
@@ -835,7 +848,7 @@ private final class CaptureOverlayView: NSView {
     if pinDrag == nil {
       guard !toolbar.frame.contains(location), (editbar.isHidden || !editbar.frame.contains(location)) else { return }
     }
-    if editingPins && tool != "picker" {
+    if (editingPins || (tool == "rectangle" && !pins.isEmpty)) && tool != "picker" {
       releaseCursor()
       if phase == "down" {
         let selected = pins.first { $0.id == selectedPin }
@@ -846,13 +859,15 @@ private final class CaptureOverlayView: NSView {
           let handle = selectedHandle ?? "move"
           pinDrag = (pin.id, location, handle)
           onEvent?(["type": "pinDrag", "id": pin.id, "phase": "start"])
+          return
         }
       } else if let drag = pinDrag, phase == "drag" || phase == "up" {
         onEvent?(["type": "pinDrag", "id": drag.id, "phase": phase == "up" ? "end" : "update",
           "handle": drag.handle, "dx": location.x - drag.start.x, "dy": location.y - drag.start.y])
         if phase == "up" { pinDrag = nil }
+        return
       }
-      return
+      if editingPins { return }
     }
     releaseCursor()
     pointer = location
@@ -899,6 +914,25 @@ private final class CaptureOverlayView: NSView {
     needsDisplay = true
   }
 
+  #if FRULER_INTEGRATION_TEST
+  func integrationLayout(width: Double, height: Double) -> Bool {
+    let view = CaptureOverlayView(snapshot: snapshot, tool: tool)
+    view.setFrameSize(NSSize(width: width, height: height))
+    view.updateOptions(["tool":tool, "selectedPin":1])
+    view.layoutSubtreeIfNeeded()
+    return [view.toolbar, view.editbar].allSatisfy { bar in
+      view.bounds.contains(bar.frame) && bar.subviews.allSatisfy { bar.bounds.contains($0.frame) }
+    }
+  }
+  var integrationState: [String: Any] {
+    ["displayId": snapshot.displayID, "tool": tool,
+     "selectedPin": selectedPin as Any? ?? NSNull(),
+     "pins": pins.map { ["id": $0.id, "x": $0.rect.minX, "y": $0.rect.minY,
+       "width": $0.rect.width, "height": $0.rect.height, "label": $0.label] as [String: Any] },
+     "copySizeEnabled": copySizeButton.isEnabled]
+  }
+  #endif
+
   func releaseCursor() {
     if cursorHidden { NSCursor.unhide(); cursorHidden = false }
   }
@@ -916,7 +950,9 @@ private final class CaptureOverlayView: NSView {
     continuousButton.state = continuous ? .on : .off
     continuousButton.isHidden = tool != "picker" || !capturePurpose.isEmpty
     editbar.isHidden = tool == "picker" || tool == "screenshot"
-    editButton.title = editingPins ? "返回绘制" : "编辑标注"
+    editButton.title = editingPins ? "添加测量框" : "仅编辑框"
+    copySizeButton.isHidden = tool != "rectangle"
+    copySizeButton.isEnabled = selectedPin != nil
     undoButton.isEnabled = data["canUndoPins"] as? Bool == true
     redoButton.isEnabled = data["canRedoPins"] as? Bool == true
     if let values = data["pinned"] as? [[String: Any]] {
@@ -949,7 +985,7 @@ private final class CaptureOverlayView: NSView {
     }
     clearButton.isHidden = tool == "picker" || tool == "screenshot"
     infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? "取色" : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
-      tool == "screenshot" ? "框选截图 · 松开进入标注 · 方向键微调 · Enter 确认" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
+      tool == "screenshot" ? "框选截图 · 松开进入标注 · 方向键微调 · Enter 确认" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "空白处新增 · 拖框移动 / 边角缩放 · Enter 完成" : "容差 \(tolerance) · 滚轮调整"
     toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
     needsDisplay = true
   }
@@ -1025,7 +1061,7 @@ private final class CaptureOverlayView: NSView {
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
     editbar.addSubview(stack)
-    let actions: [(NSButton, Selector)] = [(editButton, #selector(togglePinEditing)),
+    let actions: [(NSButton, Selector)] = [(copySizeButton, #selector(copyMeasurement)), (editButton, #selector(togglePinEditing)),
       (undoButton, #selector(undoPin)), (redoButton,#selector(redoPin)), (deleteButton, #selector(deletePin)),
       (copyImageButton, #selector(copyAnnotationImage)), (saveImageButton, #selector(saveAnnotationImage))]
     for (button, action) in actions {
@@ -1035,7 +1071,7 @@ private final class CaptureOverlayView: NSView {
     pinSelector.target = self; pinSelector.action = #selector(selectAnnotation)
     pinSelector.font = .systemFont(ofSize: 11)
     pinSelector.widthAnchor.constraint(equalToConstant: 180).isActive = true
-    stack.insertArrangedSubview(pinSelector, at: 1)
+    stack.insertArrangedSubview(pinSelector, at: 2)
     NSLayoutConstraint.activate([
       editbar.centerXAnchor.constraint(equalTo: centerXAnchor),
       editbar.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
@@ -1049,6 +1085,7 @@ private final class CaptureOverlayView: NSView {
     var event = data; event["type"] = type; onEvent?(event)
     window?.makeFirstResponder(self)
   }
+  @objc private func copyMeasurement() { emitControl("copyMeasurement") }
   @objc private func toggleContinuous() { emitControl("continuousChanged", data: ["enabled": continuousButton.state == .on]) }
   @objc private func togglePinEditing() { emitControl("editPins") }
   @objc private func redoPin() { emitControl("redoPins") }
@@ -1105,6 +1142,7 @@ private final class CaptureOverlayView: NSView {
       (pin.label as NSString).draw(at: NSPoint(x: pin.rect.minX + 4, y: max(4, pin.rect.minY - 20)), withAttributes: attrs)
     }
     guard isPointerActive, !editingPins else { return }
+    if tool == "rectangle", !anchored, selectedPin != nil { return }
     if let rect = measuredRect { drawMeasurement(rect) }
     drawCrosshair()
     drawLoupe()
@@ -1185,7 +1223,7 @@ private final class CaptureOverlayView: NSView {
     let labelY = tool == "picker" ? box.minY + 122 : box.minY + 12
     (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
       .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
-    let hint = tool == "rectangle" ? (anchored ? "Enter 确认 · Shift 保留 · 方向键微调" : "拖拽 / Enter 定起点 · 方向键微调") :
+    let hint = tool == "rectangle" ? (anchored ? "松手保留 · 方向键微调" : "拖拽新增 · 拖框移动 / 边角缩放 · Enter 复制并结束") :
       (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
     let actionHint = tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
     (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y:labelY+21,width:width-28,height:60),withAttributes:[

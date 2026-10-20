@@ -69,7 +69,8 @@ void main() {
     d.event('selectPin', {'id': 1});
     d.event('confirm');
     await tick();
-    expect(c.busy, true);
+    expect(c.busy, false);
+    expect(d.clipboard, '4 × 4 px · 2 × 2 pt');
   });
   test('同屏依次取两色覆盖连续模式，Esc 后不污染普通取色', () async {
     c.setContinuousPicker(true);

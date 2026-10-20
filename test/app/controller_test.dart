@@ -40,6 +40,59 @@ void main() {
       [255, 0, 0],
     ]);
   });
+  test('普通矩形松手保留结果，可直接移动缩放和新增框，确认才关闭', () async {
+    await controller.startRuler();
+    desktop.pointer(x: 0, y: 0, phase: 'down');
+    desktop.pointer(x: 2, y: 2, phase: 'up');
+    await settle();
+    expect(controller.busy, true);
+    expect(desktop.finishCalls, 0);
+    expect((desktop.lastOverlay!['pinned'] as List).length, 1);
+    expect(desktop.lastOverlay!['selectedPin'], 1);
+    desktop.event('pinDrag', {'id': 1, 'displayId': 1, 'phase': 'start'});
+    desktop.event('pinDrag', {
+      'id': 1,
+      'displayId': 1,
+      'phase': 'end',
+      'dx': 1.0,
+      'dy': 0.0,
+      'handle': 'move',
+    });
+    var pin = (desktop.lastOverlay!['pinned'] as List).single as Map;
+    expect(pin['rect']['left'], 2);
+    desktop.event('nudge', {'dx': 1, 'dy': 0, 'resize': true});
+    pin = (desktop.lastOverlay!['pinned'] as List).single as Map;
+    expect(pin['rect']['right'], 7);
+    desktop.event('copyMeasurement');
+    await settle();
+    expect(desktop.clipboard, '5 × 4 px · 2.5 × 2 pt');
+    expect(controller.busy, true);
+    desktop.pointer(x: 3, y: 2, phase: 'down');
+    desktop.pointer(x: 4, y: 3, phase: 'up');
+    await settle();
+    expect((desktop.lastOverlay!['pinned'] as List).length, 2);
+    expect(desktop.lastOverlay!['selectedPin'], 2);
+    desktop.event('confirm');
+    await settle();
+    expect(desktop.clipboard, '2 × 2 px · 1 × 1 pt');
+    expect(desktop.finishCalls, 1);
+    expect(desktop.showMainCalls, 0);
+    expect(controller.busy, false);
+  });
+  test('矩形复制失败仍显示选框，Esc 退出不会重新打开主窗口', () async {
+    desktop.clipboardError = PlatformException(code: 'clipboard');
+    await controller.startRuler();
+    desktop.pointer(x: 0, y: 0, phase: 'down');
+    desktop.pointer(x: 2, y: 2, phase: 'up');
+    await settle();
+    expect(controller.busy, true);
+    expect(desktop.finishCalls, 0);
+    expect(desktop.lastOverlay!['pinned'], hasLength(1));
+    expect(controller.error, contains('复制失败'));
+    desktop.event('cancelled');
+    expect(controller.busy, false);
+    expect(desktop.showMainCalls, 0);
+  });
   test('反向拖拽区分 backing pixel 和逻辑点', () async {
     await controller.startRuler(RulerMode.rectangle);
     desktop.pointer(x: 4, y: 3, phase: 'down');
@@ -124,6 +177,8 @@ void main() {
     desktop.pointer(x: 0, y: 0, phase: 'down');
     desktop.pointer(x: 4, y: 3, phase: 'up');
     await settle();
+    desktop.event('confirm');
+    await settle();
     await controller.pickColor();
     desktop.pointer(phase: 'up');
     await settle();
@@ -154,7 +209,7 @@ void main() {
     desktop.event('scroll', {'steps': -32});
     expect(controller.tolerance, 255);
   });
-  test('Shift 连续保留多个标注，清除仅影响浮层，普通确认结束', () async {
+  test('连续保留多个测量框，清除仅影响浮层，Enter 确认结束', () async {
     await controller.startRuler();
     for (var i = 0; i < 2; i++) {
       desktop.pointer(x: 0, y: 0, phase: 'down');
@@ -170,6 +225,9 @@ void main() {
     expect(controller.measurements.length, 2);
     desktop.pointer(x: 0, y: 0, phase: 'down');
     desktop.pointer(x: 2, y: 2, phase: 'up');
+    await settle();
+    expect(desktop.finishCalls, 0);
+    desktop.event('confirm');
     await settle();
     expect(desktop.finishCalls, 1);
     await controller.startRuler();

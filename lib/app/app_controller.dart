@@ -744,6 +744,9 @@ class AppController extends ChangeNotifier {
       case 'pinDrag':
         _dragPin(event);
         return;
+      case 'copyMeasurement':
+        unawaited(_copySelectedMeasurement());
+        return;
       case 'editPins':
         _editingPins = !_editingPins;
         _anchor = null;
@@ -811,7 +814,8 @@ class AppController extends ChangeNotifier {
         _notify();
         return;
       case 'nudge':
-        if (_editingPins) {
+        if (_editingPins ||
+            (_tool == 'rectangle' && _selectedPin != null && _anchor == null)) {
           _nudgePin(
             (event['dx'] as int).clamp(-1, 1),
             (event['dy'] as int).clamp(-1, 1),
@@ -840,6 +844,10 @@ class AppController extends ChangeNotifier {
         });
         return;
       case 'confirm':
+        if (_tool == 'rectangle' && _selectedPin != null && _anchor == null) {
+          unawaited(_copySelectedMeasurement(finish: true));
+          return;
+        }
         if (_editingPins) return;
         final position = _lastPointer;
         if (position == null) return;
@@ -931,6 +939,7 @@ class AppController extends ChangeNotifier {
     RulerMeasurement? measurement;
     if (_tool == RulerMode.rectangle.name || _tool == 'screenshot') {
       if (phase == 'down') {
+        _selectedPin = null;
         _keyboardRectangle = event['keyboard'] == true;
         _anchor = _keyboardRectangle ? pixel : frame.logicalToBoundary(x, y);
         _anchorDisplay = display.id;
@@ -987,11 +996,7 @@ class AppController extends ChangeNotifier {
         return;
       }
       unawaited(
-        _commitMeasurement(
-          measurement,
-          display,
-          keep: (_tool == 'rectangle' && event['keep'] == true),
-        ),
+        _commitMeasurement(measurement, display, keep: _tool == 'rectangle'),
       );
     } else {
       _anchor = null;
@@ -1079,8 +1084,9 @@ class AppController extends ChangeNotifier {
         'id': ++_nextPinId,
         'displayId': display.id,
         'rect': measurement.rect.toJson(),
-        'label': measurement.pixelLabel,
+        'label': measurement.label,
       });
+      _selectedPin = _nextPinId;
       _anchor = null;
       _anchorDisplay = null;
       _keyboardRectangle = false;
@@ -1104,6 +1110,38 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> _copySelectedMeasurement({bool finish = false}) async {
+    final session = _session;
+    if (session == null || _committing) return;
+    final pin = _pins.where((p) => p['id'] == _selectedPin).firstOrNull;
+    if (pin == null) return;
+    final frame = session.displays
+        .firstWhere((d) => d.id == pin['displayId'])
+        .frame;
+    final result = RulerMeasurement.fromRect(
+      frame,
+      _pinRect(pin),
+      RulerMode.rectangle,
+    );
+    _committing = true;
+    if (finish) {
+      await _complete(result.label);
+      return;
+    }
+    try {
+      await desktop.writeClipboard(result.label);
+      if (_session?.id == session.id) {
+        notice = '已复制 ${result.label}';
+        error = null;
+      }
+    } catch (e) {
+      if (_session?.id == session.id) error = '尺寸复制失败：${_message(e)}';
+    } finally {
+      if (_session?.id == session.id) _committing = false;
+      _notify();
+    }
+  }
+
   PixelRect _pinRect(Map<String, Object?> pin) {
     final r = pin['rect'] as Map;
     return PixelRect(
@@ -1118,12 +1156,18 @@ class AppController extends ChangeNotifier {
     _pins[index] = {
       ..._pins[index],
       'rect': rect.toJson(),
-      'label': '${rect.width} × ${rect.height} px',
+      'label': RulerMeasurement.fromRect(
+        _session!.displays
+            .firstWhere((d) => d.id == _pins[index]['displayId'])
+            .frame,
+        rect,
+        RulerMode.rectangle,
+      ).label,
     };
   }
 
   void _dragPin(Map<Object?, Object?> event) {
-    if (!_editingPins) return;
+    if (!_editingPins && _tool != 'rectangle') return;
     final index = _pins.indexWhere(
       (p) => p['id'] == event['id'] && p['displayId'] == event['displayId'],
     );

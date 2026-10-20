@@ -330,8 +330,8 @@ void main() {
           ))?['mainVisible'],
           false,
         );
-        // Picker and ruler must also complete on-screen without reopening history.
-        for (final tool in ['picker', 'rectangle']) {
+        // Picker completes on-screen without reopening history.
+        for (final tool in ['picker']) {
           if (tool == 'picker') {
             await c.pickColor();
           } else {
@@ -359,8 +359,140 @@ void main() {
           );
         }
         expect(c.colors, isNotEmpty);
-        expect(c.measurements, isNotEmpty);
       } finally {
+        await driver.invokeMethod<void>('restoreClipboard');
+        c.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+  testWidgets(
+    'rectangle ruler retains results, moves/resizes and adds multiple regions',
+    (tester) async {
+      final desktop = NativeDesktop();
+      final c = AppController(desktop);
+      await c.initialize();
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await tester.pumpAndSettle();
+      Future<Map> state() async {
+        final data = await driver.invokeMapMethod<String, Object?>('status');
+        return (data!['rulerViews'] as List).cast<Map>().firstWhere(
+          (view) => view['displayId'] == desktop.lastCapture!.displays.first.id,
+        );
+      }
+
+      Future<void> drag(double x, double y, double endX, double endY) async {
+        for (final e in [
+          {'phase': 'down', 'x': x, 'y': y},
+          {'phase': 'drag', 'x': endX, 'y': endY},
+          {'phase': 'up', 'x': endX, 'y': endY},
+        ]) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': desktop.lastCapture!.displays.first.id,
+            ...e,
+          });
+          await tester.pumpAndSettle();
+        }
+      }
+
+      try {
+        await driver.invokeMethod<void>('backupClipboard');
+        expect(
+          c.permissionGranted,
+          true,
+          reason: 'Real screen-recording permission is required',
+        );
+        await c.startRuler();
+        await tester.pumpAndSettle();
+        final before = await driver.invokeMapMethod<String, Object?>('status');
+        for (final size in [const Size(1100, 760), const Size(920, 680)]) {
+          expect(
+            await driver.invokeMethod<bool>('rulerLayout', {
+              'width': size.width,
+              'height': size.height,
+            }),
+            true,
+            reason: 'Native ruler controls must fit $size',
+          );
+        }
+        await drag(80, 180, 180, 240);
+        expect(c.busy, true);
+        var native = await state();
+        expect(native['pins'], hasLength(1));
+        expect(native['selectedPin'], 1);
+        expect(native['copySizeEnabled'], true);
+        var pin = (native['pins'] as List).single as Map;
+        expect(pin['width'], 100.0);
+        expect(pin['label'], contains('pt'));
+        // Result remains on screen even after the pointer moves away.
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': desktop.lastCapture!.displays.first.id,
+          'phase': 'move',
+          'x': 600.0,
+          'y': 450.0,
+        });
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(1));
+        await drag(130, 210, 150, 230);
+        pin = ((await state())['pins'] as List).single as Map;
+        expect(pin['x'], 100.0);
+        expect(pin['y'], 200.0);
+        await drag(200, 260, 230, 280);
+        pin = ((await state())['pins'] as List).single as Map;
+        expect(pin['width'], 130.0);
+        expect(pin['height'], 80.0);
+        await driver.invokeMethod<void>('key', {'keyCode': 8, 'command': true});
+        await tester.pumpAndSettle();
+        final text = await driver.invokeMethod<String>('clipboardText');
+        expect(text, contains('130 × 80 pt'));
+        expect(c.busy, true);
+        await drag(300, 300, 360, 350);
+        expect((await state())['pins'], hasLength(2));
+        await driver.invokeMethod<void>('key', {'keyCode': 6, 'command': true});
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(1));
+        await driver.invokeMethod<void>('key', {
+          'keyCode': 6,
+          'command': true,
+          'shift': true,
+        });
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(2));
+        // Select the first region again; arrows move a backing pixel.
+        await drag(140, 230, 140, 230);
+        pin = ((await state())['pins'] as List).first as Map;
+        final left = pin['x'] as num;
+        await driver.invokeMethod<void>('key', {'keyCode': 124});
+        await tester.pumpAndSettle();
+        pin = ((await state())['pins'] as List).first as Map;
+        expect(
+          pin['x'],
+          closeTo(
+            left + 1 / desktop.lastCapture!.displays.first.frame.scaleX,
+            .001,
+          ),
+        );
+        final active = await driver.invokeMapMethod<String, Object?>('status');
+        expect(active?['windowNumber'], before?['windowNumber']);
+        expect(active?['mainVisible'], false);
+        await driver.invokeMethod<void>('key', {'keyCode': 36});
+        await waitFor(tester, () => !c.busy);
+        expect(
+          (await driver.invokeMapMethod<String, Object?>('status'))?['panels'],
+          0,
+        );
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))?['mainVisible'],
+          false,
+        );
+        await c.startRuler();
+        await drag(80, 180, 180, 240);
+        await driver.invokeMethod<void>('key', {'keyCode': 53});
+        await waitFor(tester, () => !c.busy);
+      } finally {
+        if (c.busy) await driver.invokeMethod<void>('key', {'keyCode': 53});
         await driver.invokeMethod<void>('restoreClipboard');
         c.dispose();
         await tester.pumpWidget(const SizedBox.shrink());
