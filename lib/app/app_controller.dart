@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../core/core.dart';
 import '../platform/desktop_service.dart';
 import '../platform/image_document.dart';
+import '../platform/annotation_renderer.dart';
 
 enum AppSection { picker, ruler, image, settings }
 
@@ -85,500 +86,85 @@ class MeasurementRecord {
   }
 }
 
-class _ImageDraft {
-  _ImageDraft(
-    this.pins,
-    this.undo,
-    this.redo,
-    this.tool,
-    this.selected,
-    this.editing,
-    this.tolerance,
-    this.zoom,
-  );
-  final List<Map<String, Object?>> pins;
-  final List<List<Map<String, Object?>>> undo, redo;
-  final String tool;
-  final int? selected;
-  final bool editing;
-  final int tolerance, zoom;
-}
-
 class AppController extends ChangeNotifier {
   AppController(this.desktop, {ImageDocumentCodec? imageCodec})
-    : imageCodec = imageCodec ?? ImageDocumentCodec();
-  final ImageDocumentCodec imageCodec;
+    : imageCodec = imageCodec ?? ImageDocumentCodec() {
+    markup.addListener(_notify);
+  }
   final DesktopService desktop;
+  final ImageDocumentCodec imageCodec;
+  final markup = AnnotationHistory();
   ImageDocument? imageDocument;
-  ImageProjectView? imageView;
-  String? imageProjectName;
-  String? imageProjectPath;
-  List<ProjectLocation> recentImageProjects = [];
-  String? recoveryDraft;
-  bool _recoveryReadFailed = false;
-  bool get recoveryPending => recoveryDraft != null || _recoveryReadFailed;
-  bool draftSaving = false;
-  String? draftError;
-  DateTime? draftSavedAt;
-  Timer? _draftDebounce, _draftPeriodic;
-  String? _observedDraftSignature, _writtenDraftSignature;
-  Future<void> _draftWrites = Future.value();
-  String? _pendingProjectPath;
-
-  ImageProject _currentImageProject() {
-    final document = imageDocument!;
-    return ImageProject(
-      name: document.name,
-      png: document.png,
-      width: document.frame.width,
-      height: document.frame.height,
-      annotations: List.of(_imagePins),
-      tool: imageTool,
-      view: imageView,
-      tolerance: _imageSession
-          ? tolerance
-          : _imageDraft?.tolerance ?? tolerance,
-      zoom: _imageSession ? zoom : _imageDraft?.zoom ?? zoom,
-    );
-  }
-
-  String _draftSignature() =>
-      '${_imageSignature()}|$imageProjectPath|$_savedImageSignature';
-  void _scheduleDraft() {
-    if (initializing || recoveryPending || imageDocument == null) return;
-    final signature = _draftSignature();
-    if (signature == _observedDraftSignature) return;
-    _observedDraftSignature = signature;
-    _draftDebounce?.cancel();
-    _draftDebounce = Timer(
-      const Duration(seconds: 2),
-      () => unawaited(flushImageDraft()),
-    );
-  }
-
-  Future<void> _writeDraft(String? text) {
-    final next = _draftWrites
-        .catchError((Object _) {})
-        .then((_) => desktop.saveImageDraft(text));
-    _draftWrites = next;
-    return next;
-  }
-
-  Future<bool> flushImageDraft() async {
-    if (_disposed || recoveryPending || imageDocument == null || draftSaving) {
-      return false;
-    }
-    final signature = _draftSignature();
-    if (signature == _writtenDraftSignature) return true;
-    draftSaving = true;
-    try {
-      final now = DateTime.now();
-      final text = jsonEncode({
-        'version': 1,
-        'savedAt': now.toIso8601String(),
-        'project': jsonDecode(_currentImageProject().encode()),
-        'location': imageProjectPath == null
-            ? null
-            : {'name': imageProjectName, 'path': imageProjectPath},
-        'dirty': imageProjectDirty,
-      });
-      await _writeDraft(text);
-      _writtenDraftSignature = signature;
-      draftSavedAt = now;
-      draftError = null;
-      return true;
-    } catch (_) {
-      draftError = '本地草稿保存失败，请手动保存项目；稍后会自动重试。';
-      return false;
-    } finally {
-      draftSaving = false;
-      _notify();
-    }
-  }
-
-  Future<void> _clearImageDraft() async {
-    _draftDebounce?.cancel();
-    _observedDraftSignature = null;
-    _writtenDraftSignature = null;
-    await _writeDraft(null);
-    _draftDebounce?.cancel();
-    _observedDraftSignature = null;
-    _writtenDraftSignature = null;
-    draftSavedAt = null;
-    draftError = null;
-  }
-
-  Future<void> discardRecovery() async {
-    if (!recoveryPending || imageLoading) return;
-    try {
-      await _clearImageDraft();
-      recoveryDraft = null;
-      _recoveryReadFailed = false;
-      _notify();
-      _openPendingProject();
-    } catch (_) {
-      _fail('无法清除本地草稿，请重试');
-    }
-  }
-
-  Future<void> restoreImageDraft() async {
-    if (!recoveryPending || busy || imageLoading || imageSaving) return;
-    imageLoading = true;
-    _notify();
-    try {
-      if (_recoveryReadFailed) {
-        recoveryDraft = await desktop.loadImageDraft();
-        _recoveryReadFailed = false;
-        if (recoveryDraft == null) {
-          _notify();
-          return;
-        }
-      }
-      final value = jsonDecode(recoveryDraft!);
-      if (value is! Map || value['version'] != 1 || value['dirty'] is! bool) {
-        throw const FormatException('草稿格式无效');
-      }
-      final project = ImageProject.decode(jsonEncode(value['project']));
-      final document = await _decodeProject(project);
-      final location = value['location'];
-      if (location != null &&
-          (location is! Map ||
-              location['path'] is! String ||
-              location['name'] is! String)) {
-        throw const FormatException('草稿位置无效');
-      }
-      if (_disposed) return;
-      _installProject(
-        project,
-        document,
-        name: location?['name'] as String?,
-        path: location?['path'] as String?,
-      );
-      if (value['dirty'] == true) _savedImageSignature = null;
-      draftSavedAt = DateTime.tryParse(value['savedAt']?.toString() ?? '');
-      recoveryDraft = null;
-      notice = '已恢复上次图片工作；原项目文件未被自动覆盖';
-      error = null;
-    } catch (_) {
-      _fail('无法恢复本地草稿，可保留后重试，或选择丢弃草稿');
-    } finally {
-      imageLoading = false;
-      _notify();
-    }
-    _openPendingProject();
-  }
-
-  void _openPendingProject() {
-    if (recoveryPending || _pendingProjectPath == null) return;
-    final path = _pendingProjectPath!;
-    _pendingProjectPath = null;
-    unawaited(openImageProject(path: path));
-  }
-
-  Future<ImageDocument> _decodeProject(ImageProject project) async {
-    final document = await imageCodec.decodeProjectPng(
-      ImageFileData(project.name, project.png),
-    );
-    if (document.frame.width != project.width ||
-        document.frame.height != project.height) {
-      throw const FormatException('项目图片尺寸与元数据不一致');
-    }
-    return document;
-  }
-
-  void _installProject(
-    ImageProject project,
-    ImageDocument document, {
-    String? name,
-    String? path,
-  }) {
-    _imageDraft = null;
-    if (_imageSession) _resetSession();
-    imageDocument = document;
-    _imageEpoch++;
-    imageView = project.view;
-    imageProjectName = name;
-    imageProjectPath = path;
-    draftSavedAt = null;
-    draftError = null;
-    useImageTool(project.tool);
-    tolerance = project.tolerance;
-    zoom = project.zoom;
-    _pins.addAll(project.annotations);
-    for (final pin in _pins) {
-      if ((pin['id'] as int) > _nextPinId) _nextPinId = pin['id'] as int;
-    }
-    _savedImageSignature = _imageSignature();
-    _redraw();
-  }
-
-  void _rememberProject(ProjectLocation location) {
-    recentImageProjects = [
-      location,
-      ...recentImageProjects.where((e) => e.path != location.path),
-    ].take(12).toList();
-  }
-
-  bool imageSaving = false;
-  Future<bool> Function()? confirmImageReplacement;
-  Future<bool> Function()? confirmImageQuit;
-  bool _retainDraftForQuit = false;
-  Future<bool> keepImageDraftForQuit() async {
-    if (draftSaving) await _draftWrites;
-    _retainDraftForQuit = await flushImageDraft();
-    return _retainDraftForQuit;
-  }
-
-  bool _confirming = false, _askingToQuit = false;
-  int _imageEpoch = 0;
-  String? _savedImageSignature;
-  _ImageDraft? _imageDraft;
-  List<Map<String, Object?>> get _imagePins =>
-      _imageSession ? _pins : _imageDraft?.pins ?? [];
-  String _imageSignature() => jsonEncode({
-    'epoch': _imageEpoch,
-    'pins': _imagePins,
-    'tool': imageTool,
-    'view': imageView?.toJson(),
-    'zoom': _imageSession ? zoom : _imageDraft?.zoom ?? zoom,
-    'tolerance': _imageSession
-        ? tolerance
-        : _imageDraft?.tolerance ?? tolerance,
-  });
-  bool get imageProjectDirty =>
-      imageDocument != null && _imageSignature() != _savedImageSignature;
-  Future<bool> allowImageReplacement() async {
-    if (!imageProjectDirty || confirmImageReplacement == null) return true;
-    if (_confirming) return false;
-    _confirming = true;
-    try {
-      return await confirmImageReplacement!();
-    } finally {
-      _confirming = false;
-    }
-  }
-
-  void updateImageView(ImageProjectView view) {
-    if (imageDocument == null ||
-        jsonEncode(imageView?.toJson()) == jsonEncode(view.toJson())) {
-      return;
-    }
-    imageView = view;
-    _notify();
-  }
-
-  Future<void> openImageProject({String? path}) async {
-    if (recoveryPending) {
-      _pendingProjectPath = path;
-      section = AppSection.image;
-      notice = '已保留待打开项目，请先恢复或丢弃上次的草稿';
-      error = null;
-      _notify();
-      return;
-    }
-    if (busy || imageLoading || imageSaving) {
-      if (path != null) _pendingProjectPath = path;
-      return;
-    }
-    imageLoading = true;
-    _notify();
-    try {
-      final file = await desktop.openProjectFile(path: path);
-      if (file == null) return;
-      final project = ImageProject.decode(file.text);
-      final document = await _decodeProject(project);
-      if (_disposed || !await allowImageReplacement() || _disposed) return;
-      _installProject(project, document, name: file.name, path: file.path);
-      if (file.path != null) {
-        _rememberProject(ProjectLocation(file.name, file.path!));
-      }
-      notice = '项目已打开：${file.name}';
-      error = null;
-    } catch (e) {
-      _fail(
-        e is FormatException
-            ? e.message
-            : '无法打开图片项目：${_message(e)}。可重新选择文件获取访问权限。',
-      );
-    } finally {
-      imageLoading = false;
-      _notify();
-      _openPendingProject();
-    }
-  }
-
-  Future<bool> saveImageProject({bool saveAs = false}) async {
-    final document = imageDocument;
-    if (document == null || imageSaving || busy) return false;
-    _finishPinDrag();
-    if (_imageSession) _redraw();
-    final signature = _imageSignature();
-    imageSaving = true;
-    _notify();
-    try {
-      final text = _currentImageProject().encode();
-      if (utf8.encode(text).length > ImageProject.maxFileBytes) {
-        throw const FormatException('项目文件超过 128 MB，无法保存');
-      }
-      final location = await desktop.saveProjectFile(
-        text,
-        path: saveAs ? null : imageProjectPath,
-      );
-      if (location != null && identical(imageDocument, document)) {
-        _savedImageSignature = signature;
-        imageProjectName = location.name;
-        imageProjectPath = location.path;
-        _rememberProject(location);
-        notice = '图片项目已保存';
-        error = null;
-      }
-      return location != null;
-    } catch (e) {
-      _fail(
-        e is FormatException ? e.message : '图片项目保存失败：${_message(e)}。可尝试另存为。',
-      );
-      return false;
-    } finally {
-      imageSaving = false;
-      _notify();
-      _openPendingProject();
-    }
-  }
-
-  void _suspendImage() {
-    if (!_imageSession) return;
-    _finishPinDrag();
-    _imageDraft = _ImageDraft(
-      List.of(_pins),
-      List.of(_pinUndo),
-      List.of(_pinRedo),
-      _tool ?? 'picker',
-      _selectedPin,
-      _editingPins,
-      tolerance,
-      zoom,
-    );
-  }
-
-  Map<String, Object?> imageOverlay = {};
+  PixelRect? screenshotSelection;
+  int? screenshotDisplayId;
+  double screenshotScaleX = 1, screenshotScaleY = 1;
+  bool get screenshotEditing =>
+      screenshotSelection != null && imageDocument != null;
   bool imageLoading = false;
-  bool _imageSession = false;
-  int _nextImageSession = -1;
-  bool get imageSessionActive => _imageSession;
-  String get imageTool =>
-      _imageSession ? _tool ?? 'picker' : _imageDraft?.tool ?? 'picker';
-  Future<void> openImage() async {
-    if (busy || imageLoading || imageSaving || recoveryPending) return;
-    imageLoading = true;
+  bool get imageSaving => screenshotExporting;
+  bool screenshotExporting = false;
+  final List<Uint8List> _screenshots = [];
+  List<Uint8List> get screenshots => List.unmodifiable(_screenshots);
+  int _screenshotBytes = 0;
+
+  Future<void> exportScreenshot({required bool save}) async {
+    final doc = imageDocument;
+    if (doc == null || screenshotExporting || !screenshotEditing) return;
+    final sessionId = _session!.id;
+    screenshotExporting = true;
     _notify();
     try {
-      final file = await desktop.openImageFile();
-      imageLoading = false;
-      if (file != null) await loadImage(file);
-    } catch (e) {
-      _fail(e is FormatException ? e.message : _message(e));
-    } finally {
-      imageLoading = false;
-      _notify();
-    }
-  }
-
-  Future<void> loadImage(ImageFileData file) async {
-    if (busy || imageLoading || imageSaving || _disposed || recoveryPending) {
-      return;
-    }
-    imageLoading = true;
-    error = null;
-    _notify();
-    try {
-      final document = await imageCodec.decode(file);
-      if (_disposed || !await allowImageReplacement() || _disposed) return;
-      _imageDraft = null;
-      imageView = null;
-      imageProjectName = null;
-      imageProjectPath = null;
-      draftSavedAt = null;
-      draftError = null;
-      _savedImageSignature = null;
-      _imageEpoch++;
-      if (_imageSession) _resetSession();
-      imageDocument = document;
-      section = AppSection.image;
-      useImageTool('picker');
-      notice = '图片已打开：${document.name}';
-    } catch (e) {
-      _fail(e is FormatException ? e.message : '无法读取图片，请检查格式或文件内容');
-    } finally {
-      imageLoading = false;
-      _notify();
-      _openPendingProject();
-    }
-  }
-
-  void useImageTool(String tool) {
-    final restoring = !_imageSession ? _imageDraft : null;
-    if (busy ||
-        imageDocument == null ||
-        !['picker', ...RulerMode.values.map((e) => e.name)].contains(tool)) {
-      return;
-    }
-    if (!_imageSession) {
-      _resetSession();
-      _imageSession = true;
-      final draft = _imageDraft;
-      if (draft != null) {
-        _pins.addAll(draft.pins);
-        _pinUndo.addAll(draft.undo);
-        _pinRedo.addAll(draft.redo);
-        tolerance = draft.tolerance;
-        zoom = draft.zoom;
+      final png = await AnnotationRenderer.export(
+        doc.png,
+        List.of(markup.items),
+      );
+      if (_disposed || _session?.id != sessionId) return;
+      if (!await desktop.exportImage(png, save: save)) return;
+      _screenshots.insert(0, png);
+      _screenshotBytes += png.length;
+      while (_screenshots.length > 12 || _screenshotBytes > 64 * 1024 * 1024) {
+        _screenshotBytes -= _screenshots.removeLast().length;
       }
-      _session = CaptureSession(_nextImageSession--, [
-        CapturedDisplay(
-          id: 0,
-          name: '图片：${imageDocument!.name}',
-          frame: imageDocument!.frame,
-        ),
-      ]);
+      await desktop.finish(sessionId);
+      _resetSession();
+      notice = save ? '截图已保存' : '截图已复制';
+      error = null;
+    } catch (e) {
+      _fail('截图导出失败：${_message(e)}');
+    } finally {
+      screenshotExporting = false;
+      _notify();
     }
-    _tool = tool;
-    _contrastTarget = null;
-    _contrastPair = false;
-    if (tool != 'picker') mode = RulerMode.values.byName(tool);
+  }
+
+  Future<void> copyScreenshot(Uint8List png) async {
+    try {
+      await desktop.exportImage(png, save: false);
+      notice = '已复制截图';
+      _notify();
+    } catch (e) {
+      _fail(_message(e));
+    }
+  }
+
+  Future<void> cancelScreenshot() async {
+    if (screenshotExporting) return;
+    final id = _session?.id;
+    if (id != null) await desktop.finish(id);
+    _resetSession();
+    _notify();
+  }
+
+  Future<void> reselectScreenshot() async {
+    if (!screenshotEditing || screenshotExporting) return;
+    await desktop.reselectScreenshot(_session!.id);
+    imageDocument = null;
+    screenshotSelection = null;
+    screenshotDisplayId = null;
+    markup.reset();
     _anchor = null;
     _anchorDisplay = null;
-    _editingPins = restoring?.editing ?? false;
-    _selectedPin = restoring?.selected ?? _selectedPin;
-    _keyboardRectangle = false;
-    section = AppSection.image;
     _redraw();
-    _notify();
-  }
-
-  void imageEvent(String type, [Map<String, Object?> data = const {}]) {
-    if (!_imageSession || imageSaving) return;
-    _event({'type': type, 'sessionId': _session!.id, 'displayId': 0, ...data});
-  }
-
-  Future<void> closeImage() async {
-    if (imageSaving || imageLoading || !await allowImageReplacement()) return;
-    imageLoading = true;
-    try {
-      await _clearImageDraft();
-    } catch (_) {
-      imageLoading = false;
-      _fail('无法清除本地草稿，图片仍保留，请重试');
-      return;
-    }
-    imageLoading = false;
-    if (_imageSession) _resetSession();
-    imageDocument = null;
-    imageView = null;
-    imageProjectName = null;
-    imageProjectPath = null;
-    _imageDraft = null;
-    _savedImageSignature = null;
-    imageOverlay = {};
     _notify();
   }
 
@@ -697,7 +283,7 @@ class AppController extends ChangeNotifier {
   PickerBehavior pickerBehavior = const PickerBehavior();
   RgbColor? pendingPickedEditorColor;
   bool colorEditorActive = false;
-  bool _openingColorEditor = false;
+  final bool _openingColorEditor = false;
   RgbColor? takePickedEditorColor() {
     final color = pendingPickedEditorColor;
     pendingPickedEditorColor = null;
@@ -818,27 +404,6 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> _openPickedEditor(RgbColor color) async {
-    if (_disposed ||
-        colorEditorActive ||
-        _openingColorEditor ||
-        pendingPickedEditorColor != null) {
-      return;
-    }
-    _openingColorEditor = true;
-    try {
-      await desktop.showMainWindow();
-      if (_disposed) return;
-      section = AppSection.picker;
-      pendingPickedEditorColor = color;
-      _notify();
-    } catch (e) {
-      _fail('无法打开颜色编辑器：${_message(e)}');
-    } finally {
-      _openingColorEditor = false;
-    }
-  }
-
   int tolerance = 16;
   int zoom = CaptureControls.defaultZoom;
   ShortcutBindings shortcuts = ShortcutBindings.defaults;
@@ -850,6 +415,7 @@ class AppController extends ChangeNotifier {
   bool _keyboardRectangle = false;
   bool _keyboardCursor = false;
   bool permissionGranted = false;
+  bool screenshotPermissionRequired = false;
   bool shortcutsAvailable = false;
   bool supported = true;
   bool busy = false;
@@ -888,20 +454,6 @@ class AppController extends ChangeNotifier {
           error = _message(e);
         }
       }
-      try {
-        recentImageProjects = await desktop.recentProjects();
-        recoveryDraft = await desktop.loadImageDraft();
-        if (recoveryPending) section = AppSection.image;
-      } catch (_) {
-        _recoveryReadFailed = true;
-        section = AppSection.image;
-        draftError = '无法读取本地草稿或最近项目，请检查本地存储后重试。';
-      }
-      await desktop.projectEventsReady();
-      _draftPeriodic = Timer.periodic(
-        const Duration(seconds: 15),
-        (_) => unawaited(flushImageDraft()),
-      );
       if (!supported) error = '当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。';
     } catch (e) {
       error = _message(e);
@@ -913,12 +465,6 @@ class AppController extends ChangeNotifier {
 
   void selectSection(AppSection value) {
     section = value;
-    if (value == AppSection.image &&
-        imageDocument != null &&
-        !_imageSession &&
-        !busy) {
-      useImageTool(imageTool);
-    }
     _notify();
   }
 
@@ -953,6 +499,7 @@ class AppController extends ChangeNotifier {
   Future<void> requestPermission() async {
     try {
       permissionGranted = await desktop.requestPermission();
+      if (permissionGranted) screenshotPermissionRequired = false;
       notice = permissionGranted
           ? '屏幕访问已授权，可以开始使用。'
           : '请在系统设置中允许 fruler 录制屏幕，然后返回重试。';
@@ -983,9 +530,6 @@ class AppController extends ChangeNotifier {
     }
     _contrastTarget = null;
     _contrastPair = false;
-    if (pickerBehavior.activation == PickerActivation.editor) {
-      return _openPickedEditor(selectedColor);
-    }
     return _begin('picker');
   }
 
@@ -1030,6 +574,50 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> startScreenshot() => _begin('screenshot');
+
+  Future<void> _commitScreenshot(
+    RulerMeasurement measurement,
+    CapturedDisplay display,
+  ) async {
+    final id = _session!.id;
+    _committing = true;
+    imageLoading = true;
+    try {
+      final png = await AnnotationRenderer.crop(
+        display.frame,
+        measurement.rect,
+      );
+      final doc = await imageCodec.decodeCapturePng(
+        ImageFileData('截图.png', png),
+      );
+      if (_disposed || _session?.id != id) return;
+      imageDocument = doc;
+      screenshotSelection = measurement.rect;
+      screenshotDisplayId = display.id;
+      screenshotScaleX = display.frame.scaleX;
+      screenshotScaleY = display.frame.scaleY;
+      markup.reset();
+      _notify();
+      await desktop.editScreenshot(id, display.id);
+    } catch (e) {
+      await _abortScreenshot(e, id);
+    } finally {
+      _committing = false;
+      imageLoading = false;
+      _notify();
+    }
+  }
+
+  Future<void> _abortScreenshot(Object error, int id) async {
+    try {
+      await desktop.finish(id);
+    } catch (_) {}
+    _resetSession();
+    _fail('截图失败：${_message(error)}');
+    await desktop.showMainWindow();
+  }
+
   Future<void> startRuler([RulerMode? value]) {
     if (value != null) selectMode(value);
     return _begin(mode.name);
@@ -1049,11 +637,8 @@ class AppController extends ChangeNotifier {
       _fail('当前版本仅支持 macOS 14 及以上。');
       return;
     }
-    if (_imageSession) {
-      _suspendImage();
-      _resetSession();
-    }
     busy = true;
+    if (tool == 'screenshot') screenshotPermissionRequired = false;
     _tool = tool;
     _committing = false;
     _anchor = null;
@@ -1070,7 +655,11 @@ class AppController extends ChangeNotifier {
     _keyboardCursor = false;
     error = null;
     notice = null;
-    section = tool == 'picker' ? AppSection.picker : AppSection.ruler;
+    section = tool == 'screenshot'
+        ? AppSection.image
+        : tool == 'picker'
+        ? AppSection.picker
+        : AppSection.ruler;
     _notify();
     try {
       final session = await desktop.begin(tool);
@@ -1092,6 +681,7 @@ class AppController extends ChangeNotifier {
       _pending.clear();
       if (e is PlatformException && e.code == 'screen_permission') {
         permissionGranted = false;
+        screenshotPermissionRequired = tool == 'screenshot';
       }
       _fail(_message(e));
     }
@@ -1100,63 +690,8 @@ class AppController extends ChangeNotifier {
   void _event(Map<Object?, Object?> event) {
     if (_disposed) return;
     switch (event['type']) {
-      case 'openProject':
-        if (event['path'] is String) {
-          unawaited(openImageProject(path: event['path'] as String));
-        }
-        return;
-      case 'projectCommand':
-        if (recordingShortcut) return;
-        switch (event['action']) {
-          case 'open':
-            unawaited(openImageProject());
-          case 'save':
-            unawaited(saveImageProject());
-          case 'saveAs':
-            unawaited(saveImageProject(saveAs: true));
-        }
-        return;
       case 'quitRequested':
-        if (!_askingToQuit) {
-          _askingToQuit = true;
-          unawaited(() async {
-            try {
-              _retainDraftForQuit = false;
-              final allow = imageProjectDirty && confirmImageQuit != null
-                  ? await confirmImageQuit!()
-                  : await allowImageReplacement();
-              if (allow && !recoveryPending) {
-                if (imageProjectDirty && !_retainDraftForQuit) {
-                  await _clearImageDraft();
-                } else if (imageDocument != null) {
-                  if (draftSaving) await _draftWrites;
-                  if (!await flushImageDraft()) throw StateError('draft');
-                }
-              }
-              await desktop.replyToQuit(allow);
-            } catch (e) {
-              await desktop.replyToQuit(false);
-              _fail('无法确认退出，请先保存图片项目后重试');
-            } finally {
-              _askingToQuit = false;
-            }
-          }());
-        }
-        return;
-      case 'imageDropped':
-        if (event['name'] is String && event['bytes'] is Uint8List) {
-          unawaited(
-            loadImage(
-              ImageFileData(
-                event['name'] as String,
-                event['bytes'] as Uint8List,
-              ),
-            ),
-          );
-        }
-        return;
-      case 'imageDropFailed':
-        _fail(event['message'] as String? ?? '无法读取拖入的图片');
+        unawaited(desktop.replyToQuit(true));
         return;
       case 'shortcutRecorded':
         if (recordingShortcut) {
@@ -1172,6 +707,8 @@ class AppController extends ChangeNotifier {
         final tool = event['tool'];
         if (tool == 'picker') {
           unawaited(pickColor());
+        } else if (tool == 'screenshot') {
+          unawaited(startScreenshot());
         } else {
           final value = RulerMode.values
               .where((v) => v.name == tool)
@@ -1181,10 +718,11 @@ class AppController extends ChangeNotifier {
         return;
       case 'permissionChanged':
         permissionGranted = event['permission'] == true;
+        if (permissionGranted) screenshotPermissionRequired = false;
         _notify();
         return;
     }
-    if (!busy && !_imageSession) return;
+    if (!busy) return;
     if (_session == null) {
       // Native input may arrive while the capture response crosses the channel.
       if (_pending.length < 128) _pending.add(event);
@@ -1196,10 +734,9 @@ class AppController extends ChangeNotifier {
       _resetSession();
       notice = count > 0 ? '取色已结束，已采集 $count 次' : '已取消';
       _notify();
-      _openPendingProject();
       return;
     }
-    if (_committing) return;
+    if (_committing || screenshotEditing) return;
     switch (event['type']) {
       case 'continuousChanged':
         setContinuousPicker(event['enabled'] == true);
@@ -1250,7 +787,7 @@ class AppController extends ChangeNotifier {
         final next = RulerMode.values
             .where((m) => m.name == event['tool'])
             .firstOrNull;
-        if (_tool != 'picker' && next != null) {
+        if (_tool != 'picker' && _tool != 'screenshot' && next != null) {
           _tool = next.name;
           mode = next;
           _editingPins = false;
@@ -1306,7 +843,8 @@ class AppController extends ChangeNotifier {
         if (_editingPins) return;
         final position = _lastPointer;
         if (position == null) return;
-        final start = _tool == 'rectangle' && _anchor == null;
+        final start =
+            (_tool == 'rectangle' || _tool == 'screenshot') && _anchor == null;
         _pointer({
           'displayId': position.displayId,
           'x': position.x,
@@ -1364,11 +902,6 @@ class AppController extends ChangeNotifier {
   }
 
   void _updateOverlay(Map<String, Object?> data) {
-    if (_imageSession) {
-      imageOverlay = {...imageOverlay, ...data};
-      _notify();
-      return;
-    }
     unawaited(
       desktop.updateOverlay(data).catchError((Object e) {
         unawaited(_abort(e));
@@ -1396,7 +929,7 @@ class AppController extends ChangeNotifier {
     final pixel = frame.logicalToPixel(x, y);
     final color = frame.pixelAt(pixel.x, pixel.y);
     RulerMeasurement? measurement;
-    if (_tool == RulerMode.rectangle.name) {
+    if (_tool == RulerMode.rectangle.name || _tool == 'screenshot') {
       if (phase == 'down') {
         _keyboardRectangle = event['keyboard'] == true;
         _anchor = _keyboardRectangle ? pixel : frame.logicalToBoundary(x, y);
@@ -1425,8 +958,7 @@ class AppController extends ChangeNotifier {
     }
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}'
-        : (_imageSession ? measurement?.pixelLabel : measurement?.label) ??
-              '按住并拖拽，测量矩形区域';
+        : measurement?.label ?? '按住并拖拽，测量矩形区域';
     _updateOverlay({
       ..._overlayOptions,
       'displayId': display.id,
@@ -1441,10 +973,7 @@ class AppController extends ChangeNotifier {
     if (phase != 'up' || _editingPins) return;
     if (_tool == 'picker') {
       final button = event['button'] as String? ?? 'primary';
-      if (_imageSession && button != 'primary') return;
-      final action = _imageSession
-          ? PickerMouseAction.pickAndContinue
-          : _contrastTarget != null
+      final action = _contrastTarget != null
           ? (button == 'secondary'
                 ? PickerMouseAction.cancel
                 : PickerMouseAction.pickAndClose)
@@ -1453,12 +982,15 @@ class AppController extends ChangeNotifier {
     } else if (measurement != null &&
         measurement.rect.width > 0 &&
         measurement.rect.height > 0) {
+      if (_tool == 'screenshot') {
+        unawaited(_commitScreenshot(measurement, display));
+        return;
+      }
       unawaited(
         _commitMeasurement(
           measurement,
           display,
-          keep:
-              _imageSession || (_tool == 'rectangle' && event['keep'] == true),
+          keep: (_tool == 'rectangle' && event['keep'] == true),
         ),
       );
     } else {
@@ -1502,13 +1034,11 @@ class AppController extends ChangeNotifier {
       }
       return;
     }
-    if (action == PickerMouseAction.pickAndContinue || _imageSession) {
+    if (action == PickerMouseAction.pickAndContinue) {
       try {
         await desktop.writeClipboard(formatColor(color));
         if (_session?.id == sessionId) {
-          notice = _imageSession
-              ? '已从图片复制 ${color.hex}'
-              : '已连续取色 $_pickedCount 次，Esc 结束';
+          notice = '已连续取色 $_pickedCount 次，Esc 结束';
           error = null;
         }
       } catch (e) {
@@ -1523,9 +1053,6 @@ class AppController extends ChangeNotifier {
       }
     } else {
       await _complete(formatColor(color));
-      if (action == PickerMouseAction.pickAndEdit && !busy) {
-        await _openPickedEditor(color);
-      }
     }
   }
 
@@ -1534,10 +1061,6 @@ class AppController extends ChangeNotifier {
     CapturedDisplay display, {
     bool keep = false,
   }) async {
-    if (_imageSession && keep && _pins.length >= 4096) {
-      _fail('图片项目最多支持 4096 个标注');
-      return;
-    }
     final sessionId = _session!.id;
     _committing = true;
     _measurements.insert(
@@ -1546,7 +1069,7 @@ class AppController extends ChangeNotifier {
         measurement: measurement,
         createdAt: DateTime.now(),
         displayName: display.name,
-        imageSource: _imageSession,
+        imageSource: false,
       ),
     );
     _trimMeasurements();
@@ -1562,9 +1085,7 @@ class AppController extends ChangeNotifier {
       _anchorDisplay = null;
       _keyboardRectangle = false;
       try {
-        await desktop.writeClipboard(
-          _imageSession ? measurement.pixelLabel : measurement.label,
-        );
+        await desktop.writeClipboard(measurement.label);
         if (_session?.id == sessionId) {
           notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
         }
@@ -1695,17 +1216,12 @@ class AppController extends ChangeNotifier {
     if (pins.isEmpty) return;
     _committing = true;
     try {
-      final done = _imageSession && imageDocument != null
-          ? await desktop.exportImage(
-              await imageCodec.renderAnnotations(imageDocument!, pins),
-              save: save,
-            )
-          : await desktop.exportAnnotations(
-              session.id,
-              displayId,
-              pins,
-              save: save,
-            );
+      final done = await desktop.exportAnnotations(
+        session.id,
+        displayId,
+        pins,
+        save: save,
+      );
       if (done && _session?.id == session.id) {
         notice = save ? '标注图片已导出' : '标注图片已复制';
         error = null;
@@ -1730,7 +1246,7 @@ class AppController extends ChangeNotifier {
       if (_session?.id == id) error = '结果已保存，但复制失败：${_message(e)}';
     } finally {
       try {
-        if (id != null && !_imageSession) await desktop.finish(id);
+        if (id != null) await desktop.finish(id);
       } catch (e) {
         if (_session?.id == id) error = '无法关闭测量浮层，请按 Esc：${_message(e)}';
       }
@@ -1745,7 +1261,7 @@ class AppController extends ChangeNotifier {
     _committing = true;
     final id = _session?.id;
     try {
-      if (id != null && !_imageSession) await desktop.finish(id);
+      if (id != null) await desktop.finish(id);
     } catch (_) {
       /* Preserve original failure. */
     }
@@ -1755,8 +1271,10 @@ class AppController extends ChangeNotifier {
 
   void _resetSession() {
     _session = null;
-    _imageSession = false;
-    imageOverlay = {};
+    imageDocument = null;
+    screenshotSelection = null;
+    screenshotDisplayId = null;
+    markup.reset();
     _tool = null;
     _contrastTarget = null;
     _contrastPair = false;
@@ -1804,14 +1322,19 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<bool> setShortcut(bool picker, ShortcutChord chord) async {
+  Future<bool> setShortcut(
+    bool picker,
+    ShortcutChord chord, {
+    bool screenshot = false,
+  }) async {
     if (busy || savingShortcuts || recordingShortcut) return false;
     final candidate = ShortcutBindings(
-      picker: picker ? chord : shortcuts.picker,
-      ruler: picker ? shortcuts.ruler : chord,
+      picker: !screenshot && picker ? chord : shortcuts.picker,
+      ruler: !screenshot && !picker ? chord : shortcuts.ruler,
+      screenshot: screenshot ? chord : shortcuts.screenshot,
     );
     if (!candidate.isValid) {
-      _fail('快捷键需要字母或数字、至少一个主修饰键，且两个工具不能重复。');
+      _fail('快捷键需要字母或数字、至少一个主修饰键，且各工具不能重复。');
       return false;
     }
     savingShortcuts = true;
@@ -2249,21 +1772,20 @@ class AppController extends ChangeNotifier {
 
   void _notify() {
     if (!_disposed) {
-      _scheduleDraft();
       notifyListeners();
     }
   }
 
   @override
   void dispose() {
-    _draftDebounce?.cancel();
-    _draftPeriodic?.cancel();
     _disposed = true;
     _subscription?.cancel();
     final id = _session?.id;
-    if (id != null && !_imageSession) {
+    if (id != null) {
       unawaited(desktop.finish(id).catchError((Object _) {}));
     }
+    markup.removeListener(_notify);
+    markup.dispose();
     super.dispose();
   }
 }

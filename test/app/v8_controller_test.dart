@@ -114,7 +114,7 @@ void main() {
     d.event('cancelled');
     expect(c.busy, false);
   });
-  test('取色后编辑器在关闭浮层后请求，取消或重取不重复采样', () async {
+  test('旧版取色后编辑偏好迁移为屏幕完成，不打开主窗口', () async {
     c.setPickerBehavior(
       const PickerBehavior(primary: PickerMouseAction.pickAndEdit),
     );
@@ -122,30 +122,23 @@ void main() {
     await click('primary');
     expect(c.busy, false);
     expect(d.finishCalls, 1);
-    expect(d.showMainCalls, 1);
-    expect(c.takePickedEditorColor(), const RgbColor(255, 0, 0));
+    expect(d.showMainCalls, 0);
+    expect(c.takePickedEditorColor(), isNull);
     expect(c.pendingPickedEditorColor, null);
     expect(c.colors.length, 1);
     expect(d.clipboard, '#FF0000');
     await c.pickNewColor();
     expect(c.busy, true);
   });
-  test('直接编辑器无需录屏权限，重新取色独立于启动配置', () async {
+  test('旧版直接编辑器偏好不再跳回窗口，统一从屏幕开始取色', () async {
     c.setPickerBehavior(
       const PickerBehavior(activation: PickerActivation.editor),
     );
-    d.permission = false;
-    c.permissionGranted = false;
     await c.pickColor();
-    expect(d.beginCalls, 0);
-    expect(d.showMainCalls, 1);
-    expect(c.pendingPickedEditorColor, c.selectedColor);
-    expect(c.colors, isEmpty);
-    c.takePickedEditorColor();
-    d.permission = true;
-    c.permissionGranted = true;
-    await c.pickNewColor();
     expect(d.beginCalls, 1);
+    expect(d.showMainCalls, 0);
+    expect(c.pendingPickedEditorColor, isNull);
+    expect(c.busy, true);
   });
   test('连续开关同步左键动作而保留中键右键及启动设置，重启恢复', () async {
     c.setPickerBehavior(
@@ -181,7 +174,7 @@ void main() {
     expect(c.busy, false);
     expect(c.pendingPickedEditorColor, null);
   });
-  test('异步复制期间丢弃重复点击，只打开一次编辑器', () async {
+  test('异步复制期间丢弃重复点击，完成后不打开主窗口', () async {
     c.setPickerBehavior(
       const PickerBehavior(primary: PickerMouseAction.pickAndEdit),
     );
@@ -196,9 +189,9 @@ void main() {
     await tick();
     await tick();
     expect(d.finishCalls, 1);
-    expect(d.showMainCalls, 1);
+    expect(d.showMainCalls, 0);
   });
-  test('复制失败仍保留采样并退出浮层，编辑器仍可打开', () async {
+  test('复制失败保留采样并退出浮层，不打开编辑器', () async {
     c.setPickerBehavior(
       const PickerBehavior(primary: PickerMouseAction.pickAndEdit),
     );
@@ -207,7 +200,7 @@ void main() {
     await click('primary');
     expect(c.colors.length, 1);
     expect(c.busy, false);
-    expect(c.pendingPickedEditorColor, isNotNull);
+    expect(c.pendingPickedEditorColor, isNull);
     expect(c.error, contains('复制失败'));
   });
 }

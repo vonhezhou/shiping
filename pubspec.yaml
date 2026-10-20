@@ -1,7 +1,7 @@
 name: fruler
-description: "A Flutter desktop color picker and screen ruler."
+description: "A Flutter desktop screenshot, annotation, color picker and screen ruler."
 publish_to: 'none'
-version: 0.8.0+8
+version: 0.10.0+10
 
 environment:
   sdk: ^3.13.4
@@ -12,6 +12,8 @@ dependencies:
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   flutter_lints: ^6.0.0
 

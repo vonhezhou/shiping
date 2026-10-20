@@ -4,10 +4,9 @@ import ScreenCaptureKit
 import Carbon.HIToolbox
 import UniformTypeIdentifiers
 
-class MainFlutterWindow: NSWindow, NSDraggingDestination {
+class MainFlutterWindow: NSWindow {
   private var desktopBridge: FrulerDesktopBridge?
 
-  func openProjectURLs(_ urls: [URL]) { urls.forEach { desktopBridge?.acceptProjectURL($0) } }
 
   func requestQuitConfirmation() -> Bool { desktopBridge?.requestQuitConfirmation() ?? false }
 
@@ -19,41 +18,20 @@ class MainFlutterWindow: NSWindow, NSDraggingDestination {
     setContentSize(NSSize(width: 1100, height: 760))
     minSize = NSSize(width: 920, height: 680)
     center()
-    registerForDraggedTypes([.fileURL])
     isReleasedWhenClosed = false
 
     RegisterGeneratedPlugins(registry: flutterViewController)
     desktopBridge = FrulerDesktopBridge(window: self, messenger: flutterViewController.engine.binaryMessenger)
+    #if FRULER_INTEGRATION_TEST
+    desktopBridge?.installIntegrationDriver(messenger: flutterViewController.engine.binaryMessenger)
+    #endif
 
     super.awakeFromNib()
   }
-  func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-    let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly:true]) as? [URL] ?? []
-    return urls.count == 1 && ["png","jpg","jpeg","webp","fruler"].contains(urls[0].pathExtension.lowercased()) ? .copy : []
-  }
-  func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
-  func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-    guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly:true]) as? [URL], urls.count == 1 else { return false }
-    if urls[0].pathExtension.lowercased() == "fruler" { desktopBridge?.acceptProjectURL(urls[0]) }
-    else { desktopBridge?.acceptImageDrop(urls[0]) }
-    return true
-  }
 }
 
-private enum ImageFileInput {
-  static func read(_ url: URL) throws -> [String:Any] {
-    let accessed = url.startAccessingSecurityScopedResource()
-    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-    let values = try url.resourceValues(forKeys:[.fileSizeKey,.isRegularFileKey])
-    guard values.isRegularFile == true, (values.fileSize ?? 0) <= 32 * 1024 * 1024 else {
-      throw NSError(domain:"fruler.image",code:1,userInfo:[NSLocalizedDescriptionKey:"请选择不超过 32 MB 的图片文件"])
-    }
-    let bytes = try Data(contentsOf:url)
-    guard bytes.count <= 32 * 1024 * 1024 else {
-      throw NSError(domain:"fruler.image",code:1,userInfo:[NSLocalizedDescriptionKey:"图片文件不能超过 32 MB"])
-    }
-    return ["name":url.lastPathComponent,"bytes":FlutterStandardTypedData(bytes:bytes)]
-  }
+enum CaptureTool: String, CaseIterable {
+  case picker, rectangle, horizontal, vertical, cross, screenshot
 }
 
 /// System integration only. Pixel sampling and measurement rules live in Dart.
@@ -71,7 +49,9 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   private var session: Int?
   private var nextSession = 0
   private var preparing = false
-  private var restoreMainWindow = false
+  private var screenshotHost: CapturePanel?
+  private var flutterController: FlutterViewController?
+  private var lastExternalApplication: NSRunningApplication?
   private var previousApplication: NSRunningApplication?
   private var captureTask: Task<Void, Never>?
   private var hasShortcuts = false
@@ -79,14 +59,11 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   private var shortcutRecording = false
   private var pausedMenuKeys: [(NSMenuItem, String)] = []
   private var toolMenuItems: [String: NSMenuItem] = [:]
-  private let projectFiles = ProjectFileStore()
-  private var projectEventsReady = false
-  private var pendingProjectPaths: [String] = []
-  private var incomingProjects: [String: URL] = [:]
   private let stateKey = "fruler.state.v1"
 
   init(window: NSWindow, messenger: FlutterBinaryMessenger) {
     mainWindow = window
+    flutterController = window.contentViewController as? FlutterViewController
     methods = FlutterMethodChannel(name: "dev.fruler/desktop", binaryMessenger: messenger)
     events = FlutterEventChannel(name: "dev.fruler/events", binaryMessenger: messenger)
     super.init()
@@ -105,7 +82,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         }
         return event
       }
-      if self.session != nil, Int(event.keyCode) == kVK_ANSI_Z, event.modifierFlags.contains(.command) {
+      if self.session != nil, self.screenshotHost == nil, Int(event.keyCode) == kVK_ANSI_Z, event.modifierFlags.contains(.command) {
         self.overlays.values.first(where: { $0.isKeyWindow })?.overlay.onEvent?([
           "type":event.modifierFlags.contains(.shift) ? "redoPins":"undoPins"])
         return nil
@@ -113,6 +90,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       guard self.hasShortcuts else { return event }
       if self.shortcuts.picker.matches(event) { self.emitActivation("picker"); return nil }
       if self.shortcuts.ruler.matches(event) { self.emitActivation("rectangle"); return nil }
+      if self.shortcuts.screenshot.matches(event) { self.emitActivation("screenshot"); return nil }
       return event
     }
     observers.append(NotificationCenter.default.addObserver(
@@ -121,6 +99,12 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     observers.append(NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main
     ) { [weak self] _ in self?.cancelSession() })
+    observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification, object:nil, queue:.main
+    ) { [weak self] note in
+      if let app=note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+        app.processIdentifier != ProcessInfo.processInfo.processIdentifier {self?.lastExternalApplication=app}
+    })
     observers.append(NotificationCenter.default.addObserver(
       forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
     ) { [weak self] _ in
@@ -152,23 +136,67 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   }
 
   func requestQuitConfirmation() -> Bool {
-    guard sink != nil else { return false }
-    cancelSession()
-    mainWindow?.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps:true)
-    sink?(["type":"quitRequested"])
-    return true
+    if session != nil {cancelSession()}
+    return false
   }
-  func acceptProjectURL(_ url: URL) {
-    guard url.isFileURL, url.pathExtension.lowercased() == "fruler" else { return }
-    incomingProjects[url.path] = url
-    if projectEventsReady { showMainWindow(); sink?(["type":"openProject", "path":url.path]) }
-    else if !pendingProjectPaths.contains(url.path) { pendingProjectPaths.append(url.path) }
+
+  #if FRULER_INTEGRATION_TEST
+  private var integrationDriver: FlutterMethodChannel?
+  private var cancelNextSave = false
+  private var clipboardBackup: [[NSPasteboard.PasteboardType: Data]]?
+  func installIntegrationDriver(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "dev.fruler/integration", binaryMessenger: messenger)
+    integrationDriver = channel
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
+      let args = call.arguments as? [String: Any] ?? [:]
+      switch call.method {
+      case "status":
+        result(["panels":self.overlays.count,"active":self.session != nil,
+          "permission":CGPreflightScreenCaptureAccess(),"bundleId":Bundle.main.bundleIdentifier ?? "",
+          "mainVisible":self.mainWindow?.isVisible == true,"editing":self.screenshotHost != nil,
+          "windowNumber":self.screenshotHost?.windowNumber ?? self.overlays.values.first?.windowNumber ?? -1])
+      case "pointer":
+        guard let id=args["displayId"] as? UInt32, let panel=self.overlays[id],
+          let x=args["x"] as? Double, let y=args["y"] as? Double, let phase=args["phase"] as? String,
+          let type=["down":NSEvent.EventType.leftMouseDown,"drag":.leftMouseDragged,"up":.leftMouseUp,"move":.mouseMoved][phase] else {
+          result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
+        }
+        panel.layoutIfNeeded()
+        let point=panel.overlay.convert(NSPoint(x:x,y:y),to:nil)
+        guard let event=NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],
+          timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
+          context:nil,eventNumber:1,clickCount:1,pressure:1) else {result(nil);return}
+        panel.sendEvent(event);result(nil)
+      case "key":
+        guard let panel=self.overlays.values.first(where:{$0.isKeyWindow}) ?? self.overlays.values.first,
+          let code=args["keyCode"] as? UInt16,
+          let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:[],
+            timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
+            context:nil,characters:"",charactersIgnoringModifiers:"",isARepeat:false,keyCode:code) else {
+          result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
+        }
+        panel.makeKeyAndOrderFront(nil);panel.makeFirstResponder(panel.overlay)
+        panel.sendEvent(event);result(nil)
+      case "cancelNextSave": self.cancelNextSave=true;result(nil)
+      case "backupClipboard":
+        self.clipboardBackup=(NSPasteboard.general.pasteboardItems ?? []).map { item in
+          Dictionary(uniqueKeysWithValues:item.types.compactMap { type in item.data(forType:type).map { (type,$0) } })
+        };result(nil)
+      case "clipboardPng": result(NSPasteboard.general.data(forType:.png).map { FlutterStandardTypedData(bytes:$0) })
+      case "restoreClipboard":
+        if let backup=self.clipboardBackup {
+          let items=backup.map { values -> NSPasteboardItem in
+            let item=NSPasteboardItem();for (type,data) in values {item.setData(data,forType:type)};return item
+          }
+          NSPasteboard.general.clearContents();if !items.isEmpty {NSPasteboard.general.writeObjects(items)}
+          self.clipboardBackup=nil
+        };result(nil)
+      default:result(FlutterMethodNotImplemented)
+      }
+    }
   }
-  func acceptImageDrop(_ url: URL) {
-    do { var data = try ImageFileInput.read(url); data["type"]="imageDropped"; sink?(data) }
-    catch { sink?(["type":"imageDropFailed","message":error.localizedDescription]) }
-  }
+  #endif
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
@@ -226,67 +254,27 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     case "replyToQuit":
       NSApp.reply(toApplicationShouldTerminate:args["allow"] as? Bool == true)
       result(nil)
-    case "projectEventsReady":
-      projectEventsReady = true
-      let pending = pendingProjectPaths; pendingProjectPaths.removeAll()
-      for path in pending { showMainWindow(); sink?(["type":"openProject", "path":path]) }
-      result(nil)
-    case "recentProjects": result(projectFiles.recent())
-    case "loadImageDraft":
-      do { result(try projectFiles.loadDraft()) }
-      catch { result(FlutterError(code:"draft_read_failed",message:error.localizedDescription,details:nil)) }
-    case "saveImageDraft":
-      do { try projectFiles.saveDraft(args["text"] as? String); result(nil) }
-      catch { result(FlutterError(code:"draft_write_failed",message:error.localizedDescription,details:nil)) }
-    case "openProjectFile":
-      do {
-        let url: URL
-        if let path = args["path"] as? String {
-          url = try incomingProjects.removeValue(forKey:path) ?? projectFiles.resolve(path)
-        } else {
-          let panel = NSOpenPanel()
-          panel.allowedContentTypes = [UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json), .json]
-          panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
-          NSApp.activate(ignoringOtherApps:true)
-          guard panel.runModal() == .OK, let selected = panel.url else { result(nil); return }
-          url = selected
-        }
-        result(try projectFiles.read(url))
-      } catch { result(FlutterError(code:"project_read_failed",message:error.localizedDescription,details:nil)) }
-    case "saveProjectFile":
-      guard let text = args["text"] as? String else { result(FlutterError(code:"project_write_failed",message:"项目数据无效",details:nil)); return }
-      do {
-        let url: URL
-        if let path = args["path"] as? String {
-          url = try projectFiles.resolve(path)
-        }
-        else {
-          let panel = NSSavePanel()
-          panel.nameFieldStringValue = "untitled.fruler"
-          panel.allowedContentTypes = [UTType(exportedAs:"dev.fruler.image-project",conformingTo:.json)]
-          panel.canCreateDirectories = true
-          NSApp.activate(ignoringOtherApps:true)
-          guard panel.runModal() == .OK, let selected = panel.url else { result(nil); return }
-          url = selected
-        }
-        result(try projectFiles.write(text, to:url, mustExist:args["path"] is String))
-      } catch { result(FlutterError(code:"project_write_failed",message:error.localizedDescription,details:nil)) }
-    case "openImageFile":
-      let panel = NSOpenPanel()
-      panel.allowedContentTypes = [.png,.jpeg,.webP]
-      panel.allowsMultipleSelection = false
-      panel.canChooseDirectories = false
-      NSApp.activate(ignoringOtherApps:true)
-      guard panel.runModal() == .OK, let url = panel.url else { result(nil); return }
-      do { result(try ImageFileInput.read(url)) }
-      catch { result(FlutterError(code:"image_read_failed",message:error.localizedDescription,details:nil)) }
     case "exportImage":
       guard let bytes = args["png"] as? FlutterStandardTypedData else {
         result(FlutterError(code:"image_export_failed",message:"图片数据无效",details:nil)); return
       }
       if args["save"] as? Bool == true {
+        let captureID = session
+        for panel in overlays.values { panel.orderOut(nil) }
+        defer {
+          if session == captureID {
+            for panel in overlays.values { panel.orderFrontRegardless() }
+            screenshotHost?.makeKeyAndOrderFront(nil)
+          }
+        }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "fruler-image-annotations.png"
+        panel.nameFieldStringValue = "fruler-screenshot.png"
+        #if FRULER_INTEGRATION_TEST
+        if cancelNextSave {
+          cancelNextSave = false
+          DispatchQueue.main.async { panel.cancel(nil) }
+        }
+        #endif
         panel.allowedContentTypes = [.png]
         NSApp.activate(ignoringOtherApps:true)
         guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
@@ -358,7 +346,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       }
     case "begin":
       guard let tool = args["tool"] as? String,
-            ["picker", "rectangle", "horizontal", "vertical", "cross"].contains(tool) else {
+            CaptureTool(rawValue: tool) != nil else {
         result(FlutterError(code: "invalid_tool", message: "未知工具", details: nil))
         return
       }
@@ -370,6 +358,31 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
           for (key, panel) in overlays { panel.overlay.isPointerActive = key == display }
           overlays[display]?.overlay.update(args)
         }
+      }
+      result(nil)
+    case "editScreenshot":
+      guard let id = args["sessionId"] as? Int, id == session,
+            let display = args["displayId"] as? UInt32, let panel = overlays[display],
+            let controller = flutterController else {
+        result(FlutterError(code:"capture_cancelled",message:"截图会话已结束",details:nil)); return
+      }
+      for overlay in overlays.values { overlay.overlay.setScreenshotEditing(true); overlay.overlay.releaseCursor() }
+      mainWindow?.contentViewController = nil
+      controller.backgroundColor = .clear
+      panel.isOpaque = false
+      controller.view.frame = panel.overlay.bounds
+      controller.view.autoresizingMask = [.width,.height]
+      panel.overlay.addSubview(controller.view)
+      screenshotHost = panel
+      panel.makeKeyAndOrderFront(nil)
+      panel.makeFirstResponder(controller.view)
+      result(nil)
+    case "reselectScreenshot":
+      if let id = args["sessionId"] as? Int, id == session {
+        restoreScreenshotView()
+        for panel in overlays.values { panel.overlay.setScreenshotEditing(false) }
+        overlays.values.first?.makeKeyAndOrderFront(nil)
+        if let panel = overlays.values.first { panel.makeFirstResponder(panel.overlay) }
       }
       result(nil)
     case "finish":
@@ -397,8 +410,8 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     nextSession += 1
     let id = nextSession
     session = id
-    restoreMainWindow = mainWindow?.isVisible == true && mainWindow?.isMiniaturized == false
-    previousApplication = NSWorkspace.shared.frontmostApplication
+    let frontmost = NSWorkspace.shared.frontmostApplication
+    previousApplication = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? lastExternalApplication : frontmost
     mainWindow?.orderOut(nil)
     captureTask = Task { @MainActor [weak self] in
       guard let self = self else { return }
@@ -466,19 +479,24 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     sink?(["type": "cancelled", "sessionId": id])
   }
 
+  private func restoreScreenshotView() {
+    guard screenshotHost != nil, let controller = flutterController else { return }
+    controller.view.removeFromSuperview()
+    controller.backgroundColor = NSColor.windowBackgroundColor
+    mainWindow?.contentViewController = controller
+    screenshotHost = nil
+  }
+
   private func closeSession() {
     session = nil
     preparing = false
+    restoreScreenshotView()
     for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil); panel.close() }
     overlays.removeAll()
-    if restoreMainWindow {
-      NSApp.activate(ignoringOtherApps: true)
-      mainWindow?.makeKeyAndOrderFront(nil)
-    } else if let previous = previousApplication,
-              previous.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+    if let previous = previousApplication, !previous.isTerminated,
+       previous.processIdentifier != ProcessInfo.processInfo.processIdentifier {
       previous.activate(options: [])
-    }
-    restoreMainWindow = false
+    } else { NSApp.hide(nil) }
     previousApplication = nil
   }
 
@@ -488,7 +506,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     let menu = NSMenu()
     menu.addItem(withTitle: "fruler · 屏幕上的像素工具", action: nil, keyEquivalent: "")
     menu.addItem(.separator())
-    for (title, tool, key) in [("取色器", "picker", "C"), ("矩形测量", "rectangle", "R"),
+    for (title, tool, key) in [("截图并标注", "screenshot", "X"), ("取色器", "picker", "C"), ("矩形测量", "rectangle", "R"),
       ("水平间距", "horizontal", ""), ("垂直间距", "vertical", ""), ("交叉测距", "cross", "")] {
       let entry = NSMenuItem(title: title, action: #selector(activateTool(_:)), keyEquivalent: key)
       entry.target = self
@@ -505,25 +523,6 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     item.menu = menu
     statusItem = item
     updateMenuShortcuts()
-    if let main = NSApp.mainMenu {
-      let root = NSMenuItem(title:"文件",action:nil,keyEquivalent:"")
-      let files = NSMenu(title:"文件")
-      for (title, action, key, modifiers) in [
-        ("打开项目…","open","o",NSEvent.ModifierFlags.command),
-        ("保存项目","save","s",NSEvent.ModifierFlags.command),
-        ("项目另存为…","saveAs","s",NSEvent.ModifierFlags([.command,.shift]))] {
-        let entry = NSMenuItem(title:title,action:#selector(projectCommand(_:)),keyEquivalent:key)
-        entry.target = self; entry.representedObject = action; entry.keyEquivalentModifierMask = modifiers
-        files.addItem(entry)
-      }
-      root.submenu = files
-      main.insertItem(root,at:min(1,main.items.count))
-    }
-  }
-  @objc private func projectCommand(_ item: NSMenuItem) {
-    guard !shortcutRecording, let action = item.representedObject as? String else { return }
-    showMainWindow()
-    sink?(["type":"projectCommand","action":action])
   }
 
   @objc private func activateTool(_ sender: NSMenuItem) {
@@ -558,7 +557,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
         EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &key)
       guard status == noErr else { return status }
-      bridge.emitActivation(key.id == 1 ? "picker" : "rectangle")
+      bridge.emitActivation(key.id == 1 ? "picker" : key.id == 2 ? "rectangle" : "screenshot")
       return noErr
     }, 1, &spec, context, &hotkeyHandler)
     guard status == noErr else { return }
@@ -575,14 +574,14 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     unregisterHotkeys()
     guard hotkeyHandler != nil else { return false }
     let signature: OSType = 0x46524C52
-    for (id, chord) in [(UInt32(1), bindings.picker), (UInt32(2), bindings.ruler)] {
+    for (id, chord) in [(UInt32(1), bindings.picker), (UInt32(2), bindings.ruler), (UInt32(3), bindings.screenshot)] {
       var ref: EventHotKeyRef?
       let error = RegisterEventHotKey(chord.keyCode, chord.carbonModifiers,
         EventHotKeyID(signature: signature, id: id), GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &ref)
       guard error == noErr, let value = ref else { unregisterHotkeys(); return false }
       hotkeys.append(value)
     }
-    hasShortcuts = hotkeys.count == 2
+    hasShortcuts = hotkeys.count == 3
     return hasShortcuts
   }
 
@@ -601,7 +600,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   }
 
   private func updateMenuShortcuts() {
-    for (tool, chord) in [("picker", shortcuts.picker), ("rectangle", shortcuts.ruler)] {
+    for (tool, chord) in [("picker", shortcuts.picker), ("rectangle", shortcuts.ruler), ("screenshot", shortcuts.screenshot)] {
       toolMenuItems[tool]?.keyEquivalent = (shortcutRecording || !hasShortcuts) ? "" : chord.key.lowercased()
       toolMenuItems[tool]?.keyEquivalentModifierMask = chord.modifiers
     }
@@ -651,14 +650,16 @@ private struct NativeShortcut: Equatable {
 private struct NativeShortcutBindings: Equatable {
   let picker: NativeShortcut
   let ruler: NativeShortcut
+  let screenshot: NativeShortcut
   static let defaults = NativeShortcutBindings(picker: NativeShortcut(key: "C", modifiers: [.command, .shift]),
     ruler: NativeShortcut(key: "R", modifiers: [.command, .shift]))
-  init(picker: NativeShortcut, ruler: NativeShortcut) { self.picker = picker; self.ruler = ruler }
+  init(picker: NativeShortcut, ruler: NativeShortcut, screenshot: NativeShortcut = NativeShortcut(key: "X", modifiers: [.command, .shift])) { self.picker = picker; self.ruler = ruler; self.screenshot = screenshot }
   init?(_ data: [String: Any]) {
     guard let picker = NativeShortcut(data["picker"]), let ruler = NativeShortcut(data["ruler"]) else { return nil }
-    self.init(picker: picker, ruler: ruler)
+    guard data["screenshot"] == nil || NativeShortcut(data["screenshot"]) != nil else { return nil }
+    self.init(picker: picker, ruler: ruler, screenshot: NativeShortcut(data["screenshot"]) ?? Self.defaults.screenshot)
   }
-  var isValid: Bool { picker.isValid && ruler.isValid && picker != ruler }
+  var isValid: Bool { picker.isValid && ruler.isValid && screenshot.isValid && picker != ruler && picker != screenshot && ruler != screenshot }
 }
 
 private enum CaptureFailure: LocalizedError {
@@ -811,7 +812,7 @@ private final class CaptureOverlayView: NSView {
     case kVK_UpArrow: onEvent?(["type": "nudge", "dx": 0, "dy": -1, "resize": event.modifierFlags.contains(.shift)])
     case kVK_DownArrow: onEvent?(["type": "nudge", "dx": 0, "dy": 1, "resize": event.modifierFlags.contains(.shift)])
     case kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4:
-      guard tool != "picker", !event.isARepeat else { return }
+      guard tool != "picker", tool != "screenshot", !event.isARepeat else { return }
       let modes = [kVK_ANSI_1: "rectangle", kVK_ANSI_2: "horizontal", kVK_ANSI_3: "vertical", kVK_ANSI_4: "cross"]
       onEvent?(["type": "modeChanged", "tool": modes[Int(event.keyCode)]!])
     default: break
@@ -819,7 +820,7 @@ private final class CaptureOverlayView: NSView {
   }
 
   override func scrollWheel(with event: NSEvent) {
-    guard tool != "rectangle" else { return }
+    guard tool != "rectangle", tool != "screenshot" else { return }
     scrollRemainder += event.scrollingDeltaY / (event.hasPreciseScrollingDeltas ? 12 : 1)
     let steps = Int(scrollRemainder.rounded(.towardZero))
     if steps != 0 {
@@ -914,7 +915,7 @@ private final class CaptureOverlayView: NSView {
     selectedPin = data["selectedPin"] as? Int
     continuousButton.state = continuous ? .on : .off
     continuousButton.isHidden = tool != "picker" || !capturePurpose.isEmpty
-    editbar.isHidden = tool == "picker"
+    editbar.isHidden = tool == "picker" || tool == "screenshot"
     editButton.title = editingPins ? "返回绘制" : "编辑标注"
     undoButton.isEnabled = data["canUndoPins"] as? Bool == true
     redoButton.isEnabled = data["canRedoPins"] as? Bool == true
@@ -941,14 +942,14 @@ private final class CaptureOverlayView: NSView {
     }
     for (mode, button) in modeButtons {
       let selected = mode == tool
-      button.isHidden = tool == "picker"
+      button.isHidden = tool == "picker" || tool == "screenshot"
       button.layer?.backgroundColor = (selected ? accent : NSColor.white.withAlphaComponent(0.07)).cgColor
       button.contentTintColor = selected ? .black : .white
       button.setAccessibilityValue(selected ? "已选中" : "")
     }
-    clearButton.isHidden = tool == "picker"
+    clearButton.isHidden = tool == "picker" || tool == "screenshot"
     infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? "取色" : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
-      editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
+      tool == "screenshot" ? "框选截图 · 松开进入标注 · 方向键微调 · Enter 确认" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "Shift 保留多个框" : "容差 \(tolerance) · 滚轮调整"
     toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
     needsDisplay = true
   }
@@ -1070,9 +1071,19 @@ private final class CaptureOverlayView: NSView {
   }
   @objc private func cancelCapture() { onCancel?() }
 
+  private var screenshotEditing = false
+  func setScreenshotEditing(_ editing: Bool) {
+    screenshotEditing = editing
+    toolbar.isHidden = editing
+    editbar.isHidden = editing || tool == "screenshot" || tool == "picker"
+    isPointerActive = false
+    needsDisplay = true
+  }
+
   override func draw(_ dirtyRect: NSRect) {
     NSImage(cgImage: snapshot.image, size: bounds.size).draw(in: bounds, from: .zero,
       operation: .copy, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.none])
+    if screenshotEditing { return }
     if tool != "picker" {
       NSColor.black.withAlphaComponent(0.08).setFill()
       bounds.fill()
@@ -1103,7 +1114,7 @@ private final class CaptureOverlayView: NSView {
     accent.setStroke()
     let path = NSBezierPath()
     path.lineWidth = 1.5
-    if tool == "rectangle" {
+    if tool == "rectangle" || tool == "screenshot" {
       accent.withAlphaComponent(0.1).setFill()
       rect.fill()
       path.appendRect(rect)
@@ -1240,93 +1251,5 @@ private enum AnnotationRenderer {
     NSGraphicsContext.restoreGraphicsState()
     guard let result = context.makeImage() else { return nil }
     return NSBitmapImageRep(cgImage: result).representation(using: .png,properties: [:])
-  }
-}
-
-
-/// User-selected projects have scoped bookmarks; drafts stay in app support.
-final class ProjectFileStore {
-  static let maximumBytes = 128 * 1024 * 1024
-  private let defaults: UserDefaults
-  private let draftOverride: URL?
-  private let key = "fruler.project-bookmarks.v1"
-  init(defaults: UserDefaults = .standard, draftURL: URL? = nil) {
-    self.defaults = defaults; self.draftOverride = draftURL
-  }
-  private var records: [[String:Any]] { defaults.array(forKey:key) as? [[String:Any]] ?? [] }
-  func recent() -> [[String:String]] {
-    records.compactMap { item in
-      guard let name = item["name"] as? String, let path = item["path"] as? String else { return nil }
-      return ["name":name,"path":path]
-    }
-  }
-  private func withAccess<T>(_ url: URL, _ operation: () throws -> T) rethrows -> T {
-    let accessed = url.startAccessingSecurityScopedResource()
-    defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-    return try operation()
-  }
-  private func remember(_ url: URL, replacing oldPath: String? = nil) throws {
-    let bookmark = try url.bookmarkData(options:.withSecurityScope,includingResourceValuesForKeys:nil,relativeTo:nil)
-    var items = records.filter { $0["path"] as? String != url.path && $0["path"] as? String != oldPath }
-    items.insert(["name":url.lastPathComponent,"path":url.path,"bookmark":bookmark],at:0)
-    defaults.set(Array(items.prefix(12)),forKey:key)
-  }
-  func resolve(_ path: String) throws -> URL {
-    guard let data = records.first(where: { $0["path"] as? String == path })?["bookmark"] as? Data else {
-      throw NSError(domain:"fruler.project",code:1,userInfo:[NSLocalizedDescriptionKey:"文件访问已失效，请用打开项目重新选择文件"])
-    }
-    var stale = false
-    let url = try URL(resolvingBookmarkData:data,options:.withSecurityScope,relativeTo:nil,bookmarkDataIsStale:&stale)
-    if stale || url.path != path { try withAccess(url) { try remember(url,replacing:path) } }
-    return url
-  }
-  func read(_ url: URL) throws -> [String:String] {
-    try withAccess(url) {
-      let values = try url.resourceValues(forKeys:[.fileSizeKey,.isRegularFileKey])
-      guard values.isRegularFile == true, (values.fileSize ?? 0) <= Self.maximumBytes else {
-        throw NSError(domain:"fruler.project",code:2,userInfo:[NSLocalizedDescriptionKey:"请选择不超过 128 MB 的项目文件"])
-      }
-      let bytes = try Data(contentsOf:url)
-      guard bytes.count <= Self.maximumBytes, let text = String(data:bytes,encoding:.utf8) else {
-        throw NSError(domain:"fruler.project",code:3,userInfo:[NSLocalizedDescriptionKey:"项目文件过大或不是 UTF-8 文本"])
-      }
-      try remember(url)
-      return ["name":url.lastPathComponent,"path":url.path,"text":text]
-    }
-  }
-  func write(_ text: String, to url: URL, mustExist: Bool = false) throws -> [String:String] {
-    try withAccess(url) {
-      if mustExist && !FileManager.default.fileExists(atPath:url.path) {
-        throw NSError(domain:"fruler.project",code:5,userInfo:[NSLocalizedDescriptionKey:"原项目已不存在，请另存为"])
-      }
-      let bytes = Data(text.utf8)
-      guard bytes.count <= Self.maximumBytes else { throw NSError(domain:"fruler.project",code:4,userInfo:[NSLocalizedDescriptionKey:"项目文件不能超过 128 MB"]) }
-      try bytes.write(to:url,options:.atomic)
-      try remember(url)
-      return ["name":url.lastPathComponent,"path":url.path]
-    }
-  }
-  private func draftURL() throws -> URL {
-    if let url = draftOverride { return url }
-    let folder = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("fruler",isDirectory:true)
-    try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
-    return folder.appendingPathComponent("image-draft-v1.json")
-  }
-  func loadDraft() throws -> String? {
-    let url = try draftURL()
-    guard FileManager.default.fileExists(atPath:url.path) else { return nil }
-    let size = try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0
-    guard size <= Self.maximumBytes + 8192 else { throw NSError(domain:"fruler.draft",code:1) }
-    let data = try Data(contentsOf:url)
-    guard data.count <= Self.maximumBytes + 8192, let text = String(data:data,encoding:.utf8) else { throw NSError(domain:"fruler.draft",code:2) }
-    return text
-  }
-  func saveDraft(_ text: String?) throws {
-    let url = try draftURL()
-    if let text = text {
-      let data = Data(text.utf8)
-      guard data.count <= Self.maximumBytes + 8192 else { throw NSError(domain:"fruler.draft",code:3) }
-      try data.write(to:url,options:.atomic)
-    } else if FileManager.default.fileExists(atPath:url.path) { try FileManager.default.removeItem(at:url) }
   }
 }

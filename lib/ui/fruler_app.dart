@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -6,28 +7,30 @@ import 'package:flutter/services.dart';
 
 import '../app/app_controller.dart';
 import '../core/core.dart';
+import '../platform/annotation_renderer.dart';
+part 'annotation_widgets.dart';
+part 'history_widgets.dart';
 
-part 'palette_widgets.dart';
-part 'v4_widgets.dart';
-part 'v5_widgets.dart';
-part 'v6_widgets.dart';
-part 'v7_widgets.dart';
-part 'v8_widgets.dart';
-
-const _background = Color(0xFF111315);
-const _panel = Color(0xFF1B1E21);
-const _line = Color(0xFF303438);
-const _muted = Color(0xFF949B9F);
-const _accent = Color(0xFFD7FA6B);
+const _background = Color(0xFF111315),
+    _panel = Color(0xFF1B1E21),
+    _line = Color(0xFF303438),
+    _muted = Color(0xFF949B9F),
+    _accent = Color(0xFFD7FA6B);
+const _modeLabels = {
+  RulerMode.rectangle: '矩形',
+  RulerMode.horizontal: '水平',
+  RulerMode.vertical: '垂直',
+  RulerMode.cross: '交叉',
+};
 
 class FrulerApp extends StatelessWidget {
   const FrulerApp({super.key, required this.controller});
   final AppController controller;
-
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'fruler',
     debugShowCheckedModeBanner: false,
+    color: Colors.transparent,
     theme: ThemeData(
       brightness: Brightness.dark,
       useMaterial3: true,
@@ -39,727 +42,179 @@ class FrulerApp extends StatelessWidget {
         onSurface: Color(0xFFF1F3EF),
         outline: _line,
       ),
-      chipTheme: ChipThemeData(
-        selectedColor: _accent.withValues(alpha: .22),
-        checkmarkColor: _accent,
-        side: const BorderSide(color: _line),
-      ),
       fontFamily: 'PingFang SC',
-      textTheme: const TextTheme(
-        bodyMedium: TextStyle(fontSize: 13, height: 1.5),
-        bodySmall: TextStyle(fontSize: 12, color: _muted, height: 1.5),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFFE4E8DF),
-          side: const BorderSide(color: _line),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 17),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        ),
-      ),
-      tooltipTheme: const TooltipThemeData(
-        waitDuration: Duration(milliseconds: 400),
-      ),
     ),
-    home: CallbackShortcuts(
-      bindings: {
-        for (final key in [
-          LogicalKeyboardKey.metaLeft,
-          LogicalKeyboardKey.controlLeft,
-        ]) ...{
-          SingleActivator(
-            LogicalKeyboardKey.keyO,
-            meta: key == LogicalKeyboardKey.metaLeft,
-            control: key == LogicalKeyboardKey.controlLeft,
-          ): () {
-            if (!controller.recordingShortcut) controller.openImageProject();
-          },
-          SingleActivator(
-            LogicalKeyboardKey.keyS,
-            meta: key == LogicalKeyboardKey.metaLeft,
-            control: key == LogicalKeyboardKey.controlLeft,
-          ): () {
-            if (!controller.recordingShortcut) controller.saveImageProject();
-          },
-          SingleActivator(
-            LogicalKeyboardKey.keyS,
-            shift: true,
-            meta: key == LogicalKeyboardKey.metaLeft,
-            control: key == LogicalKeyboardKey.controlLeft,
-          ): () {
-            if (!controller.recordingShortcut) {
-              controller.saveImageProject(saveAs: true);
-            }
-          },
-        },
-      },
-      child: Focus(
-        autofocus: true,
-        child: AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            controller.confirmImageReplacement = () =>
-                _confirmImageReplacement(context, controller);
-            controller.confirmImageQuit = () =>
-                _confirmImageReplacement(context, controller, quitting: true);
-            return _PickedColorEditorHost(
+    home: AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        if (controller.screenshotEditing) {
+          return Material(
+            color: Colors.transparent,
+            child: _AnnotationEditor(
+              key: ObjectKey(controller.imageDocument),
               controller: controller,
-              child: Scaffold(
-                body: Row(
-                  children: [
-                    _Sidebar(controller: controller),
-                    const VerticalDivider(width: 1, color: _line),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          _TopBar(controller: controller),
-                          Expanded(
-                            child: SingleChildScrollView(
-                              key: PageStorageKey(controller.section),
-                              padding: const EdgeInsets.fromLTRB(
-                                34,
-                                29,
-                                34,
-                                28,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (controller.recoveryPending) ...[
-                                    _RecoveryBanner(controller: controller),
-                                    const SizedBox(height: 20),
-                                  ],
-                                  if (controller.error != null ||
-                                      controller.notice != null) ...[
-                                    _Message(controller: controller),
-                                    const SizedBox(height: 20),
-                                  ],
-                                  if (!controller.permissionGranted &&
-                                      !controller.initializing &&
-                                      controller.section !=
-                                          AppSection.image) ...[
-                                    _PermissionBanner(controller: controller),
-                                    const SizedBox(height: 24),
-                                  ],
-                                  switch (controller.section) {
-                                    AppSection.picker => _PickerPage(
-                                      controller: controller,
-                                    ),
-                                    AppSection.ruler => _RulerPage(
-                                      controller: controller,
-                                    ),
-                                    AppSection.image => _ImageWorkspace(
-                                      controller: controller,
-                                    ),
-                                    AppSection.settings => _SettingsPage(
-                                      controller: controller,
-                                    ),
-                                  },
-                                ],
-                              ),
-                            ),
-                          ),
-                          _Footer(controller: controller),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+            ),
+          );
+        }
+        return _HistoryHome(controller: controller);
+      },
     ),
   );
 }
 
-class _Sidebar extends StatelessWidget {
-  const _Sidebar({required this.controller});
-  final AppController controller;
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 192,
-    color: const Color(0xFF151719),
-    padding: const EdgeInsets.fromLTRB(18, 30, 18, 22),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 8),
-          child: Row(
-            children: [
-              _BrandMark(size: 30),
-              SizedBox(width: 11),
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'fruler',
-                    style: TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(9, 15, 0, 35),
-          child: Text(
-            'FLUTTER + RULER',
-            style: TextStyle(fontSize: 9, letterSpacing: 2.1, color: _muted),
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(10, 0, 0, 12),
-          child: Text('工作台', style: TextStyle(fontSize: 11, color: _muted)),
-        ),
-        _nav(AppSection.picker, Icons.colorize_rounded, '取色器', '01'),
-        const SizedBox(height: 6),
-        _nav(AppSection.ruler, Icons.straighten_rounded, '屏幕尺子', '02'),
-        const SizedBox(height: 6),
-        _nav(AppSection.image, Icons.image_outlined, '图片工作区', '03'),
-        const Spacer(),
-        _nav(AppSection.settings, Icons.tune_rounded, '偏好设置', ''),
-        const SizedBox(height: 20),
-        const Divider(color: _line),
-        const SizedBox(height: 13),
-        Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: controller.permissionGranted
-                      ? _accent
-                      : const Color(0xFFE7B56A),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                controller.initializing
-                    ? '正在连接系统…'
-                    : controller.permissionGranted
-                    ? '屏幕访问已就绪'
-                    : '等待屏幕授权',
-                style: const TextStyle(fontSize: 10, color: _muted),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Padding(
-          padding: EdgeInsets.only(left: 10),
-          child: Text(
-            'macOS  ·  v0.8.0',
-            style: TextStyle(fontSize: 10, color: Color(0xFF646C70)),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _nav(AppSection section, IconData icon, String label, String index) {
-    final selected = controller.section == section;
-    return Material(
-      color: selected ? const Color(0xFF252C20) : Colors.transparent,
-      borderRadius: BorderRadius.circular(9),
-      child: InkWell(
-        onTap: () => controller.selectSection(section),
-        borderRadius: BorderRadius.circular(9),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: selected ? _accent : _muted),
-              const SizedBox(width: 11),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: selected ? _accent : const Color(0xFFC3C9CC),
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                index,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: selected
-                      ? _accent.withValues(alpha: .5)
-                      : const Color(0xFF555D61),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.controller});
-  final AppController controller;
-  @override
-  Widget build(BuildContext context) => Container(
-    height: 63,
-    padding: const EdgeInsets.symmetric(horizontal: 34),
-    decoration: const BoxDecoration(
-      border: Border(bottom: BorderSide(color: _line)),
-    ),
-    child: Row(
-      children: [
-        const Text('工作台', style: TextStyle(fontSize: 11, color: _muted)),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
-          child: Text('/', style: TextStyle(color: _line)),
-        ),
-        Text(switch (controller.section) {
-          AppSection.picker => '取色器',
-          AppSection.ruler => '屏幕尺子',
-          AppSection.image => '图片工作区',
-          AppSection.settings => '偏好设置',
-        }, style: const TextStyle(fontSize: 11)),
-        const Spacer(),
-        const Icon(Icons.desktop_mac_outlined, size: 14, color: _muted),
-        const SizedBox(width: 8),
-        const Text('为屏幕上的细节而造', style: TextStyle(fontSize: 10, color: _muted)),
-      ],
-    ),
-  );
-}
-
-class _PageHeading extends StatelessWidget {
-  const _PageHeading({
-    required this.index,
-    required this.title,
-    required this.description,
-    this.action,
-  });
-  final String index, title, description;
-  final Widget? action;
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 27),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                index,
-                style: const TextStyle(
-                  color: _accent,
-                  fontSize: 10,
-                  letterSpacing: 1.8,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 9),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 29,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -1,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                description,
-                style: const TextStyle(fontSize: 12, color: _muted),
-              ),
-            ],
-          ),
-        ),
-        if (action != null) ...[const SizedBox(width: 14), action!],
-      ],
-    ),
-  );
-}
-
-class _PickerPage extends StatelessWidget {
-  const _PickerPage({required this.controller});
+class _HistoryHome extends StatelessWidget {
+  const _HistoryHome({required this.controller});
   final AppController controller;
   @override
   Widget build(BuildContext context) {
-    final color = controller.selectedColor;
-    final swatch = Color.fromARGB(255, color.r, color.g, color.b);
-    final light = swatch.computeLuminance() > .4;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _PageHeading(
-          index: '01 / COLOR PICKER',
-          title: '带走屏幕上的颜色',
-          description: '瞄准一个像素，取色、复制，一气呵成。',
-          action: FilledButton.icon(
-            onPressed: controller.busy || controller.initializing
-                ? null
-                : controller.pickColor,
-            icon: const Icon(Icons.colorize_rounded, size: 17),
-            label: Text(controller.busy ? '工具使用中…' : '开始取色'),
-          ),
-        ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            OutlinedButton.icon(
-              onPressed: () => _editColor(context, controller, color),
-              icon: const Icon(Icons.tune, size: 16),
-              label: const Text('编辑颜色'),
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.busy
-                  ? null
-                  : () => _manageColorOutputs(context, controller),
-              icon: const Icon(Icons.format_paint_outlined, size: 16),
-              label: const Text('颜色格式'),
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.busy
-                  ? null
-                  : () => _configurePicker(context, controller),
-              icon: const Icon(Icons.mouse_outlined, size: 16),
-              label: const Text('取色设置'),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Switch(
-                  value: controller.continuousPicker,
-                  onChanged: controller.busy
-                      ? null
-                      : controller.setContinuousPicker,
-                ),
-                const Text('连续取色 · Esc 结束', style: TextStyle(fontSize: 12)),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: _panel,
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: _line),
-          ),
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: 10,
-                  child: Container(
-                    color: swatch,
-                    constraints: const BoxConstraints(minHeight: 242),
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          controller.colors.isEmpty ? '预览色' : '当前颜色',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: light ? Colors.black54 : Colors.white70,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          color.hex,
-                          style: TextStyle(
-                            fontSize: 31,
-                            letterSpacing: -1.2,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Menlo',
-                            color: light
-                                ? const Color(0xFF182008)
-                                : Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'sRGB  /  ${color.r} · ${color.g} · ${color.b}',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontFamily: 'Menlo',
-                            color: light ? Colors.black54 : Colors.white70,
-                          ),
-                        ),
-                      ],
+    final c = controller;
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'fruler',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => c.selectSection(
+                      c.section == AppSection.settings
+                          ? AppSection.picker
+                          : AppSection.settings,
+                    ),
+                    icon: const Icon(Icons.settings_outlined),
+                    label: Text(
+                      c.section == AppSection.settings ? '返回历史' : '偏好设置',
                     ),
                   ),
-                ),
-                Expanded(
-                  flex: 11,
-                  child: Padding(
-                    padding: const EdgeInsets.all(23),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '颜色数值',
-                          style: TextStyle(color: _muted, fontSize: 10),
-                        ),
-                        const SizedBox(height: 14),
-                        for (final f in controller.enabledColorOutputs)
-                          _ColorRow(
-                            format: f,
-                            value: f.render(color),
-                            onCopy: () {
-                              controller.selectColorOutput(f.id);
-                              controller.copyColor();
-                            },
-                          ),
-                        const SizedBox(height: 12),
-                        const Divider(color: _line, height: 1),
-                        const SizedBox(height: 13),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    key: const ValueKey('start-picker'),
+                    onPressed: c.busy ? null : c.pickColor,
+                    icon: const Icon(Icons.colorize),
+                    label: Text('取色 · ${c.shortcuts.picker.label}'),
+                  ),
+                  FilledButton.icon(
+                    key: const ValueKey('start-ruler'),
+                    onPressed: c.busy ? null : c.startRuler,
+                    icon: const Icon(Icons.straighten),
+                    label: Text('测量 · ${c.shortcuts.ruler.label}'),
+                  ),
+                  FilledButton.icon(
+                    key: const ValueKey('start-screenshot'),
+                    onPressed: c.busy ? null : c.startScreenshot,
+                    icon: const Icon(Icons.screenshot_monitor),
+                    label: Text('截图 · ${c.shortcuts.screenshot.label}'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '在屏幕上完成操作，复制或保存后回到原应用。',
+                style: TextStyle(color: _muted),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (c.error != null || c.notice != null)
+                        _Message(controller: c),
+                      if (!c.permissionGranted && !c.initializing)
+                        _PermissionBanner(controller: c),
+                      if (c.section == AppSection.settings)
+                        _SettingsPage(controller: c)
+                      else ...[
                         Wrap(
-                          spacing: 6,
-                          runSpacing: 8,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
                           children: [
-                            const Text(
-                              '自动复制',
-                              style: TextStyle(fontSize: 10, color: _muted),
-                            ),
-                            for (final f in controller.enabledColorOutputs)
-                              _Chip(
-                                label: f.name,
-                                selected: controller.selectedOutputId == f.id,
-                                onTap: () => controller.selectColorOutput(f.id),
+                            for (final e in {
+                              AppSection.picker: '取色历史',
+                              AppSection.ruler: '测量历史',
+                              AppSection.image: '截图历史',
+                            }.entries)
+                              ChoiceChip(
+                                label: Text(e.value),
+                                selected: c.section == e.key,
+                                onSelected: (_) => c.selectSection(e.key),
                               ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        if (c.section == AppSection.picker) ...[
+                          if (c.colors.isEmpty)
+                            const _Empty(
+                              icon: Icons.colorize,
+                              title: '还没有取色记录',
+                              description: '在屏幕上取色后自动复制，最近颜色显示在这里。',
+                            ),
+                          for (final color in c.colors)
+                            ListTile(
+                              leading: Container(
+                                width: 32,
+                                height: 32,
+                                color: Color.fromARGB(
+                                  255,
+                                  color.r,
+                                  color.g,
+                                  color.b,
+                                ),
+                              ),
+                              title: Text(c.formatColor(color)),
+                              subtitle: Text(color.hex),
+                              trailing: const Icon(Icons.copy, size: 18),
+                              onTap: () => c.copyColor(color),
+                            ),
+                        ] else if (c.section == AppSection.ruler)
+                          _MeasurementHistory(controller: c)
+                        else ...[
+                          if (c.screenshots.isEmpty)
+                            const _Empty(
+                              icon: Icons.image_outlined,
+                              title: '还没有截图记录',
+                              description: '完成的截图暂存在本次运行中，点击即可重新复制。',
+                            ),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              for (final png in c.screenshots)
+                                InkWell(
+                                  onTap: () => c.copyScreenshot(png),
+                                  child: Image.memory(
+                                    png,
+                                    width: 220,
+                                    height: 150,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
-        _Hint(
-          icon: Icons.keyboard_command_key_rounded,
-          text:
-              '${controller.shortcuts.picker.label} 唤起 · 滚轮缩放 · 方向键逐像素移动 · Enter 确认 · Esc 取消',
-        ),
-        const SizedBox(height: 29),
-        _SectionTitle(
-          title: '最近取色',
-          subtitle: '${controller.colors.length} / 64',
-          onClear: controller.colors.isEmpty ? null : controller.clearColors,
-        ),
-        const SizedBox(height: 14),
-        if (controller.colors.isEmpty)
-          const _Empty(
-            icon: Icons.palette_outlined,
-            title: '你的调色板，从这里开始',
-            description: '从屏幕取到的颜色会保存在这里，点击色卡即可再次复制。',
-          )
-        else
-          _ColorGrid(controller: controller, saved: false),
-        const SizedBox(height: 12),
-        _ExportColors(controller: controller, saved: false),
-        const SizedBox(height: 28),
-        _SectionTitle(
-          title: '我的调色板',
-          subtitle: '${controller.palette.length} 色 · 收藏与命名',
-        ),
-        const SizedBox(height: 14),
-        _GroupedPalette(controller: controller),
-        const SizedBox(height: 12),
-        _ExportColors(controller: controller, saved: true),
-        const SizedBox(height: 12),
-        _PaletteTools(controller: controller),
-        const SizedBox(height: 28),
-        _ContrastPanel(controller: controller),
-      ],
+      ),
     );
   }
-}
-
-class _ColorRow extends StatelessWidget {
-  const _ColorRow({
-    required this.format,
-    required this.value,
-    required this.onCopy,
-  });
-  final ColorOutput format;
-  final String value;
-  final VoidCallback onCopy;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onCopy,
-    borderRadius: BorderRadius.circular(5),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 68,
-            child: Text(
-              format.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 9, color: _muted),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontFamily: 'Menlo', fontSize: 11),
-            ),
-          ),
-          const SizedBox(width: 6),
-          const Icon(Icons.copy_rounded, color: _muted, size: 13),
-        ],
-      ),
-    ),
-  );
-}
-
-class _RulerPage extends StatelessWidget {
-  const _RulerPage({required this.controller});
-  final AppController controller;
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _PageHeading(
-        index: '02 / SCREEN RULER',
-        title: '让距离精确到像素',
-        description: '手动框选，或沿颜色边界自动测量间距。',
-        action: FilledButton.icon(
-          onPressed: controller.busy || controller.initializing
-              ? null
-              : controller.startRuler,
-          icon: const Icon(Icons.straighten_rounded, size: 18),
-          label: Text(controller.busy ? '工具使用中…' : '开始测量'),
-        ),
-      ),
-      Row(
-        children: [
-          for (final mode in RulerMode.values) ...[
-            if (mode.index != 0) const SizedBox(width: 10),
-            Expanded(
-              child: _ModeCard(
-                mode: mode,
-                selected: controller.mode == mode,
-                onTap: () => controller.selectMode(mode),
-              ),
-            ),
-          ],
-        ],
-      ),
-      const SizedBox(height: 18),
-      Container(
-        height: 184,
-        decoration: BoxDecoration(
-          color: _panel,
-          borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: _line),
-        ),
-        child: CustomPaint(
-          painter: _RulerIllustration(controller.mode),
-          child: const SizedBox.expand(),
-        ),
-      ),
-      const SizedBox(height: 16),
-      _Hint(
-        icon: Icons.info_outline_rounded,
-        text: controller.mode == RulerMode.rectangle
-            ? '拖拽框选；Shift 保留多个标注。也可按 Enter 定起点，方向键移动，再按 Enter 确认。浮动栏或 1–4 切换模式；编辑标注后拖动框或边角；方向键移动，Shift + 方向键调尺寸，支持撤销和导出。'
-            : '自动识别同色边界；滚轮调容差，方向键逐像素移动，Enter 复制。浮动栏或 1–4 切换模式，Esc 取消。',
-      ),
-      const SizedBox(height: 28),
-      _MeasurementHistory(controller: controller),
-    ],
-  );
-}
-
-const _modeLabels = {
-  RulerMode.rectangle: '矩形',
-  RulerMode.horizontal: '水平',
-  RulerMode.vertical: '垂直',
-  RulerMode.cross: '交叉',
-};
-const _modeIcons = {
-  RulerMode.rectangle: Icons.crop_free_rounded,
-  RulerMode.horizontal: Icons.swap_horiz_rounded,
-  RulerMode.vertical: Icons.swap_vert_rounded,
-  RulerMode.cross: Icons.open_with_rounded,
-};
-
-class _ModeCard extends StatelessWidget {
-  const _ModeCard({
-    required this.mode,
-    required this.selected,
-    required this.onTap,
-  });
-  final RulerMode mode;
-  final bool selected;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => Material(
-    color: selected ? const Color(0xFF252D1E) : _panel,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
-      side: BorderSide(
-        color: selected ? _accent.withValues(alpha: .65) : _line,
-      ),
-    ),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _modeIcons[mode],
-              size: 18,
-              color: selected ? _accent : _muted,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              _modeLabels[mode]!,
-              style: TextStyle(
-                fontSize: 12,
-                color: selected ? _accent : const Color(0xFFD4D9D6),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 class _SettingsPage extends StatelessWidget {
@@ -805,6 +260,40 @@ class _SettingsPage extends StatelessWidget {
                   child: const Text('打开系统设置 ↗', style: TextStyle(fontSize: 12)),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      _SettingsCard(
+        title: '取色',
+        icon: Icons.colorize,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Text('复制格式'),
+                const Spacer(),
+                DropdownButton<String>(
+                  value: controller.selectedOutputId,
+                  items: controller.enabledColorOutputs
+                      .map(
+                        (f) =>
+                            DropdownMenuItem(value: f.id, child: Text(f.name)),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) controller.selectColorOutput(value);
+                  },
+                ),
+              ],
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('连续取色'),
+              subtitle: const Text('每次取色立即复制，Esc 结束'),
+              value: controller.continuousPicker,
+              onChanged: controller.setContinuousPicker,
             ),
           ],
         ),
@@ -866,6 +355,8 @@ class _SettingsPage extends StatelessWidget {
             _editableShortcut(context, true),
             const SizedBox(height: 15),
             _editableShortcut(context, false),
+            const SizedBox(height: 10),
+            _editableShortcut(context, false, screenshot: true),
             const SizedBox(height: 15),
             _shortcut('取消当前工具', 'Esc / 鼠标右键'),
             if (!controller.shortcutsAvailable)
@@ -882,13 +373,24 @@ class _SettingsPage extends StatelessWidget {
       const SizedBox(height: 20),
       const _Hint(
         icon: Icons.layers_outlined,
-        text: 'fruler 0.8.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
+        text: 'fruler 0.10.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
       ),
     ],
   );
-  Widget _editableShortcut(BuildContext context, bool picker) => Row(
+  Widget _editableShortcut(
+    BuildContext context,
+    bool picker, {
+    bool screenshot = false,
+  }) => Row(
     children: [
-      Text(picker ? '取色器' : '矩形测量', style: const TextStyle(fontSize: 12)),
+      Text(
+        screenshot
+            ? '截图并标注'
+            : picker
+            ? '取色器'
+            : '矩形测量',
+        style: const TextStyle(fontSize: 12),
+      ),
       const Spacer(),
       OutlinedButton(
         onPressed:
@@ -897,16 +399,24 @@ class _SettingsPage extends StatelessWidget {
                 controller.savingShortcuts ||
                 controller.recordingShortcut
             ? null
-            : () => _recordShortcut(context, picker),
+            : () => _recordShortcut(context, picker, screenshot: screenshot),
         child: Text(
-          (picker ? controller.shortcuts.picker : controller.shortcuts.ruler)
+          (screenshot
+                  ? controller.shortcuts.screenshot
+                  : picker
+                  ? controller.shortcuts.picker
+                  : controller.shortcuts.ruler)
               .label,
         ),
       ),
     ],
   );
 
-  Future<void> _recordShortcut(BuildContext context, bool picker) async {
+  Future<void> _recordShortcut(
+    BuildContext context,
+    bool picker, {
+    bool screenshot = false,
+  }) async {
     if (!await controller.beginShortcutRecording()) return;
     ShortcutChord? chord;
     try {
@@ -914,7 +424,11 @@ class _SettingsPage extends StatelessWidget {
         chord = await showDialog<ShortcutChord>(
           context: context,
           builder: (_) => _ShortcutDialog(
-            tool: picker ? '取色器' : '矩形测量',
+            tool: screenshot
+                ? '截图并标注'
+                : picker
+                ? '取色器'
+                : '矩形测量',
             controller: controller,
           ),
         );
@@ -922,7 +436,9 @@ class _SettingsPage extends StatelessWidget {
     } finally {
       await controller.endShortcutRecording();
     }
-    if (chord != null) await controller.setShortcut(picker, chord);
+    if (chord != null) {
+      await controller.setShortcut(picker, chord, screenshot: screenshot);
+    }
   }
 
   Widget _shortcut(String label, String keys) => Row(
@@ -977,7 +493,7 @@ class _SettingsCard extends StatelessWidget {
             children: [
               Text(title, style: const TextStyle(fontSize: 11, color: _muted)),
               const SizedBox(height: 15),
-              child,
+              Material(color: Colors.transparent, child: child),
             ],
           ),
         ),
@@ -1127,34 +643,6 @@ class _Empty extends StatelessWidget {
   );
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(5),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xFF343E27) : Colors.transparent,
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: selected ? const Color(0xFF526238) : _line),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 9, color: selected ? _accent : _muted),
-      ),
-    ),
-  );
-}
-
 class _Hint extends StatelessWidget {
   const _Hint({required this.icon, required this.text});
   final IconData icon;
@@ -1173,163 +661,6 @@ class _Hint extends StatelessWidget {
       ),
     ],
   );
-}
-
-class _Footer extends StatelessWidget {
-  const _Footer({required this.controller});
-  final AppController controller;
-  @override
-  Widget build(BuildContext context) => Container(
-    height: 36,
-    padding: const EdgeInsets.symmetric(horizontal: 34),
-    decoration: const BoxDecoration(
-      border: Border(top: BorderSide(color: _line)),
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.shield_outlined, size: 11, color: Color(0xFF737E74)),
-        const SizedBox(width: 7),
-        const Text(
-          '本地处理 · 无需联网',
-          style: TextStyle(fontSize: 9, color: Color(0xFF737E74)),
-        ),
-        const Spacer(),
-        Text(
-          controller.busy ? '屏幕工具运行中' : '细节，尽在掌握',
-          style: const TextStyle(fontSize: 9, color: Color(0xFF737E74)),
-        ),
-      ],
-    ),
-  );
-}
-
-class _BrandMark extends StatelessWidget {
-  const _BrandMark({required this.size});
-  final double size;
-  @override
-  Widget build(BuildContext context) =>
-      CustomPaint(size: Size.square(size), painter: _LogoPainter());
-}
-
-class _LogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = _accent;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(7)),
-      paint,
-    );
-    paint
-      ..color = const Color(0xFF1B2412)
-      ..strokeWidth = size.width * .1
-      ..strokeCap = StrokeCap.square;
-    final s = size.width;
-    canvas.drawLine(Offset(s * .29, s * .75), Offset(s * .29, s * .27), paint);
-    canvas.drawLine(Offset(s * .29, s * .27), Offset(s * .73, s * .27), paint);
-    canvas.drawLine(Offset(s * .29, s * .49), Offset(s * .59, s * .49), paint);
-    paint.strokeWidth = s * .04;
-    canvas.drawLine(Offset(s * .48, s * .26), Offset(s * .48, s * .35), paint);
-    canvas.drawLine(Offset(s * .66, s * .26), Offset(s * .66, s * .35), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _RulerIllustration extends CustomPainter {
-  const _RulerIllustration(this.mode);
-  final RulerMode mode;
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFF363D3D);
-    for (double x = 18; x < size.width; x += 18) {
-      for (double y = 18; y < size.height; y += 18) {
-        canvas.drawCircle(Offset(x, y), .7, paint);
-      }
-    }
-    final rect = Rect.fromCenter(
-      center: Offset(size.width / 2, size.height / 2 + 5),
-      width: 236,
-      height: 88,
-    );
-    paint.color = const Color(0xFF2B3324);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(7)),
-      paint,
-    );
-    paint
-      ..color = const Color(0xFF5A6649)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(7)),
-      paint,
-    );
-    paint
-      ..color = _accent
-      ..strokeWidth = 1.2;
-    if (mode == RulerMode.rectangle) {
-      canvas.drawRect(rect.inflate(8), paint);
-      for (final p in [
-        rect.topLeft - const Offset(8, 8),
-        rect.topRight + const Offset(8, -8),
-        rect.bottomLeft + const Offset(-8, 8),
-        rect.bottomRight + const Offset(8, 8),
-      ]) {
-        canvas.drawRect(
-          Rect.fromCenter(center: p, width: 5, height: 5),
-          Paint()..color = _accent,
-        );
-      }
-    }
-    if (mode != RulerMode.vertical) {
-      final y = rect.top - 20;
-      canvas.drawLine(Offset(rect.left, y), Offset(rect.right, y), paint);
-      canvas.drawLine(
-        Offset(rect.left, y - 5),
-        Offset(rect.left, y + 5),
-        paint,
-      );
-      canvas.drawLine(
-        Offset(rect.right, y - 5),
-        Offset(rect.right, y + 5),
-        paint,
-      );
-      _text(canvas, '宽度', Offset(rect.center.dx, y - 20), _accent);
-    }
-    if (mode != RulerMode.horizontal) {
-      final x = rect.right + 23;
-      canvas.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), paint);
-      canvas.drawLine(Offset(x - 5, rect.top), Offset(x + 5, rect.top), paint);
-      canvas.drawLine(
-        Offset(x - 5, rect.bottom),
-        Offset(x + 5, rect.bottom),
-        paint,
-      );
-      _text(canvas, '高度', Offset(x + 24, rect.center.dy - 6), _accent);
-    }
-    _text(
-      canvas,
-      mode == RulerMode.rectangle ? '拖拽框选 · 精确测量' : '光标处的连续同色区域',
-      Offset(rect.center.dx, rect.center.dy - 6),
-      const Color(0xFF9DA88E),
-    );
-  }
-
-  void _text(Canvas canvas, String text, Offset center, Color color) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(fontSize: 10, color: color),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, Offset(center.dx - painter.width / 2, center.dy));
-  }
-
-  @override
-  bool shouldRepaint(_RulerIllustration oldDelegate) =>
-      oldDelegate.mode != mode;
 }
 
 class _ShortcutDialog extends StatefulWidget {
@@ -1425,6 +756,54 @@ class _ShortcutDialogState extends State<_ShortcutDialog> {
               ? null
               : () => Navigator.pop(context, candidate),
           child: const Text('保存'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PageHeading extends StatelessWidget {
+  const _PageHeading({
+    required this.index,
+    required this.title,
+    required this.description,
+  });
+  final String index, title, description;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 27),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                index,
+                style: const TextStyle(
+                  color: _accent,
+                  fontSize: 10,
+                  letterSpacing: 1.8,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 29,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -1,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                description,
+                style: const TextStyle(fontSize: 12, color: _muted),
+              ),
+            ],
+          ),
         ),
       ],
     ),

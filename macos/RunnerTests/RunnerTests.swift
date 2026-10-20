@@ -1,12 +1,18 @@
 import Cocoa
 import FlutterMacOS
 import XCTest
+@testable import fruler
 
 class RunnerTests: XCTestCase {
-
-  func testExample() {
-    // If you add code to the Runner application, consider adding tests here.
-    // See https://developer.apple.com/documentation/xctest for more information about using XCTest.
+  func testNativeCaptureCommandContractIncludesScreenshot() {
+    XCTAssertNotNil(CaptureTool(rawValue: "screenshot"))
+    XCTAssertEqual(Set(CaptureTool.allCases.map(\.rawValue)),
+      Set(["picker", "rectangle", "horizontal", "vertical", "cross", "screenshot"]))
   }
 
+  func testNativeCaptureCommandContractRejectsUnknownCommands() {
+    for value in ["", "unknown", "Screenshot", "invalid-test-tool"] {
+      XCTAssertNil(CaptureTool(rawValue: value))
+    }
+  }
 }

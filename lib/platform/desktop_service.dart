@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/core.dart';
-import 'image_document.dart';
 
 class DesktopStatus {
   const DesktopStatus({
@@ -47,17 +46,12 @@ abstract class DesktopService {
   Future<CaptureSession> begin(String tool);
   Future<void> updateOverlay(Map<String, Object?> data);
   Future<void> finish(int sessionId);
+  Future<void> editScreenshot(int sessionId, int displayId) async {}
+  Future<void> reselectScreenshot(int sessionId) async {}
   Future<String?> loadState();
   Future<void> saveState(String json);
   Future<void> writeClipboard(String text);
   Future<String?> openPaletteFile();
-  Future<ImageFileData?> openImageFile();
-  Future<ImageProjectFileData?> openProjectFile({String? path});
-  Future<ProjectLocation?> saveProjectFile(String text, {String? path});
-  Future<List<ProjectLocation>> recentProjects();
-  Future<String?> loadImageDraft();
-  Future<void> saveImageDraft(String? text);
-  Future<void> projectEventsReady();
   Future<void> replyToQuit(bool allow) async {}
   Future<bool> exportImage(Uint8List png, {required bool save});
   Future<bool> saveTextFile(String filename, String text);
@@ -131,6 +125,17 @@ class MacDesktopService implements DesktopService {
   Future<void> finish(int sessionId) =>
       _methods.invokeMethod<void>('finish', {'sessionId': sessionId});
   @override
+  Future<void> editScreenshot(int sessionId, int displayId) =>
+      _methods.invokeMethod<void>('editScreenshot', {
+        'sessionId': sessionId,
+        'displayId': displayId,
+      });
+  @override
+  Future<void> reselectScreenshot(int sessionId) => _methods.invokeMethod<void>(
+    'reselectScreenshot',
+    {'sessionId': sessionId},
+  );
+  @override
   Future<String?> loadState() => _methods.invokeMethod<String>('loadState');
   @override
   Future<void> saveState(String json) =>
@@ -140,56 +145,8 @@ class MacDesktopService implements DesktopService {
       Clipboard.setData(ClipboardData(text: text));
 
   @override
-  Future<ImageProjectFileData?> openProjectFile({String? path}) async {
-    final data = await _methods.invokeMapMethod<String, Object?>(
-      'openProjectFile',
-      {'path': path},
-    );
-    return data == null
-        ? null
-        : ImageProjectFileData(
-            data['name'] as String,
-            data['text'] as String,
-            path: data['path'] as String?,
-          );
-  }
-
-  @override
-  Future<ProjectLocation?> saveProjectFile(String text, {String? path}) async {
-    final data = await _methods.invokeMapMethod<String, Object?>(
-      'saveProjectFile',
-      {'text': text, 'path': path},
-    );
-    return data == null ? null : ProjectLocation.fromJson(data);
-  }
-
-  @override
-  Future<List<ProjectLocation>> recentProjects() async =>
-      (await _methods.invokeListMethod<Object?>('recentProjects') ?? [])
-          .map((e) => ProjectLocation.fromJson(e as Map))
-          .toList();
-  @override
-  Future<String?> loadImageDraft() =>
-      _methods.invokeMethod<String>('loadImageDraft');
-  @override
-  Future<void> saveImageDraft(String? text) =>
-      _methods.invokeMethod<void>('saveImageDraft', {'text': text});
-  @override
-  Future<void> projectEventsReady() =>
-      _methods.invokeMethod<void>('projectEventsReady');
-  @override
   Future<void> replyToQuit(bool allow) =>
       _methods.invokeMethod<void>('replyToQuit', {'allow': allow});
-  @override
-  Future<ImageFileData?> openImageFile() async {
-    final data = await _methods.invokeMapMethod<String, Object?>(
-      'openImageFile',
-    );
-    return data == null
-        ? null
-        : ImageFileData(data['name'] as String, data['bytes'] as Uint8List);
-  }
-
   @override
   Future<bool> exportImage(Uint8List png, {required bool save}) async =>
       await _methods.invokeMethod<bool>('exportImage', {
@@ -236,26 +193,11 @@ class MacDesktopService implements DesktopService {
       false;
 }
 
-class UnsupportedDesktopService implements DesktopService {
+class UnsupportedDesktopService extends DesktopService {
   @override
   Future<void> showMainWindow() async {}
   @override
   Future<void> replyToQuit(bool allow) async {}
-  @override
-  Future<ImageProjectFileData?> openProjectFile({String? path}) async => null;
-  @override
-  Future<ProjectLocation?> saveProjectFile(String text, {String? path}) async =>
-      null;
-  @override
-  Future<List<ProjectLocation>> recentProjects() async => [];
-  @override
-  Future<String?> loadImageDraft() async => null;
-  @override
-  Future<void> saveImageDraft(String? text) async {}
-  @override
-  Future<void> projectEventsReady() async {}
-  @override
-  Future<ImageFileData?> openImageFile() async => null;
   @override
   Future<bool> exportImage(Uint8List png, {required bool save}) async => false;
   @override

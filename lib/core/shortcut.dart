@@ -55,23 +55,43 @@ class ShortcutChord {
 }
 
 class ShortcutBindings {
-  const ShortcutBindings({required this.picker, required this.ruler});
+  const ShortcutBindings({
+    required this.picker,
+    required this.ruler,
+    this.screenshot = const ShortcutChord(key: 'X', meta: true, shift: true),
+  });
   static const defaults = ShortcutBindings(
     picker: ShortcutChord(key: 'C', meta: true, shift: true),
     ruler: ShortcutChord(key: 'R', meta: true, shift: true),
   );
   final ShortcutChord picker;
   final ShortcutChord ruler;
-  bool get isValid => picker.isValid && ruler.isValid && picker != ruler;
+  final ShortcutChord screenshot;
+  bool get isValid =>
+      picker.isValid &&
+      ruler.isValid &&
+      screenshot.isValid &&
+      picker != ruler &&
+      picker != screenshot &&
+      ruler != screenshot;
   Map<String, Object> toJson() => {
     'picker': picker.toJson(),
     'ruler': ruler.toJson(),
+    'screenshot': screenshot.toJson(),
   };
   factory ShortcutBindings.fromJson(Object? json) {
     if (json is! Map) throw const FormatException('Invalid bindings');
+    final picker = ShortcutChord.fromJson(json['picker']);
+    final ruler = ShortcutChord.fromJson(json['ruler']);
+    final fallback = ['X', 'A', 'T']
+        .map((key) => ShortcutChord(key: key, meta: true, shift: true))
+        .firstWhere((chord) => chord != picker && chord != ruler);
     final value = ShortcutBindings(
-      picker: ShortcutChord.fromJson(json['picker']),
-      ruler: ShortcutChord.fromJson(json['ruler']),
+      picker: picker,
+      ruler: ruler,
+      screenshot: json['screenshot'] == null
+          ? fallback
+          : ShortcutChord.fromJson(json['screenshot']),
     );
     if (!value.isValid) throw const FormatException('Duplicate shortcuts');
     return value;

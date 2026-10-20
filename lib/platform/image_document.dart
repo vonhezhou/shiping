@@ -12,20 +12,6 @@ class ImageFileData {
   final Uint8List bytes;
 }
 
-class ImageProjectFileData {
-  const ImageProjectFileData(this.name, this.text, {this.path});
-  final String name, text;
-  final String? path;
-}
-
-class ProjectLocation {
-  const ProjectLocation(this.name, this.path);
-  final String name, path;
-  factory ProjectLocation.fromJson(Map value) =>
-      ProjectLocation(value['name'] as String, value['path'] as String);
-  Map<String, String> toJson() => {'name': name, 'path': path};
-}
-
 class ImageDocument {
   const ImageDocument(this.name, this.png, this.frame);
   final String name;
@@ -37,7 +23,7 @@ class ImageDocument {
 class ImageDocumentCodec {
   Future<ImageDocument> decode(ImageFileData file) =>
       _decode(file, 32 * 1024 * 1024);
-  Future<ImageDocument> decodeProjectPng(ImageFileData file) =>
+  Future<ImageDocument> decodeCapturePng(ImageFileData file) =>
       _decode(file, 96 * 1024 * 1024);
   Future<ImageDocument> _decode(ImageFileData file, int limit) async {
     if (file.bytes.length > limit) {

@@ -1,0 +1,3 @@
+// Keep native integration runs separate from the interactive app and its data.
+PRODUCT_BUNDLE_IDENTIFIER = dev.fruler.integration
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) FRULER_INTEGRATION_TEST

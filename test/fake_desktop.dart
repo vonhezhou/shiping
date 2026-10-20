@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:fruler/core/core.dart';
-import 'package:fruler/platform/image_document.dart';
 import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
@@ -25,58 +24,7 @@ class FakeDesktop extends DesktopService {
 
   void event(String type, [Map<String, Object?> data = const {}]) =>
       input.add({'type': type, 'sessionId': 7, ...data});
-  ImageProjectFileData? projectFile;
-  String? projectText;
   bool? quitAllowed;
-  Object? projectError;
-  Completer<bool>? pendingProjectSave;
-  @override
-  Future<ImageProjectFileData?> openProjectFile({String? path}) async {
-    openedProjectPath = path;
-    return projectFiles[path] ?? projectFile;
-  }
-
-  @override
-  Future<ProjectLocation?> saveProjectFile(String text, {String? path}) async {
-    if (projectError != null) throw projectError!;
-    projectText = text;
-    savedProjectPath = path;
-    final ok = pendingProjectSave == null
-        ? fileResult
-        : await pendingProjectSave!.future;
-    return ok ? saveLocation : null;
-  }
-
-  String? openedProjectPath, savedProjectPath;
-  ProjectLocation saveLocation = const ProjectLocation(
-    'saved.fruler',
-    '/tmp/saved.fruler',
-  );
-  List<ProjectLocation> recent = [];
-  final Map<String?, ImageProjectFileData> projectFiles = {};
-  String? draft;
-  Object? draftReadError;
-  Object? draftError;
-  Completer<void>? pendingDraftSave;
-  final List<String?> draftWrites = [];
-  @override
-  Future<List<ProjectLocation>> recentProjects() async => recent;
-  @override
-  Future<String?> loadImageDraft() async {
-    if (draftReadError != null) throw draftReadError!;
-    return draft;
-  }
-
-  @override
-  Future<void> saveImageDraft(String? text) async {
-    draftWrites.add(text);
-    if (pendingDraftSave != null) await pendingDraftSave!.future;
-    if (draftError != null) throw draftError!;
-    draft = text;
-  }
-
-  @override
-  Future<void> projectEventsReady() async {}
   @override
   Future<void> replyToQuit(bool allow) async {
     quitAllowed = allow;
@@ -88,10 +36,7 @@ class FakeDesktop extends DesktopService {
     showMainCalls++;
   }
 
-  ImageFileData? imageFile;
   Uint8List? exportedImage;
-  @override
-  Future<ImageFileData?> openImageFile() async => imageFile;
   @override
   Future<bool> exportImage(Uint8List png, {required bool save}) async {
     exportedImage = png;
