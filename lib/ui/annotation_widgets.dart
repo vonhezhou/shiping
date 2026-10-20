@@ -90,12 +90,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ui.Image? decoded;
     Map<int, ui.Image> pixels = {};
     try {
-      final codec = await ui.instantiateImageCodec(c.imageDocument!.png);
-      try {
-        decoded = (await codec.getNextFrame()).image;
-      } finally {
-        codec.dispose();
-      }
+      decoded = await pixelFrameToImage(c.imageDocument!.frame);
       pixels = await AnnotationRenderer.prepareMosaics(decoded);
       if (!mounted) {
         decoded.dispose();

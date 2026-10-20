@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import '../app/app_controller.dart';
 import '../core/core.dart';
 import '../platform/annotation_renderer.dart';
+import '../platform/pixel_frame_image.dart';
+
 part 'annotation_widgets.dart';
 part 'history_widgets.dart';
 

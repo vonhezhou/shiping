@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../core/core.dart';
+import 'pixel_frame_image.dart';
 
 class ImageFileData {
   const ImageFileData(this.name, this.bytes);
@@ -13,9 +14,8 @@ class ImageFileData {
 }
 
 class ImageDocument {
-  const ImageDocument(this.name, this.png, this.frame);
+  const ImageDocument(this.name, this.frame);
   final String name;
-  final Uint8List png;
   final PixelFrame frame;
 }
 
@@ -23,8 +23,55 @@ class ImageDocument {
 class ImageDocumentCodec {
   Future<ImageDocument> decode(ImageFileData file) =>
       _decode(file, 32 * 1024 * 1024);
-  Future<ImageDocument> decodeCapturePng(ImageFileData file) =>
-      _decode(file, 96 * 1024 * 1024);
+
+  /// Copy the frozen selection directly; PNG is only needed at export time.
+  Future<ImageDocument> cropCapture(PixelFrame source, PixelRect rect) async {
+    if (rect.left < 0 ||
+        rect.top < 0 ||
+        rect.right > source.width ||
+        rect.bottom > source.height ||
+        rect.width <= 0 ||
+        rect.height <= 0) {
+      throw ArgumentError('Invalid capture rectangle');
+    }
+    _validateSize(rect.width, rect.height);
+    final bytes = Uint8List(rect.width * rect.height * 4);
+    for (var y = 0; y < rect.height; y++) {
+      final start = ((rect.top + y) * source.width + rect.left) * 4;
+      bytes.setRange(
+        y * rect.width * 4,
+        (y + 1) * rect.width * 4,
+        source.rgba,
+        start,
+      );
+    }
+    // Native capture uses premultiplied RGBA. Keep the previous white backing.
+    for (var i = 0; i < bytes.length; i += 4) {
+      final white = 255 - bytes[i + 3];
+      if (white == 0) continue;
+      for (var c = 0; c < 3; c++) {
+        bytes[i + c] = (bytes[i + c] + white).clamp(0, 255);
+      }
+      bytes[i + 3] = 255;
+    }
+    return ImageDocument(
+      '截图.png',
+      PixelFrame(
+        width: rect.width,
+        height: rect.height,
+        logicalWidth: rect.width.toDouble(),
+        logicalHeight: rect.height.toDouble(),
+        rgba: bytes,
+      ),
+    );
+  }
+
+  static void _validateSize(int width, int height) {
+    if (width > 16384 || height > 16384 || width * height > 16000000) {
+      throw const FormatException('图片最多 1600 万像素，单边不超过 16384 像素');
+    }
+  }
+
   Future<ImageDocument> _decode(ImageFileData file, int limit) async {
     if (file.bytes.length > limit) {
       throw FormatException('图片文件不能超过 ${limit ~/ (1024 * 1024)} MB');
@@ -45,9 +92,7 @@ class ImageDocumentCodec {
     final codec = await ui.instantiateImageCodecWithSize(
       buffer,
       getTargetSize: (w, h) {
-        if (w > 16384 || h > 16384 || w * h > 16000000) {
-          throw const FormatException('图片最多 1600 万像素，单边不超过 16384 像素');
-        }
+        _validateSize(w, h);
         return ui.TargetImageSize(width: w, height: h);
       },
     );
@@ -66,15 +111,11 @@ class ImageDocumentCodec {
           final raw = await opaque.toByteData(
             format: ui.ImageByteFormat.rawRgba,
           );
-          final preview = await opaque.toByteData(
-            format: ui.ImageByteFormat.png,
-          );
-          if (raw == null || preview == null) {
+          if (raw == null) {
             throw const FormatException('无法解码图片');
           }
           return ImageDocument(
             file.name,
-            preview.buffer.asUint8List(),
             PixelFrame(
               width: image.width,
               height: image.height,
@@ -98,9 +139,7 @@ class ImageDocumentCodec {
     ImageDocument document,
     List<Map<String, Object?>> pins,
   ) async {
-    final codec = await ui.instantiateImageCodec(document.png);
-    final image = (await codec.getNextFrame()).image;
-    codec.dispose();
+    final image = await pixelFrameToImage(document.frame);
     final bounds = ui.Rect.fromLTWH(
       0,
       0,

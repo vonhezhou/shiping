@@ -68,6 +68,31 @@ void main() {
         }
       }
       await tester.pumpAndSettle();
+      // Replacing the pixel document during a mouse resize must retain shortcuts.
+      await tester.dragFrom(
+        tester.getCenter(find.byKey(const ValueKey('screenshot-handle-se'))),
+        const Offset(10, 10),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      for (var i = 0; i < 100; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+        final button = find.byKey(const ValueKey('copy-screenshot'));
+        if (!c.imageLoading &&
+            find.byKey(ObjectKey(c.imageDocument)).evaluate().isNotEmpty &&
+            button.evaluate().isNotEmpty &&
+            tester.widget<IconButton>(button).onPressed != null) {
+          break;
+        }
+      }
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('annotation-toolbar')), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
       expect(c.busy, true);
       expect(find.text('fruler'), findsNothing);
       expect(find.textContaining('项目'), findsNothing);

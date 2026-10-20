@@ -4,8 +4,70 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/annotation_renderer.dart';
 
+Future<PixelFrame> rawFrame(ui.Image image) async {
+  final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+  return PixelFrame(
+    width: image.width,
+    height: image.height,
+    logicalWidth: image.width.toDouble(),
+    logicalHeight: image.height.toDouble(),
+    rgba: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('原始像素导出保留无标注画面，边缘标注预览与输出一致', () async {
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawColor(const ui.Color(0xFF13579B), ui.BlendMode.src);
+    final picture = recorder.endRecording();
+    final base = await picture.toImage(40, 30);
+    picture.dispose();
+    addTearDown(base.dispose);
+    final frame = await rawFrame(base);
+    final mosaics = await AnnotationRenderer.prepareMosaics(base);
+    addTearDown(() {
+      for (final image in mosaics.values) {
+        image.dispose();
+      }
+    });
+    for (final items in [
+      <Annotation>[],
+      for (final kind in AnnotationKind.values)
+        [
+          Annotation(
+            kind: kind,
+            points: const [ui.Offset(0, 0), ui.Offset(40, 30)],
+            text: '边缘',
+            color: 0xFFFF0000,
+          ),
+        ],
+    ]) {
+      final png = await AnnotationRenderer.export(frame, items);
+      final codec = await ui.instantiateImageCodec(png);
+      final output = (await codec.getNextFrame()).image;
+      codec.dispose();
+      final previewRecorder = ui.PictureRecorder();
+      AnnotationRenderer.paint(
+        ui.Canvas(previewRecorder),
+        base,
+        mosaics,
+        items,
+      );
+      final previewPicture = previewRecorder.endRecording();
+      final preview = await previewPicture.toImage(40, 30);
+      previewPicture.dispose();
+      try {
+        expect((output.width, output.height), (40, 30));
+        final actual = await rawFrame(output);
+        expect(actual.rgba, orderedEquals((await rawFrame(preview)).rgba));
+        if (items.isEmpty) expect(actual.rgba, orderedEquals(frame.rgba));
+      } finally {
+        preview.dispose();
+        output.dispose();
+      }
+    }
+  });
   test('效果强度改变像素，笔刷保留空白角落、支持单点，预览与导出一致', () async {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
@@ -19,8 +81,7 @@ void main() {
     final picture = recorder.endRecording();
     final base = await picture.toImage(96, 96);
     picture.dispose();
-    final png = (await base.toByteData(format: ui.ImageByteFormat.png))!.buffer
-        .asUint8List();
+    final frame = await rawFrame(base);
     final before = (await base.toByteData())!.buffer.asUint8List();
     addTearDown(base.dispose);
     final mosaics = await AnnotationRenderer.prepareMosaics(base);
@@ -45,7 +106,7 @@ void main() {
           96,
         ).single;
         final codec = await ui.instantiateImageCodec(
-          await AnnotationRenderer.export(png, [a]),
+          await AnnotationRenderer.export(frame, [a]),
         );
         final image = (await codec.getNextFrame()).image;
         final pixels = (await image.toByteData())!.buffer.asUint8List();
@@ -84,7 +145,7 @@ void main() {
         96,
       ).single;
       final codec = await ui.instantiateImageCodec(
-        await AnnotationRenderer.export(png, [dot]),
+        await AnnotationRenderer.export(frame, [dot]),
       );
       final image = (await codec.getNextFrame()).image;
       expect(
@@ -101,11 +162,10 @@ void main() {
     final picture = recorder.endRecording();
     final base = await picture.toImage(96, 96);
     picture.dispose();
-    final png = (await base.toByteData(format: ui.ImageByteFormat.png))!.buffer
-        .asUint8List();
+    final frame = await rawFrame(base);
     base.dispose();
     for (final kind in [AnnotationKind.rectangle, AnnotationKind.ellipse]) {
-      final bytes = await AnnotationRenderer.export(png, [
+      final bytes = await AnnotationRenderer.export(frame, [
         Annotation(
           kind: kind,
           points: const [ui.Offset(10, 10), ui.Offset(40, 40)],
@@ -152,15 +212,13 @@ void main() {
     final picture = recorder.endRecording();
     final original = await picture.toImage(96, 96);
     picture.dispose();
-    final png = (await original.toByteData(format: ui.ImageByteFormat.png))!
-        .buffer
-        .asUint8List();
+    final frame = await rawFrame(original);
     final before = (await original.toByteData(
       format: ui.ImageByteFormat.rawRgba,
     ))!.buffer.asUint8List();
     original.dispose();
     for (final kind in [AnnotationKind.mosaic, AnnotationKind.blur]) {
-      final output = await AnnotationRenderer.export(png, [
+      final output = await AnnotationRenderer.export(frame, [
         Annotation(
           kind: kind,
           points: const [ui.Offset(24, 24), ui.Offset(72, 72)],

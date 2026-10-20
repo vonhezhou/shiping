@@ -6,7 +6,7 @@ import 'package:flutter/painting.dart';
 
 import '../core/annotation.dart';
 import '../core/pixel_frame.dart';
-import '../core/ruler.dart';
+import 'pixel_frame_image.dart';
 
 /// One renderer for both the editable preview and flattened PNG output.
 class AnnotationRenderer {
@@ -197,10 +197,11 @@ class AnnotationRenderer {
     }
   }
 
-  static Future<Uint8List> export(Uint8List png, List<Annotation> items) async {
-    final codec = await ui.instantiateImageCodec(png);
-    final image = (await codec.getNextFrame()).image;
-    codec.dispose();
+  static Future<Uint8List> export(
+    PixelFrame frame,
+    List<Annotation> items,
+  ) async {
+    final image = await pixelFrameToImage(frame);
     Map<int, ui.Image>? mosaics;
     try {
       mosaics = await prepareMosaics(image);
@@ -228,42 +229,6 @@ class AnnotationRenderer {
         mosaic.dispose();
       }
       image.dispose();
-    }
-  }
-
-  /// Crop before crossing into a document; no rulers, labels or padding.
-  static Future<Uint8List> crop(PixelFrame frame, PixelRect rect) async {
-    final bytes = Uint8List(rect.width * rect.height * 4);
-    for (var y = 0; y < rect.height; y++) {
-      final start = ((rect.top + y) * frame.width + rect.left) * 4;
-      bytes.setRange(
-        y * rect.width * 4,
-        (y + 1) * rect.width * 4,
-        frame.rgba,
-        start,
-      );
-    }
-    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-    final descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: rect.width,
-      height: rect.height,
-      pixelFormat: ui.PixelFormat.rgba8888,
-    );
-    final codec = await descriptor.instantiateCodec();
-    try {
-      final image = (await codec.getNextFrame()).image;
-      try {
-        final png = await image.toByteData(format: ui.ImageByteFormat.png);
-        if (png == null) throw const FormatException('截图编码失败');
-        return png.buffer.asUint8List(png.offsetInBytes, png.lengthInBytes);
-      } finally {
-        image.dispose();
-      }
-    } finally {
-      codec.dispose();
-      descriptor.dispose();
-      buffer.dispose();
     }
   }
 }

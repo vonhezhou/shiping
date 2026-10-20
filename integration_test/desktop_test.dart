@@ -296,6 +296,26 @@ void main() {
         }
         await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
         await tester.pumpAndSettle();
+        // The editor receives the frozen selection's raw pixels directly.
+        final rawSelection = c.screenshotSelection!;
+        final rawDocument = c.imageDocument!.frame;
+        expect(
+          (rawDocument.width, rawDocument.height),
+          (rawSelection.width, rawSelection.height),
+        );
+        for (final point in [
+          const PixelPoint(0, 0),
+          PixelPoint(rawDocument.width - 1, rawDocument.height - 1),
+          PixelPoint(rawDocument.width ~/ 2, rawDocument.height ~/ 2),
+        ]) {
+          expect(
+            rawDocument.pixelAt(point.x, point.y),
+            display.frame.pixelAt(
+              rawSelection.left + point.x,
+              rawSelection.top + point.y,
+            ),
+          );
+        }
         final editStatus = await driver.invokeMapMethod<String, Object?>(
           'status',
         );
@@ -344,12 +364,13 @@ void main() {
         await waitFor(
           tester,
           () =>
+              find.byKey(ObjectKey(c.imageDocument)).evaluate().isNotEmpty &&
               tester
-                  .widget<IconButton>(
-                    find.byKey(const ValueKey('copy-screenshot')),
-                  )
-                  .onPressed !=
-              null,
+                      .widget<IconButton>(
+                        find.byKey(const ValueKey('copy-screenshot')),
+                      )
+                      .onPressed !=
+                  null,
         );
         await mouseDrag(
           tester,
@@ -365,12 +386,13 @@ void main() {
         await waitFor(
           tester,
           () =>
+              find.byKey(ObjectKey(c.imageDocument)).evaluate().isNotEmpty &&
               tester
-                  .widget<IconButton>(
-                    find.byKey(const ValueKey('copy-screenshot')),
-                  )
-                  .onPressed !=
-              null,
+                      .widget<IconButton>(
+                        find.byKey(const ValueKey('copy-screenshot')),
+                      )
+                      .onPressed !=
+                  null,
         );
         expect(
           (await driver.invokeMapMethod<String, Object?>(
@@ -380,10 +402,22 @@ void main() {
         );
         final doc = c.imageDocument!;
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
-        await tester.pumpAndSettle();
+        await waitFor(
+          tester,
+          () => find
+              .byKey(const ValueKey('annotation-toolbar'))
+              .evaluate()
+              .isEmpty,
+        );
         expect(find.byKey(const ValueKey('annotation-toolbar')), findsNothing);
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
-        await tester.pumpAndSettle();
+        await waitFor(
+          tester,
+          () => find
+              .byKey(const ValueKey('annotation-toolbar'))
+              .evaluate()
+              .isNotEmpty,
+        );
         for (final kind in AnnotationKind.values.where(
           (k) => k != AnnotationKind.text,
         )) {
@@ -580,6 +614,7 @@ void main() {
         expect(done?['editing'], false);
         expect(c.imageDocument, isNull);
         expect(c.screenshots.length, 1);
+        expect(c.screenshots.single, orderedEquals(png));
         desktop.lastCapture = null;
         await c.startScreenshot();
         await driver.invokeMethod<void>('key', {'keyCode': 53});
@@ -594,6 +629,7 @@ void main() {
         // Picker completes on-screen without reopening history.
         for (final tool in ['picker']) {
           if (tool == 'picker') {
+            c.setContinuousPicker(false);
             await c.pickColor();
           } else {
             await c.startRuler();

@@ -140,10 +140,7 @@ class AppController extends ChangeNotifier {
     imageLoading = true;
     _notify();
     try {
-      final png = await AnnotationRenderer.crop(display.frame, rect);
-      final doc = await imageCodec.decodeCapturePng(
-        ImageFileData('截图.png', png),
-      );
+      final doc = await imageCodec.cropCapture(display.frame, rect);
       if (_disposed || _session?.id != session.id || !screenshotEditing) return;
       imageDocument = doc;
       screenshotSelection = rect;
@@ -169,7 +166,7 @@ class AppController extends ChangeNotifier {
     _notify();
     try {
       final png = await AnnotationRenderer.export(
-        doc.png,
+        doc.frame,
         List.of(markup.items),
       );
       if (_disposed || _session?.id != sessionId) return;
@@ -638,13 +635,7 @@ class AppController extends ChangeNotifier {
     _committing = true;
     imageLoading = true;
     try {
-      final png = await AnnotationRenderer.crop(
-        display.frame,
-        measurement.rect,
-      );
-      final doc = await imageCodec.decodeCapturePng(
-        ImageFileData('截图.png', png),
-      );
+      final doc = await imageCodec.cropCapture(display.frame, measurement.rect);
       if (_disposed || _session?.id != id) return;
       imageDocument = doc;
       screenshotSelection = measurement.rect;

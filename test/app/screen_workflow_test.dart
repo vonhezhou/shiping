@@ -8,18 +8,58 @@ import 'package:fruler/platform/image_document.dart';
 
 import '../fake_desktop.dart';
 
+class RejectPngCaptureCodec extends ImageDocumentCodec {
+  int crops = 0;
+  @override
+  Future<ImageDocument> cropCapture(PixelFrame frame, PixelRect rect) {
+    crops++;
+    return super.cropCapture(frame, rect);
+  }
+
+  @override
+  Future<ImageDocument> decode(ImageFileData file) =>
+      throw StateError('截图不应经过文件解码');
+}
+
 class PausedCaptureCodec extends ImageDocumentCodec {
   Completer<void>? pause;
   @override
-  Future<ImageDocument> decodeCapturePng(ImageFileData file) async {
+  Future<ImageDocument> cropCapture(PixelFrame frame, PixelRect rect) async {
     final waiting = pause;
     if (waiting != null) await waiting.future;
-    return super.decodeCapturePng(file);
+    return super.cropCapture(frame, rect);
   }
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('首次选区和调整选区无需 PNG 解码即可进入标注', () async {
+    final d = FakeDesktop();
+    final codec = RejectPngCaptureCodec();
+    final c = AppController(d, imageCodec: codec);
+    await c.initialize();
+    try {
+      await c.startScreenshot();
+      d.pointer(x: 1, y: 1, phase: 'down');
+      d.pointer(x: 3, y: 2.5, phase: 'up');
+      for (var i = 0; i < 100 && c.imageLoading; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(c.error, isNull);
+      expect(c.screenshotEditing, true);
+      await c.adjustScreenshotSelection(
+        const PixelRect(left: 0, top: 0, right: 8, bottom: 6),
+      );
+      expect(c.error, isNull);
+      expect(c.imageDocument!.frame.width, 8);
+      expect(c.imageDocument!.frame.height, 6);
+      expect(d.exportedImage, isNull);
+      expect(codec.crops, 2);
+    } finally {
+      c.dispose();
+      await d.input.close();
+    }
+  });
   test('截图选区完成后留在原生浮层，不结束会话或返回主窗口', () async {
     final desktop = FakeDesktop();
     final c = AppController(desktop);
@@ -86,7 +126,7 @@ void main() {
       await d.input.close();
     }
   });
-  test('调整选区中取消释放加载状态，迟到的解码不能恢复已取消截图', () async {
+  test('调整选区中取消释放加载状态，迟到的裁剪不能恢复已取消截图', () async {
     final d = FakeDesktop(), codec = PausedCaptureCodec();
     final c = AppController(d, imageCodec: codec);
     await c.initialize();
@@ -162,6 +202,7 @@ void main() {
       expect(c.busy, false);
       expect(c.imageDocument, isNull);
       expect(c.screenshots.length, 1);
+      expect(c.screenshots.single, same(d.exportedImage));
       expect(d.showMainCalls, 0);
       expect(d.finishCalls, 1);
     } finally {
