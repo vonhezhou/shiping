@@ -16,7 +16,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   double width = 3, fontSize = 24;
   int? selected, pointerId;
   Annotation? preview, original;
-  Offset? start, resizeAnchor, eraserEnd;
+  Offset? start, resizeAnchor, eraserEnd, hoverPosition;
   bool textEditing = false;
   AppController get c => widget.controller;
   List<Annotation> get items => c.markup.items;
@@ -201,6 +201,34 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   Offset clamp(Offset p) =>
       Offset(p.dx.clamp(0, imageSize.width), p.dy.clamp(0, imageSize.height));
 
+  MouseCursor get canvasCursor {
+    if (!editable || image == null) return SystemMouseCursors.basic;
+    if (tool != 'select') return SystemMouseCursors.precise;
+    if (pointerId != null && original != null) {
+      return SystemMouseCursors.grabbing;
+    }
+    final p = hoverPosition;
+    if (p == null) return SystemMouseCursors.basic;
+    if (selected != null && selected! < items.length) {
+      final b = items[selected!].bounds;
+      if ([
+        b.topLeft,
+        b.topRight,
+        b.bottomRight,
+        b.bottomLeft,
+      ].any((corner) => (p - corner).distance < 9 / scale)) {
+        return SystemMouseCursors.grab;
+      }
+    }
+    return items.any((item) => item.hitTest(p, 6 / scale))
+        ? SystemMouseCursors.grab
+        : SystemMouseCursors.basic;
+  }
+
+  void hover(Offset? p) {
+    if (p != hoverPosition) setState(() => hoverPosition = p);
+  }
+
   void down(PointerDownEvent event) {
     if (!editable || image == null || tool == 'pan') return;
     if (event.buttons != kPrimaryMouseButton) {
@@ -209,6 +237,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     }
     focus.requestFocus();
     final p = clamp(event.localPosition);
+    hoverPosition = p;
     pointerId = event.pointer;
     start = p;
     original = null;
@@ -260,6 +289,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   void move(PointerMoveEvent event) {
     if (pointerId != event.pointer || start == null || !editable) return;
     final p = clamp(event.localPosition);
+    hoverPosition = p;
     if (tool == 'eraser') {
       setState(() => eraserEnd = p);
       return;
@@ -284,6 +314,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
 
   Future<void> up(PointerUpEvent event) async {
     if (pointerId != event.pointer) return;
+    hoverPosition = clamp(event.localPosition);
     if (tool == 'eraser' && start != null && editable) {
       final end = clamp(event.localPosition);
       final origin = start!;
@@ -434,6 +465,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }) => IconButton(
     key: ValueKey(id),
     tooltip: label,
+    mouseCursor: action == null
+        ? SystemMouseCursors.basic
+        : SystemMouseCursors.click,
     isSelected: active,
     selectedIcon: Icon(icon, color: _accent),
     style: IconButton.styleFrom(
@@ -732,7 +766,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                         onPointerUp: up,
                         onPointerCancel: (_) => cancelGesture(),
                         child: MouseRegion(
-                          cursor: SystemMouseCursors.precise,
+                          cursor: canvasCursor,
+                          onEnter: (event) => hover(event.localPosition),
+                          onHover: (event) => hover(event.localPosition),
+                          onExit: (_) => hover(null),
                           child: SizedBox(
                             width: imageSize.width,
                             height: imageSize.height,
@@ -761,12 +798,15 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 left: left.toDouble(),
                 top: top,
                 width: toolbarWidth,
-                child: Material(
-                  color: _panel,
-                  elevation: 12,
-                  borderRadius: BorderRadius.circular(10),
-                  key: const ValueKey('annotation-toolbar'),
-                  child: toolbar(),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.basic,
+                  child: Material(
+                    color: _panel,
+                    elevation: 12,
+                    borderRadius: BorderRadius.circular(10),
+                    key: const ValueKey('annotation-toolbar'),
+                    child: toolbar(),
+                  ),
                 ),
               ),
             ],

@@ -381,7 +381,13 @@ void main() {
         );
       }
 
-      Future<void> drag(double x, double y, double endX, double endY) async {
+      Future<void> drag(
+        double x,
+        double y,
+        double endX,
+        double endY, {
+        bool adjust = false,
+      }) async {
         for (final e in [
           {'phase': 'down', 'x': x, 'y': y},
           {'phase': 'drag', 'x': endX, 'y': endY},
@@ -389,10 +395,29 @@ void main() {
         ]) {
           await driver.invokeMethod<void>('pointer', {
             'displayId': desktop.lastCapture!.displays.first.id,
+            'warp': true,
             ...e,
           });
           await tester.pumpAndSettle();
+          if (adjust) {
+            expect(
+              (await state())['cursor'],
+              e['phase'] == 'up' ? 'openHand' : 'closedHand',
+            );
+          }
         }
+      }
+
+      Future<void> hoverNative(num x, num y, String cursor) async {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': desktop.lastCapture!.displays.first.id,
+          'warp': true,
+          'phase': 'move',
+          'x': x.toDouble(),
+          'y': y.toDouble(),
+        });
+        await tester.pumpAndSettle();
+        expect((await state())['cursor'], cursor);
       }
 
       try {
@@ -427,17 +452,22 @@ void main() {
         // Result remains on screen even after the pointer moves away.
         await driver.invokeMethod<void>('pointer', {
           'displayId': desktop.lastCapture!.displays.first.id,
+          'warp': true,
           'phase': 'move',
           'x': 600.0,
           'y': 450.0,
         });
         await tester.pumpAndSettle();
         expect((await state())['pins'], hasLength(1));
-        await drag(130, 210, 150, 230);
+        await hoverNative(130, 210, 'openHand');
+        final copy = ((await state())['controls'] as Map)['copySize'] as Map;
+        await hoverNative(copy['x'] as num, copy['y'] as num, 'pointingHand');
+        await hoverNative(600, 450, 'crosshair');
+        await drag(130, 210, 150, 230, adjust: true);
         pin = ((await state())['pins'] as List).single as Map;
         expect(pin['x'], 100.0);
         expect(pin['y'], 200.0);
-        await drag(200, 260, 230, 280);
+        await drag(200, 260, 230, 280, adjust: true);
         pin = ((await state())['pins'] as List).single as Map;
         expect(pin['width'], 130.0);
         expect(pin['height'], 80.0);
@@ -458,6 +488,49 @@ void main() {
         });
         await tester.pumpAndSettle();
         expect((await state())['pins'], hasLength(2));
+        final recordsBeforeDelete = List<MeasurementRecord>.of(c.measurements);
+        // Delete works without entering a separate edit mode, with undo.
+        await drag(330, 325, 330, 325, adjust: true);
+        await driver.invokeMethod<void>('key', {'keyCode': 51});
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(1));
+        expect(c.busy, true);
+        final disabledDelete =
+            ((await state())['controls'] as Map)['delete'] as Map;
+        expect(disabledDelete['enabled'], false);
+        await hoverNative(
+          disabledDelete['x'] as num,
+          disabledDelete['y'] as num,
+          'arrow',
+        );
+        await driver.invokeMethod<void>('key', {'keyCode': 6, 'command': true});
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(2));
+        await drag(330, 325, 330, 325, adjust: true);
+        final delete = ((await state())['controls'] as Map)['delete'] as Map;
+        await hoverNative(
+          delete['x'] as num,
+          delete['y'] as num,
+          'pointingHand',
+        );
+        expect(
+          await driver.invokeMethod<bool>('clickRulerControl', {
+            'name': 'delete',
+          }),
+          true,
+        );
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(1));
+        await drag(140, 230, 140, 230, adjust: true);
+        await driver.invokeMethod<void>('key', {'keyCode': 117});
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], isEmpty);
+        expect(c.busy, true);
+        expect(c.measurements, recordsBeforeDelete);
+        await hoverNative(140, 230, 'crosshair');
+        await driver.invokeMethod<void>('key', {'keyCode': 6, 'command': true});
+        await tester.pumpAndSettle();
+        expect((await state())['pins'], hasLength(1));
         // Select the first region again; arrows move a backing pixel.
         await drag(140, 230, 140, 230);
         pin = ((await state())['pins'] as List).first as Map;

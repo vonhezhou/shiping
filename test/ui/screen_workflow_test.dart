@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
@@ -91,6 +92,51 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('annotation-redo')));
       await tester.pumpAndSettle();
       expect(c.markup.items.length, 1);
+      // Desktop cursor feedback follows hit targets and active drags.
+      await tester.tap(find.byKey(const ValueKey('annotation-tool-select')));
+      await tester.pumpAndSettle();
+      final cursorMouse = TestGesture(
+        dispatcher: tester.sendEventToBinding,
+        pointer: 9001,
+        device: 9001,
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      final strokeCenter = tester.getTopLeft(canvas) + const Offset(190, 125);
+      await cursorMouse.addPointer(location: strokeCenter);
+      await cursorMouse.moveTo(strokeCenter);
+      await tester.pump();
+      MouseCursor? activeCursor() =>
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(9001);
+      expect(activeCursor(), SystemMouseCursors.grab);
+      await cursorMouse.down(strokeCenter);
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.grabbing);
+      await cursorMouse.moveTo(strokeCenter + const Offset(5, 5));
+      await cursorMouse.up();
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.grab);
+      c.markup.undo();
+      await tester.pump();
+      final corner = tester.getTopLeft(canvas) + const Offset(150, 105);
+      await cursorMouse.moveTo(corner);
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.grab);
+      await cursorMouse.down(corner);
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.grabbing);
+      await cursorMouse.cancel();
+      await tester.pump();
+      await cursorMouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('copy-screenshot'))),
+      );
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.click);
+      await cursorMouse.moveTo(
+        tester.getTopLeft(canvas) + const Offset(20, 200),
+      );
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.basic);
+      await cursorMouse.removePointer();
       // A marquee must not mutate history until mouse release.
       final saved = List<Annotation>.of(c.markup.items);
       await tester.tap(find.byKey(const ValueKey('annotation-tool-eraser')));
