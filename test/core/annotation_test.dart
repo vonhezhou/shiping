@@ -57,6 +57,73 @@ void main() {
       expect(small.intersects(const Rect.fromLTRB(40, 40, 50, 50)), false);
     }
   });
+  test('形状填充、字体样式兼容旧标注，折线可包含多个顶点', () {
+    final legacy = arrow().toJson()
+      ..remove('filled')
+      ..remove('bold')
+      ..remove('italic');
+    final old = Annotation.decodeList([legacy], 100, 100).single;
+    expect(old.toJson()['filled'], false);
+    final styled = Map<String, Object>.of(legacy)
+      ..['filled'] = true
+      ..['bold'] = true
+      ..['italic'] = true;
+    expect(Annotation.decodeList([styled], 100, 100).single.toJson(), styled);
+    final polyline = Map<String, Object>.of(legacy)
+      ..['kind'] = 'line'
+      ..['points'] = [
+        [10, 10],
+        [30, 20],
+        [60, 10],
+      ];
+    final decoded = Annotation.decodeList([polyline], 100, 100).single;
+    expect(decoded.hitTest(const Offset(30, 20), 1), true);
+    expect(decoded.points, hasLength(3));
+    expect(
+      () => Annotation.decodeList([Map.of(styled)..['bold'] = 'yes'], 100, 100),
+      throwsFormatException,
+    );
+  });
+  test('Shift 约束正方形和 45 度线，且不越过图像边界', () {
+    expect(
+      constrainedAnnotationEnd(
+        AnnotationKind.rectangle,
+        const Offset(90, 90),
+        const Offset(100, 95),
+        const Size(100, 100),
+        shift: true,
+      ),
+      const Offset(100, 100),
+    );
+    expect(
+      constrainedAnnotationEnd(
+        AnnotationKind.ellipse,
+        const Offset(30, 30),
+        const Offset(5, 20),
+        const Size(100, 100),
+        shift: true,
+      ),
+      const Offset(5, 5),
+    );
+    final line = constrainedAnnotationEnd(
+      AnnotationKind.arrow,
+      const Offset(10, 10),
+      const Offset(50, 15),
+      const Size(100, 100),
+      shift: true,
+    );
+    expect(line.dy, closeTo(10, .0001));
+    expect(
+      constrainedAnnotationEnd(
+        AnnotationKind.pencil,
+        Offset.zero,
+        const Offset(30, 10),
+        const Size(100, 100),
+        shift: true,
+      ),
+      const Offset(30, 10),
+    );
+  });
   test('撤销恢复删除和样式，重做被新编辑截断', () {
     final history = AnnotationHistory();
     addTearDown(history.dispose);

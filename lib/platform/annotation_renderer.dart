@@ -10,6 +10,7 @@ import '../core/ruler.dart';
 
 /// One renderer for both the editable preview and flattened PNG output.
 class AnnotationRenderer {
+  static const fontFamily = 'PingFang SC';
   static void paint(
     ui.Canvas canvas,
     ui.Image image,
@@ -35,11 +36,21 @@ class AnnotationRenderer {
         ..strokeJoin = ui.StrokeJoin.round;
       switch (a.kind) {
         case AnnotationKind.rectangle:
+          paint.style = a.filled
+              ? ui.PaintingStyle.fill
+              : ui.PaintingStyle.stroke;
           canvas.drawRect(b, paint);
         case AnnotationKind.ellipse:
+          paint.style = a.filled
+              ? ui.PaintingStyle.fill
+              : ui.PaintingStyle.stroke;
           canvas.drawOval(b, paint);
         case AnnotationKind.line:
-          canvas.drawLine(a.points.first, a.points.last, paint);
+          final path = ui.Path()..moveTo(a.points.first.dx, a.points.first.dy);
+          for (final p in a.points.skip(1)) {
+            path.lineTo(p.dx, p.dy);
+          }
+          canvas.drawPath(path, paint);
         case AnnotationKind.arrow:
           final start = a.points.first, end = a.points.last;
           canvas.drawLine(start, end, paint);
@@ -74,6 +85,9 @@ class AnnotationRenderer {
               style: TextStyle(
                 color: ui.Color(a.color),
                 fontSize: a.fontSize,
+                fontFamily: fontFamily,
+                fontWeight: a.bold ? FontWeight.bold : FontWeight.normal,
+                fontStyle: a.italic ? FontStyle.italic : FontStyle.normal,
                 height: 1.2,
               ),
             ),

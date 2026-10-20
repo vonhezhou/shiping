@@ -107,9 +107,63 @@ class AppController extends ChangeNotifier {
   List<Uint8List> get screenshots => List.unmodifiable(_screenshots);
   int _screenshotBytes = 0;
 
+  ({int width, int height})? get screenshotSourceSize {
+    final frame = _session?.displays
+        .where((d) => d.id == screenshotDisplayId)
+        .firstOrNull
+        ?.frame;
+    return frame == null ? null : (width: frame.width, height: frame.height);
+  }
+
+  bool get canAdjustScreenshotSelection =>
+      screenshotEditing &&
+      !imageLoading &&
+      !screenshotExporting &&
+      markup.items.isEmpty &&
+      !markup.canUndo &&
+      !markup.canRedo;
+
+  Future<void> adjustScreenshotSelection(PixelRect rect) async {
+    final session = _session;
+    if (session == null || !canAdjustScreenshotSelection) return;
+    final display = session.displays.firstWhere(
+      (d) => d.id == screenshotDisplayId,
+    );
+    if (rect.left < 0 ||
+        rect.top < 0 ||
+        rect.right > display.frame.width ||
+        rect.bottom > display.frame.height ||
+        rect.width < 1 ||
+        rect.height < 1) {
+      return;
+    }
+    imageLoading = true;
+    _notify();
+    try {
+      final png = await AnnotationRenderer.crop(display.frame, rect);
+      final doc = await imageCodec.decodeCapturePng(
+        ImageFileData('截图.png', png),
+      );
+      if (_disposed || _session?.id != session.id || !screenshotEditing) return;
+      imageDocument = doc;
+      screenshotSelection = rect;
+      error = null;
+    } catch (e) {
+      if (_session?.id == session.id) error = '截图区域调整失败：${_message(e)}';
+    } finally {
+      if (_session?.id == session.id) imageLoading = false;
+      _notify();
+    }
+  }
+
   Future<void> exportScreenshot({required bool save}) async {
     final doc = imageDocument;
-    if (doc == null || screenshotExporting || !screenshotEditing) return;
+    if (doc == null ||
+        imageLoading ||
+        screenshotExporting ||
+        !screenshotEditing) {
+      return;
+    }
     final sessionId = _session!.id;
     screenshotExporting = true;
     _notify();
@@ -156,7 +210,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> reselectScreenshot() async {
-    if (!screenshotEditing || screenshotExporting) return;
+    if (!screenshotEditing || imageLoading || screenshotExporting) return;
     await desktop.reselectScreenshot(_session!.id);
     imageDocument = null;
     screenshotSelection = null;
@@ -1318,6 +1372,7 @@ class AppController extends ChangeNotifier {
     imageDocument = null;
     screenshotSelection = null;
     screenshotDisplayId = null;
+    imageLoading = false;
     markup.reset();
     _tool = null;
     _contrastTarget = null;

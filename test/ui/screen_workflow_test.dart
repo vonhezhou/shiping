@@ -76,7 +76,9 @@ void main() {
         lessThan(100),
       );
       expect(find.byType(ChoiceChip), findsNothing);
-      expect(find.byKey(const ValueKey('annotation-width')), findsOneWidget);
+      expect(find.byKey(const ValueKey('annotation-width')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('annotation-group-line')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('annotation-font')), findsNothing);
       final canvas = find.byKey(const ValueKey('annotation-canvas'));
       await tester.dragFrom(
@@ -218,8 +220,13 @@ void main() {
       expect(find.byKey(const ValueKey('annotation-width')), findsNothing);
       await tester.tap(canvas);
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '屏幕上完成');
-      await tester.tap(find.text('确定'));
+      await tester.enterText(
+        find.byKey(const ValueKey('annotation-text-input')),
+        '屏幕上完成',
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await tester.pumpAndSettle();
       expect(c.markup.items.length, 2);
       final done = find.byKey(const ValueKey('copy-screenshot'));

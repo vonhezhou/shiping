@@ -72,6 +72,23 @@ Future<void> click(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> chooseAnnotationTool(
+  WidgetTester tester,
+  AnnotationKind kind,
+) async {
+  final button = find.byKey(ValueKey('annotation-tool-${kind.name}'));
+  if (button.evaluate().isEmpty) {
+    final group =
+        [AnnotationKind.rectangle, AnnotationKind.ellipse].contains(kind)
+        ? 'shape'
+        : [AnnotationKind.line, AnnotationKind.arrow].contains(kind)
+        ? 'line'
+        : 'effect';
+    await click(tester, find.byKey(ValueKey('annotation-group-$group')));
+  }
+  await click(tester, button);
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -230,15 +247,65 @@ void main() {
           ))?['windowNumber'],
           selectionStatus?['windowNumber'],
         );
-        final doc = c.imageDocument!;
         final canvas = find.byKey(const ValueKey('annotation-canvas'));
+        final oldSelection = c.screenshotSelection!;
+        await mouseDrag(tester, tester.getCenter(canvas), const Offset(12, 8));
+        await waitFor(
+          tester,
+          () =>
+              !c.imageLoading &&
+              c.screenshotSelection!.left != oldSelection.left,
+        );
+        await waitFor(
+          tester,
+          () =>
+              tester
+                  .widget<IconButton>(
+                    find.byKey(const ValueKey('copy-screenshot')),
+                  )
+                  .onPressed !=
+              null,
+        );
+        await mouseDrag(
+          tester,
+          tester.getCenter(find.byKey(const ValueKey('screenshot-handle-se'))),
+          const Offset(10, 10),
+        );
+        await waitFor(
+          tester,
+          () =>
+              !c.imageLoading &&
+              c.imageDocument!.frame.width > oldSelection.width,
+        );
+        await waitFor(
+          tester,
+          () =>
+              tester
+                  .widget<IconButton>(
+                    find.byKey(const ValueKey('copy-screenshot')),
+                  )
+                  .onPressed !=
+              null,
+        );
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))?['windowNumber'],
+          selectionStatus?['windowNumber'],
+        );
+        final doc = c.imageDocument!;
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('annotation-toolbar')), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pumpAndSettle();
         for (final kind in AnnotationKind.values.where(
           (k) => k != AnnotationKind.text,
         )) {
-          await click(
-            tester,
-            find.byKey(ValueKey('annotation-tool-${kind.name}')),
-          );
+          await chooseAnnotationTool(tester, kind);
+          if (kind == AnnotationKind.rectangle) {
+            await click(tester, find.byKey(const ValueKey('annotation-fill')));
+          }
           await mouseDrag(
             tester,
             tester.getCenter(canvas) - const Offset(60, 30),
@@ -246,12 +313,30 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(c.markup.items.last.kind, kind);
+          if (kind == AnnotationKind.rectangle) {
+            expect(c.markup.items.last.filled, true);
+          }
         }
         await click(tester, find.byKey(const ValueKey('annotation-tool-text')));
         await click(tester, canvas);
-        await tester.enterText(find.byType(TextField), '原位标注');
-        await click(tester, find.text('确定').last);
+        expect(find.byType(AlertDialog), findsNothing);
+        await driver.invokeMethod<void>('insertText', {'text': '原位标注\n第二行'});
+        await waitFor(
+          tester,
+          () => tester
+              .widget<TextField>(
+                find.byKey(const ValueKey('annotation-text-input')),
+              )
+              .controller!
+              .text
+              .contains('第二行'),
+        );
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+        await tester.pumpAndSettle();
         expect(c.markup.items.length, 9);
+        expect(c.markup.items.last.text, '原位标注\n第二行');
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items.length, 8);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));

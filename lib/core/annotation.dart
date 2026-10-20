@@ -36,12 +36,16 @@ class Annotation {
     this.width = 3,
     this.fontSize = 24,
     this.text = '',
+    this.filled = false,
+    this.bold = false,
+    this.italic = false,
   }) : points = List.unmodifiable(points);
   final AnnotationKind kind;
   final List<Offset> points;
   final int color;
   final double width, fontSize;
   final String text;
+  final bool filled, bold, italic;
 
   Rect get bounds {
     var l = points.first.dx, r = l, t = points.first.dy, b = t;
@@ -60,6 +64,9 @@ class Annotation {
     double? width,
     double? fontSize,
     String? text,
+    bool? filled,
+    bool? bold,
+    bool? italic,
   }) => Annotation(
     kind: kind,
     points: points ?? this.points,
@@ -67,6 +74,9 @@ class Annotation {
     width: width ?? this.width,
     fontSize: fontSize ?? this.fontSize,
     text: text ?? this.text,
+    filled: filled ?? this.filled,
+    bold: bold ?? this.bold,
+    italic: italic ?? this.italic,
   );
 
   Annotation move(Offset delta, Size size) {
@@ -183,6 +193,9 @@ class Annotation {
     'width': width,
     'fontSize': fontSize,
     'text': text,
+    'filled': filled,
+    'bold': bold,
+    'italic': italic,
   };
 
   static List<Annotation> decodeList(Object? value, int width, int height) {
@@ -198,7 +211,13 @@ class Annotation {
           .firstOrNull;
       final raw = v['points'], color = v['color'], stroke = v['width'];
       final font = v['fontSize'], text = v['text'];
-      if (kind == null ||
+      final filled = v['filled'] ?? false,
+          bold = v['bold'] ?? false,
+          italic = v['italic'] ?? false;
+      if (filled is! bool ||
+          bold is! bool ||
+          italic is! bool ||
+          kind == null ||
           raw is! List ||
           raw.length < 2 ||
           raw.length > 20000 ||
@@ -237,6 +256,7 @@ class Annotation {
       }).toList();
       if (kind != AnnotationKind.pencil &&
           kind != AnnotationKind.marker &&
+          kind != AnnotationKind.line &&
           points.length != 2) {
         throw const FormatException('标注端点数量无效');
       }
@@ -247,9 +267,56 @@ class Annotation {
         width: stroke.toDouble(),
         fontSize: font.toDouble(),
         text: text,
+        filled: filled,
+        bold: bold,
+        italic: italic,
       );
     }).toList();
   }
+}
+
+/// Shift constrains shape proportions or snaps lines to 45-degree increments.
+Offset constrainedAnnotationEnd(
+  AnnotationKind kind,
+  Offset start,
+  Offset end,
+  Size size, {
+  bool shift = false,
+}) {
+  if (!shift) return end;
+  final delta = end - start;
+  if ([AnnotationKind.rectangle, AnnotationKind.ellipse].contains(kind)) {
+    final sx = delta.dx < 0 ? -1.0 : 1.0, sy = delta.dy < 0 ? -1.0 : 1.0;
+    final distance = math.min(
+      math.max(delta.dx.abs(), delta.dy.abs()),
+      math.min(
+        sx > 0 ? size.width - start.dx : start.dx,
+        sy > 0 ? size.height - start.dy : start.dy,
+      ),
+    );
+    return start + Offset(sx * distance, sy * distance);
+  }
+  if ([AnnotationKind.line, AnnotationKind.arrow].contains(kind)) {
+    final angle =
+        (math.atan2(delta.dy, delta.dx) / (math.pi / 4)).round() *
+        (math.pi / 4);
+    final dx = math.cos(angle), dy = math.sin(angle);
+    var length = delta.distance;
+    if (dx.abs() > 1e-9) {
+      length = math.min(
+        length,
+        (dx > 0 ? size.width - start.dx : start.dx) / dx.abs(),
+      );
+    }
+    if (dy.abs() > 1e-9) {
+      length = math.min(
+        length,
+        (dy > 0 ? size.height - start.dy : start.dy) / dy.abs(),
+      );
+    }
+    return start + Offset(dx, dy) * length;
+  }
+  return end;
 }
 
 class AnnotationHistory extends ChangeNotifier {

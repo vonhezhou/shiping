@@ -198,6 +198,14 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         }
         panel.makeKeyAndOrderFront(nil);panel.makeFirstResponder(panel.overlay)
         panel.sendEvent(event);result(nil)
+      case "insertText":
+        guard let host=self.screenshotHost,
+          let client=host.firstResponder as? NSTextInputClient,
+          let value=args["text"] as? String else {
+          result(FlutterError(code:"test_no_text_client",message:"Screenshot responder is not a text input client",details:nil));return
+        }
+        client.insertText(value,replacementRange:NSRange(location:NSNotFound,length:0))
+        result(nil)
       case "cancelNextSave": self.cancelNextSave=true;result(nil)
       case "backupClipboard":
         self.pointerBackup = CGEvent(source: nil)?.location
