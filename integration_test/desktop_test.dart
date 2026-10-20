@@ -147,6 +147,32 @@ Future<void> chooseAnnotationTool(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('Pigeon native persistence and shortcut errors round trip', (
+    tester,
+  ) async {
+    final desktop = MacDesktopService();
+    final original = await desktop.loadState();
+    try {
+      await desktop.saveState('{"protocolTest":"中文 ∆"}');
+      expect(await desktop.loadState(), '{"protocolTest":"中文 ∆"}');
+      const duplicate = ShortcutChord(key: 'C', meta: true, shift: true);
+      await expectLater(
+        desktop.configureShortcuts(
+          const ShortcutBindings(picker: duplicate, ruler: duplicate),
+        ),
+        throwsA(
+          isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            'shortcut_invalid',
+          ),
+        ),
+      );
+    } finally {
+      await desktop.saveState(original ?? '{}');
+    }
+  });
+
   testWidgets(
     'native screenshot command is accepted before permission checks',
     (tester) async {

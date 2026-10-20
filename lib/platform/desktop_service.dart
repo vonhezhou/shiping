@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/core.dart';
+import 'desktop.g.dart' as wire;
+import 'desktop_protocol.dart';
 
 class DesktopStatus {
   const DesktopStatus({
@@ -66,131 +70,119 @@ abstract class DesktopService {
 }
 
 class MacDesktopService implements DesktopService {
-  static const _methods = MethodChannel('dev.fruler/desktop');
-  static const _events = EventChannel('dev.fruler/events');
-  late final Stream<Map<Object?, Object?>> _stream = _events
-      .receiveBroadcastStream()
-      .map((event) => Map<Object?, Object?>.from(event as Map));
-
+  MacDesktopService() {
+    wire.DesktopFlutterApi.setUp(_NativeCallbacks(_events));
+  }
+  final _api = wire.DesktopHostApi();
+  final _events = StreamController<Map<Object?, Object?>>.broadcast();
   @override
-  Stream<Map<Object?, Object?>> get events => _stream;
-
+  Stream<Map<Object?, Object?>> get events => _events.stream;
   @override
   Future<DesktopStatus> initialize() async {
-    final value = await _methods.invokeMapMethod<String, Object?>('initialize');
+    final status = await _api.initialize();
     return DesktopStatus(
-      permission: value?['permission'] == true,
-      shortcuts: value?['shortcuts'] == true,
+      permission: status.permission,
+      shortcuts: status.shortcuts,
     );
   }
 
   @override
-  Future<void> showMainWindow() =>
-      _methods.invokeMethod<void>('showMainWindow');
+  Future<bool> requestPermission() => _api.requestPermission();
   @override
-  Future<bool> requestPermission() async =>
-      await _methods.invokeMethod<bool>('requestPermission') ?? false;
+  Future<void> openPrivacySettings() => _api.openPrivacySettings();
   @override
-  Future<void> openPrivacySettings() =>
-      _methods.invokeMethod<void>('openPrivacySettings');
-
+  Future<void> showMainWindow() => _api.showMainWindow();
   @override
   Future<CaptureSession> begin(String tool) async {
-    final data = await _methods.invokeMapMethod<String, Object?>('begin', {
-      'tool': tool,
-    });
-    if (data == null) throw const FormatException('Empty capture response');
-    final displays = (data['frames'] as List).map((value) {
-      final v = Map<Object?, Object?>.from(value as Map);
-      return CapturedDisplay(
-        id: v['id'] as int,
-        name: v['name'] as String? ?? '显示器 ${v['id']}',
-        frame: PixelFrame(
-          width: v['width'] as int,
-          height: v['height'] as int,
-          rgba: v['rgba'] as Uint8List,
-          logicalWidth: (v['logicalWidth'] as num).toDouble(),
-          logicalHeight: (v['logicalHeight'] as num).toDouble(),
-        ),
-      );
-    }).toList();
-    if (displays.isEmpty) throw const FormatException('No displays available');
-    return CaptureSession(data['sessionId'] as int, displays);
+    final nativeTool = wire.CaptureTool.values
+        .where((value) => value.name == tool)
+        .firstOrNull;
+    if (nativeTool == null) {
+      throw PlatformException(code: 'invalid_tool', message: '未知工具');
+    }
+    final reply = await _api.begin(nativeTool);
+    if (reply.displays.isEmpty) {
+      throw const FormatException('No displays available');
+    }
+    return CaptureSession(
+      reply.sessionId,
+      reply.displays
+          .map(
+            (d) => CapturedDisplay(
+              id: d.id,
+              name: d.name,
+              frame: PixelFrame(
+                width: d.width,
+                height: d.height,
+                rgba: d.rgba,
+                logicalWidth: d.logicalWidth,
+                logicalHeight: d.logicalHeight,
+              ),
+            ),
+          )
+          .toList(),
+    );
   }
 
   @override
   Future<void> updateOverlay(Map<String, Object?> data) =>
-      _methods.invokeMethod<void>('updateOverlay', data);
+      _api.updateOverlay(overlayToWire(data));
   @override
-  Future<void> finish(int sessionId) =>
-      _methods.invokeMethod<void>('finish', {'sessionId': sessionId});
+  Future<void> finish(int sessionId) => _api.finish(sessionId);
   @override
   Future<void> editScreenshot(int sessionId, int displayId) =>
-      _methods.invokeMethod<void>('editScreenshot', {
-        'sessionId': sessionId,
-        'displayId': displayId,
-      });
+      _api.editScreenshot(sessionId, displayId);
   @override
-  Future<void> reselectScreenshot(int sessionId) => _methods.invokeMethod<void>(
-    'reselectScreenshot',
-    {'sessionId': sessionId},
-  );
+  Future<void> reselectScreenshot(int sessionId) =>
+      _api.reselectScreenshot(sessionId);
   @override
-  Future<String?> loadState() => _methods.invokeMethod<String>('loadState');
+  Future<String?> loadState() => _api.loadState();
   @override
-  Future<void> saveState(String json) =>
-      _methods.invokeMethod<void>('saveState', {'json': json});
+  Future<void> saveState(String json) => _api.saveState(json);
   @override
   Future<void> writeClipboard(String text) =>
       Clipboard.setData(ClipboardData(text: text));
-
   @override
-  Future<void> replyToQuit(bool allow) =>
-      _methods.invokeMethod<void>('replyToQuit', {'allow': allow});
+  Future<String?> openPaletteFile() => _api.openPaletteFile();
   @override
-  Future<bool> exportImage(Uint8List png, {required bool save}) async =>
-      await _methods.invokeMethod<bool>('exportImage', {
-        'png': png,
-        'save': save,
-      }) ??
-      false;
+  Future<void> replyToQuit(bool allow) => _api.replyToQuit(allow);
   @override
-  Future<String?> openPaletteFile() async =>
-      await _methods.invokeMethod<String>('openPaletteFile');
+  Future<bool> exportImage(Uint8List png, {required bool save}) =>
+      _api.exportImage(png, save);
   @override
-  Future<bool> saveTextFile(String filename, String text) async =>
-      await _methods.invokeMethod<bool>('saveTextFile', {
-        'filename': filename,
-        'text': text,
-      }) ??
-      false;
+  Future<bool> saveTextFile(String filename, String text) =>
+      _api.saveTextFile(filename, text);
   @override
   Future<bool> exportAnnotations(
     int sessionId,
     int displayId,
     List<Map<String, Object?>> annotations, {
     required bool save,
-  }) async =>
-      await _methods.invokeMethod<bool>('exportAnnotations', {
-        'sessionId': sessionId,
-        'displayId': displayId,
-        'annotations': annotations,
-        'save': save,
-      }) ??
-      false;
+  }) => _api.exportAnnotations(
+    sessionId,
+    displayId,
+    annotations.map(pinToWire).toList(),
+    save,
+  );
   @override
-  Future<bool> configureShortcuts(ShortcutBindings bindings) async =>
-      await _methods.invokeMethod<bool>(
-        'configureShortcuts',
-        bindings.toJson(),
-      ) ??
-      false;
+  Future<bool> configureShortcuts(ShortcutBindings bindings) =>
+      _api.configureShortcuts(
+        wire.NativeBindings(
+          picker: chordToWire(bindings.picker),
+          ruler: chordToWire(bindings.ruler),
+          screenshot: chordToWire(bindings.screenshot),
+        ),
+      );
   @override
-  Future<bool> setShortcutRecording(bool recording) async =>
-      await _methods.invokeMethod<bool>('setShortcutRecording', {
-        'recording': recording,
-      }) ??
-      false;
+  Future<bool> setShortcutRecording(bool recording) =>
+      _api.setShortcutRecording(recording);
+}
+
+class _NativeCallbacks implements wire.DesktopFlutterApi {
+  _NativeCallbacks(this.events);
+  final StreamController<Map<Object?, Object?>> events;
+  @override
+  void onEvent(wire.NativeEvent event) => events.add(eventFromWire(event));
 }
 
 class UnsupportedDesktopService extends DesktopService {

@@ -30,16 +30,11 @@ class MainFlutterWindow: NSWindow {
   }
 }
 
-enum CaptureTool: String, CaseIterable {
-  case picker, rectangle, horizontal, vertical, cross, screenshot
-}
-
 /// System integration only. Pixel sampling and measurement rules live in Dart.
-private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
+private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private weak var mainWindow: NSWindow?
-  private let methods: FlutterMethodChannel
-  private let events: FlutterEventChannel
-  private var sink: FlutterEventSink?
+  private let callbacks: DesktopFlutterApi
+  private var sink: (([String: Any]) -> Void)?
   private var statusItem: NSStatusItem?
   private var hotkeys: [EventHotKeyRef] = []
   private var hotkeyHandler: EventHandlerRef?
@@ -64,11 +59,17 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   init(window: NSWindow, messenger: FlutterBinaryMessenger) {
     mainWindow = window
     flutterController = window.contentViewController as? FlutterViewController
-    methods = FlutterMethodChannel(name: "dev.fruler/desktop", binaryMessenger: messenger)
-    events = FlutterEventChannel(name: "dev.fruler/events", binaryMessenger: messenger)
+    callbacks = DesktopFlutterApi(binaryMessenger: messenger)
     super.init()
-    methods.setMethodCallHandler { [weak self] call, result in self?.handle(call, result: result) }
-    events.setStreamHandler(self)
+    DesktopHostApiSetup.setUp(binaryMessenger: messenger, api: self)
+    sink = { [weak self] data in
+      guard let self = self else { return }
+      self.callbacks.onEvent(event: nativeEvent(data)) { response in
+        if case .failure(let error) = response {
+          NSLog("fruler callback failed: %@", String(describing: error))
+        }
+      }
+    }
     setupMenu()
     setupHotkeys()
     localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -122,17 +123,6 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       NSWorkspace.shared.notificationCenter.removeObserver(observer)
     }
     if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
-  }
-
-  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-    sink = events
-    return nil
-  }
-
-  func onCancel(withArguments arguments: Any?) -> FlutterError? {
-    cancelSession()
-    sink = nil
-    return nil
   }
 
   func requestQuitConfirmation() -> Bool {
@@ -248,212 +238,230 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
   }
   #endif
 
-  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    let args = call.arguments as? [String: Any] ?? [:]
-    switch call.method {
-    case "initialize":
-      result(["permission": CGPreflightScreenCaptureAccess(), "shortcuts": hasShortcuts, "platform": "macos"])
-    case "configureShortcuts":
-      guard let requested = NativeShortcutBindings(args), requested.isValid else {
-        result(FlutterError(code: "shortcut_invalid", message: "请使用不同的字母或数字组合，并避开系统退出、编辑和截图快捷键。", details: nil))
-        return
-      }
-      if requested == shortcuts && (hasShortcuts || shortcutRecording) { result(true); return }
-      let previous = shortcuts
-      let hadShortcuts = hasShortcuts
-      unregisterHotkeys()
-      if shortcutRecording || registerHotkeys(requested) {
-        shortcuts = requested
-        updateMenuShortcuts()
-        result(true)
-      } else {
-        if hadShortcuts { _ = registerHotkeys(previous) }
-        updateMenuShortcuts()
-        result(FlutterError(code: "shortcut_conflict", message: "快捷键已被占用", details: ["shortcuts": hasShortcuts]))
-      }
-    case "setShortcutRecording":
-      shortcutRecording = args["recording"] as? Bool == true
-      if shortcutRecording {
-        pauseApplicationMenuKeys()
-        unregisterHotkeys()
-        updateMenuShortcuts()
-        result(true)
-      } else {
-        for (item, key) in pausedMenuKeys { item.keyEquivalent = key }
-        pausedMenuKeys.removeAll()
-        let registered = registerHotkeys(shortcuts)
-        updateMenuShortcuts()
-        result(registered)
-      }
-    case "requestPermission":
-      result(CGRequestScreenCaptureAccess())
-    case "showMainWindow":
-      showMainWindow(); result(nil)
-    case "openPrivacySettings":
-      if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-        NSWorkspace.shared.open(url)
-      }
-      result(nil)
-    case "loadState":
-      result(UserDefaults.standard.string(forKey: stateKey))
-    case "saveState":
-      if let json = args["json"] as? String {
-        UserDefaults.standard.set(json, forKey: stateKey)
-      }
-      result(nil)
-    case "replyToQuit":
-      NSApp.reply(toApplicationShouldTerminate:args["allow"] as? Bool == true)
-      result(nil)
-    case "exportImage":
-      guard let bytes = args["png"] as? FlutterStandardTypedData else {
-        result(FlutterError(code:"image_export_failed",message:"图片数据无效",details:nil)); return
-      }
-      if args["save"] as? Bool == true {
-        let captureID = session
-        for panel in overlays.values { panel.orderOut(nil) }
-        defer {
-          if session == captureID {
-            for panel in overlays.values { panel.orderFrontRegardless() }
-            screenshotHost?.makeKeyAndOrderFront(nil)
-          }
-        }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "fruler-screenshot.png"
-        #if FRULER_INTEGRATION_TEST
-        if cancelNextSave {
-          cancelNextSave = false
-          DispatchQueue.main.async { panel.cancel(nil) }
-        }
-        #endif
-        panel.allowedContentTypes = [.png]
-        NSApp.activate(ignoringOtherApps:true)
-        guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
-        do { try bytes.data.write(to:url,options:.atomic); result(true) }
-        catch { result(FlutterError(code:"image_export_failed",message:error.localizedDescription,details:nil)) }
-      } else {
-        NSPasteboard.general.clearContents()
-        if NSPasteboard.general.setData(bytes.data,forType:.png) { result(true) }
-        else { result(FlutterError(code:"clipboard_failed",message:"无法写入图片剪贴板",details:nil)) }
-      }
-    case "openPaletteFile":
-      let panel = NSOpenPanel()
-      panel.allowedContentTypes = [.json]
-      panel.allowsMultipleSelection = false
-      panel.canChooseDirectories = false
-      NSApp.activate(ignoringOtherApps: true)
-      guard panel.runModal() == .OK, let url = panel.url else { result(nil); return }
-      do {
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 2 * 1024 * 1024 else {
-          result(FlutterError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil)); return
-        }
-        let text = try String(contentsOf: url, encoding: .utf8)
-        guard text.utf8.count <= 2 * 1024 * 1024 else {
-          result(FlutterError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil)); return
-        }
-        result(text)
-      } catch { result(FlutterError(code: "import_failed", message: error.localizedDescription, details: nil)) }
-    case "saveTextFile":
-      guard let filename = args["filename"] as? String, let text = args["text"] as? String else {
-        result(FlutterError(code: "invalid_export", message: "导出内容无效", details: nil)); return
-      }
-      let panel = NSSavePanel()
-      panel.nameFieldStringValue = filename
-      panel.allowedContentTypes = [UTType(filenameExtension: (filename as NSString).pathExtension) ?? .plainText]
-      panel.canCreateDirectories = true
-      NSApp.activate(ignoringOtherApps: true)
-      guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
-      do { try Data(text.utf8).write(to: url, options: .atomic); result(true) }
-      catch { result(FlutterError(code: "export_failed", message: error.localizedDescription, details: nil)) }
-    case "exportAnnotations":
-      guard let id = args["sessionId"] as? Int, id == session,
-            let display = args["displayId"] as? UInt32,
-            let overlay = overlays[display]?.overlay,
-            let pins = args["annotations"] as? [[String: Any]],
-            let png = AnnotationRenderer.png(image: overlay.snapshot.image, annotations: pins) else {
-        result(FlutterError(code: "invalid_export", message: "没有可导出的标注", details: nil)); return
-      }
-      if args["save"] as? Bool == true {
-        for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil) }
-        defer {
-          if session == id {
-            for panel in overlays.values { panel.orderFrontRegardless() }
-            overlays[display]?.makeKeyAndOrderFront(nil)
-          }
-        }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "fruler-measurement.png"
-        panel.allowedContentTypes = [.png]
-        panel.canCreateDirectories = true
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { result(false); return }
-        do { try png.write(to: url, options: .atomic); result(true) }
-        catch { result(FlutterError(code: "export_failed", message: error.localizedDescription, details: nil)) }
-      } else {
-        NSPasteboard.general.clearContents()
-        if NSPasteboard.general.setData(png, forType: .png) { result(true) }
-        else { result(FlutterError(code: "clipboard_failed", message: "无法写入图片剪贴板", details: nil)) }
-      }
-    case "begin":
-      guard let tool = args["tool"] as? String,
-            CaptureTool(rawValue: tool) != nil else {
-        result(FlutterError(code: "invalid_tool", message: "未知工具", details: nil))
-        return
-      }
-      begin(tool: tool, result: result)
-    case "updateOverlay":
-      if let id = args["sessionId"] as? Int, id == session {
-        for panel in overlays.values { panel.overlay.updateOptions(args) }
-        if let display = args["displayId"] as? UInt32 {
-          for (key, panel) in overlays { panel.overlay.isPointerActive = key == display }
-          overlays[display]?.overlay.update(args)
-        }
-      }
-      result(nil)
-    case "editScreenshot":
-      guard let id = args["sessionId"] as? Int, id == session,
-            let display = args["displayId"] as? UInt32, let panel = overlays[display],
-            let controller = flutterController else {
-        result(FlutterError(code:"capture_cancelled",message:"截图会话已结束",details:nil)); return
-      }
-      for overlay in overlays.values { overlay.overlay.setScreenshotEditing(true); overlay.overlay.releaseCursor() }
-      mainWindow?.contentViewController = nil
-      controller.backgroundColor = .clear
-      panel.isOpaque = false
-      controller.view.frame = panel.overlay.bounds
-      controller.view.autoresizingMask = [.width,.height]
-      panel.overlay.addSubview(controller.view)
-      screenshotHost = panel
-      panel.makeKeyAndOrderFront(nil)
-      panel.makeFirstResponder(controller.view)
-      result(nil)
-    case "reselectScreenshot":
-      if let id = args["sessionId"] as? Int, id == session {
-        restoreScreenshotView()
-        for panel in overlays.values { panel.overlay.setScreenshotEditing(false) }
-        overlays.values.first?.makeKeyAndOrderFront(nil)
-        if let panel = overlays.values.first { panel.makeFirstResponder(panel.overlay) }
-      }
-      result(nil)
-    case "finish":
-      if let id = args["sessionId"] as? Int, id == session { closeSession() }
-      result(nil)
-    default:
-      result(FlutterMethodNotImplemented)
+  func initialize(completion: @escaping (Result<NativeStatus, Error>) -> Void) {
+    completion(.success(NativeStatus(permission: CGPreflightScreenCaptureAccess(), shortcuts: hasShortcuts)))
+  }
+
+  func configureShortcuts(bindings: NativeBindings, completion: @escaping (Result<Bool, Error>) -> Void) {
+    let args: [String: Any] = bindings.local
+    guard let requested = NativeShortcutBindings(args), requested.isValid else {
+      completion(.failure(PigeonError(code: "shortcut_invalid", message: "请使用不同的字母或数字组合，并避开系统退出、编辑和截图快捷键。", details: nil)))
+      return
+    }
+    if requested == shortcuts && (hasShortcuts || shortcutRecording) { completion(.success(true)); return }
+    let previous = shortcuts
+    let hadShortcuts = hasShortcuts
+    unregisterHotkeys()
+    if shortcutRecording || registerHotkeys(requested) {
+      shortcuts = requested
+      updateMenuShortcuts()
+      completion(.success(true))
+    } else {
+      if hadShortcuts { _ = registerHotkeys(previous) }
+      updateMenuShortcuts()
+      completion(.failure(PigeonError(code: "shortcut_conflict", message: "快捷键已被占用", details: ["shortcuts": hasShortcuts])))
     }
   }
 
-  private func begin(tool: String, result: @escaping FlutterResult) {
+  func setShortcutRecording(recording: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
+    shortcutRecording = recording
+    if shortcutRecording {
+      pauseApplicationMenuKeys()
+      unregisterHotkeys()
+      updateMenuShortcuts()
+      completion(.success(true))
+    } else {
+      for (item, key) in pausedMenuKeys { item.keyEquivalent = key }
+      pausedMenuKeys.removeAll()
+      let registered = registerHotkeys(shortcuts)
+      updateMenuShortcuts()
+      completion(.success(registered))
+    }
+  }
+
+  func requestPermission(completion: @escaping (Result<Bool, Error>) -> Void) {
+    completion(.success(CGRequestScreenCaptureAccess()))
+  }
+
+  func showMainWindow(completion: @escaping (Result<Void, Error>) -> Void) {
+    presentMainWindow(); completion(.success(()))
+  }
+
+  func openPrivacySettings(completion: @escaping (Result<Void, Error>) -> Void) {
+    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+      NSWorkspace.shared.open(url)
+    }
+    completion(.success(()))
+  }
+
+  func loadState(completion: @escaping (Result<String?, Error>) -> Void) {
+    completion(.success(UserDefaults.standard.string(forKey: stateKey)))
+  }
+
+  func saveState(json: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    UserDefaults.standard.set(json, forKey: stateKey)
+    completion(.success(()))
+  }
+
+  func replyToQuit(allow: Bool, completion: @escaping (Result<Void, Error>) -> Void) {
+    NSApp.reply(toApplicationShouldTerminate:allow)
+    completion(.success(()))
+  }
+
+  func exportImage(png: FlutterStandardTypedData, save: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
+    let bytes = png
+    if save {
+      let captureID = session
+      for panel in overlays.values { panel.orderOut(nil) }
+      defer {
+        if session == captureID {
+          for panel in overlays.values { panel.orderFrontRegardless() }
+          screenshotHost?.makeKeyAndOrderFront(nil)
+        }
+      }
+      let panel = NSSavePanel()
+      panel.nameFieldStringValue = "fruler-screenshot.png"
+      #if FRULER_INTEGRATION_TEST
+      if cancelNextSave {
+        cancelNextSave = false
+        DispatchQueue.main.async { panel.cancel(nil) }
+      }
+      #endif
+      panel.allowedContentTypes = [.png]
+      NSApp.activate(ignoringOtherApps:true)
+      guard panel.runModal() == .OK, let url = panel.url else { completion(.success(false)); return }
+      do { try bytes.data.write(to:url,options:.atomic); completion(.success(true)) }
+      catch { completion(.failure(PigeonError(code:"image_export_failed",message:error.localizedDescription,details:nil))) }
+    } else {
+      NSPasteboard.general.clearContents()
+      if NSPasteboard.general.setData(bytes.data,forType:.png) { completion(.success(true)) }
+      else { completion(.failure(PigeonError(code:"clipboard_failed",message:"无法写入图片剪贴板",details:nil))) }
+    }
+  }
+
+  func openPaletteFile(completion: @escaping (Result<String?, Error>) -> Void) {
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.json]
+    panel.allowsMultipleSelection = false
+    panel.canChooseDirectories = false
+    NSApp.activate(ignoringOtherApps: true)
+    guard panel.runModal() == .OK, let url = panel.url else { completion(.success(nil)); return }
+    do {
+      let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+      guard size <= 2 * 1024 * 1024 else {
+        completion(.failure(PigeonError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil))); return
+      }
+      let text = try String(contentsOf: url, encoding: .utf8)
+      guard text.utf8.count <= 2 * 1024 * 1024 else {
+        completion(.failure(PigeonError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil))); return
+      }
+      completion(.success(text))
+    } catch { completion(.failure(PigeonError(code: "import_failed", message: error.localizedDescription, details: nil))) }
+  }
+
+  func saveTextFile(filename: String, text: String, completion: @escaping (Result<Bool, Error>) -> Void) {
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = filename
+    panel.allowedContentTypes = [UTType(filenameExtension: (filename as NSString).pathExtension) ?? .plainText]
+    panel.canCreateDirectories = true
+    NSApp.activate(ignoringOtherApps: true)
+    guard panel.runModal() == .OK, let url = panel.url else { completion(.success(false)); return }
+    do { try Data(text.utf8).write(to: url, options: .atomic); completion(.success(true)) }
+    catch { completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil))) }
+  }
+
+  func exportAnnotations(sessionId: Int64, displayId: Int64, annotations: [MeasurementPin], save: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
+    let id = Int(sessionId)
+    guard id == session, let display = UInt32(exactly: displayId),
+          let overlay = overlays[display]?.overlay,
+          let png = AnnotationRenderer.png(image: overlay.snapshot.image, annotations: annotations.map { $0.local }) else {
+      completion(.failure(PigeonError(code: "invalid_export", message: "没有可导出的标注", details: nil))); return
+    }
+    if save {
+      for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil) }
+      defer {
+        if session == id {
+          for panel in overlays.values { panel.orderFrontRegardless() }
+          overlays[display]?.makeKeyAndOrderFront(nil)
+        }
+      }
+      let panel = NSSavePanel()
+      panel.nameFieldStringValue = "fruler-measurement.png"
+      panel.allowedContentTypes = [.png]
+      panel.canCreateDirectories = true
+      NSApp.activate(ignoringOtherApps: true)
+      guard panel.runModal() == .OK, let url = panel.url else { completion(.success(false)); return }
+      do { try png.write(to: url, options: .atomic); completion(.success(true)) }
+      catch { completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil))) }
+    } else {
+      NSPasteboard.general.clearContents()
+      if NSPasteboard.general.setData(png, forType: .png) { completion(.success(true)) }
+      else { completion(.failure(PigeonError(code: "clipboard_failed", message: "无法写入图片剪贴板", details: nil))) }
+    }
+  }
+
+  func begin(tool: CaptureTool, completion: @escaping (Result<CaptureReply, Error>) -> Void) {
+    capture(tool: tool.name, completion: completion)
+  }
+
+  func updateOverlay(state: OverlayState, completion: @escaping (Result<Void, Error>) -> Void) {
+    let args: [String: Any] = state.local
+    if Int(state.sessionId) == session {
+      for panel in overlays.values { panel.overlay.updateOptions(args) }
+      if let display = args["displayId"] as? UInt32 {
+        for (key, panel) in overlays { panel.overlay.isPointerActive = key == display }
+        overlays[display]?.overlay.update(args)
+      }
+    }
+    completion(.success(()))
+  }
+
+  func editScreenshot(sessionId: Int64, displayId: Int64, completion: @escaping (Result<Void, Error>) -> Void) {
+    let id = Int(sessionId)
+    guard id == session,
+          let display = UInt32(exactly: displayId), let panel = overlays[display],
+          let controller = flutterController else {
+      completion(.failure(PigeonError(code:"capture_cancelled",message:"截图会话已结束",details:nil))); return
+    }
+    for overlay in overlays.values { overlay.overlay.setScreenshotEditing(true); overlay.overlay.releaseCursor() }
+    mainWindow?.contentViewController = nil
+    controller.backgroundColor = .clear
+    panel.isOpaque = false
+    controller.view.frame = panel.overlay.bounds
+    controller.view.autoresizingMask = [.width,.height]
+    panel.overlay.addSubview(controller.view)
+    screenshotHost = panel
+    panel.makeKeyAndOrderFront(nil)
+    panel.makeFirstResponder(controller.view)
+    completion(.success(()))
+  }
+
+  func reselectScreenshot(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void) {
+    if Int(sessionId) == session {
+      restoreScreenshotView()
+      for panel in overlays.values { panel.overlay.setScreenshotEditing(false) }
+      overlays.values.first?.makeKeyAndOrderFront(nil)
+      if let panel = overlays.values.first { panel.makeFirstResponder(panel.overlay) }
+    }
+    completion(.success(()))
+  }
+
+  func finish(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void) {
+    if Int(sessionId) == session { closeSession() }
+    completion(.success(()))
+  }
+
+  private func capture(tool: String, completion: @escaping (Result<CaptureReply, Error>) -> Void) {
     guard !preparing && session == nil else {
-      result(FlutterError(code: "capture_busy", message: "已有工具正在使用", details: nil))
+      completion(.failure(PigeonError(code: "capture_busy", message: "已有工具正在使用", details: nil)))
       return
     }
     guard CGPreflightScreenCaptureAccess() else {
-      result(FlutterError(code: "screen_permission", message: "请先允许 fruler 录制屏幕", details: nil))
+      completion(.failure(PigeonError(code: "screen_permission", message: "请先允许 fruler 录制屏幕", details: nil)))
       return
     }
     guard sink != nil else {
-      result(FlutterError(code: "no_listener", message: "工具尚未就绪", details: nil))
+      completion(.failure(PigeonError(code: "no_listener", message: "工具尚未就绪", details: nil)))
       return
     }
     preparing = true
@@ -507,8 +515,8 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
         let pointer = NSEvent.mouseLocation
         let active = self.overlays.values.first { $0.frame.contains(pointer) } ?? self.overlays.values.first
         active?.makeKeyAndOrderFront(nil)
-        result(["sessionId": id, "frames": captures.map { $0.channelData }])
-        // Input may precede the MethodChannel result; the Dart controller queues it.
+        completion(.success(CaptureReply(sessionId: Int64(id), displays: captures.map { $0.channelData })))
+        // Input may precede the Pigeon capture reply; the Dart controller queues it.
         DispatchQueue.main.async { [weak self] in
           guard self?.session == id else { return }
           active?.overlay.sendCurrentPointer()
@@ -516,8 +524,8 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       } catch {
         let cancelled = error is CancellationError || self.session != id
         if self.session == id { self.closeSession() }
-        result(FlutterError(code: cancelled ? "capture_cancelled" : "capture_failed",
-          message: cancelled ? "已取消截图" : "屏幕截图失败：\(error.localizedDescription)", details: nil))
+        completion(.failure(PigeonError(code: cancelled ? "capture_cancelled" : "capture_failed",
+          message: cancelled ? "已取消截图" : "屏幕截图失败：\(error.localizedDescription)", details: nil)))
       }
     }
   }
@@ -566,7 +574,7 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
       menu.addItem(entry)
     }
     menu.addItem(.separator())
-    let show = menu.addItem(withTitle: "打开 fruler", action: #selector(showMainWindow), keyEquivalent: "")
+    let show = menu.addItem(withTitle: "打开 fruler", action: #selector(presentMainWindow), keyEquivalent: "")
     show.target = self
     let quit = menu.addItem(withTitle: "退出 fruler", action: #selector(quitApp), keyEquivalent: "q")
     quit.target = self
@@ -583,13 +591,13 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
     guard !shortcutRecording else { return }
     guard session == nil, !preparing else { NSSound.beep(); return }
     guard CGPreflightScreenCaptureAccess() else {
-      showMainWindow()
+      presentMainWindow()
       sink?(["type": "activate", "tool": tool])
       return
     }
     sink?(["type": "activate", "tool": tool])
   }
-  @objc private func showMainWindow() {
+  @objc private func presentMainWindow() {
     if session != nil { cancelSession() }
     NSApp.activate(ignoringOtherApps: true)
     mainWindow?.deminiaturize(nil)
@@ -750,10 +758,10 @@ private struct DisplaySnapshot {
     rgba = bytes
   }
 
-  var channelData: [String: Any] {
-    ["id": displayID, "name": name, "width": width, "height": height,
-      "logicalWidth": frame.width, "logicalHeight": frame.height,
-      "rgba": FlutterStandardTypedData(bytes: rgba)]
+  var channelData: DisplayFrame {
+    DisplayFrame(id: Int64(displayID), name: name, width: Int64(width), height: Int64(height),
+      logicalWidth: Double(frame.width), logicalHeight: Double(frame.height),
+      rgba: FlutterStandardTypedData(bytes: rgba))
   }
 }
 

@@ -60,6 +60,18 @@ flutter --no-version-check build macos --release --no-pub
 
 构建结果位于 `build/macos/Build/Products/Release/fruler.app`。分发给其他用户前仍需正式签名与公证。SDK 镜像缺少引擎文件时，可在单次命令前设置可用的 `FLUTTER_STORAGE_BASE_URL`；不需要修改全局设置。
 
+## 原生通信协议
+
+macOS 与 Flutter 使用 Pigeon + Platform Channels，不使用 FFI。协议源是 `pigeons/desktop.dart`：`DesktopHostApi` 定义 Dart → Swift 调用，`DesktopFlutterApi` 定义 Swift → Dart 回调。工具、事件、截图数据、浮层状态和快捷键均使用生成的类型，业务内部现有 Map 只在适配层转换，不跨通道传输。文本复制继续使用 Flutter 标准 Clipboard 接口。
+
+修改协议后执行：
+
+```sh
+dart run pigeon --input pigeons/desktop.dart
+```
+
+生成的 Dart / Swift 文件一起提交；Pigeon 版本固定在开发依赖中。`python3 tool/check_protocol.py` 会重新生成到临时目录并检查一致性，完整检查已包含此步骤。`dev.fruler/integration` 是独立的测试驱动通道，只在 `FRULER_INTEGRATION_TEST` 构建中启用。
+
 ## 测试
 
 新增 / 修复行为先补失败回归，再修改实现。单元和 UI 测试不能替代真实 macOS 通道与浮层验收；开发约束见 [AGENTS.md](AGENTS.md)。
