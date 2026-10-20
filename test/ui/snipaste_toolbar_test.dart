@@ -11,6 +11,49 @@ import 'package:fruler/platform/desktop_service.dart';
 import '../fake_desktop.dart';
 import 'controller_test_host.dart';
 
+var parameterPointer = 20000;
+
+Future<void> setSlider(
+  WidgetTester tester,
+  String key,
+  double value, {
+  AppController? controller,
+}) async {
+  final finder = find.byKey(ValueKey(key));
+  final slider = tester.widget<Slider>(finder);
+  final rect = tester.getRect(finder);
+  Offset at(double v) => Offset(
+    rect.left +
+        7 +
+        (rect.width - 14) * ((v - slider.min) / (slider.max - slider.min)),
+    rect.center.dy,
+  );
+  final before = controller == null
+      ? null
+      : List<Annotation>.of(controller.markup.items);
+  final id = parameterPointer++;
+  final mouse = TestGesture(
+    dispatcher: tester.sendEventToBinding,
+    pointer: id,
+    device: id,
+    kind: ui.PointerDeviceKind.mouse,
+  );
+  await mouse.addPointer(location: at(slider.value));
+  await mouse.down(at(slider.value));
+  await tester.pump();
+  await mouse.moveTo(at((slider.value + value) / 2));
+  await tester.pump();
+  await mouse.moveTo(at(value));
+  await tester.pump();
+  if (before != null) {
+    expect(controller!.markup.items, before, reason: '滑杆拖动期间只预览，不连续写入历史');
+  }
+  await mouse.up();
+  await mouse.removePointer();
+  await tester.pumpAndSettle();
+  expect(tester.widget<Slider>(finder).value, closeTo(value, .5));
+}
+
 void main() {
   for (final size in [const Size(1100, 760), const Size(920, 680)]) {
     testWidgets('Snipaste 工具分组、原位文字和快捷操作 $size', (tester) async {
@@ -130,6 +173,14 @@ void main() {
       expect(
         find.byKey(const ValueKey('annotation-tool-ellipse')),
         findsOneWidget,
+      );
+      final properties = find.byKey(const ValueKey('annotation-properties'));
+      expect(tester.getSize(properties).height, 32);
+      expect(tester.getSize(properties).width, lessThanOrEqualTo(310));
+      expect(tester.getRect(properties).left, tester.getRect(toolbar).left);
+      expect(
+        tester.getRect(properties).top - tester.getRect(toolbar).bottom,
+        4,
       );
       await tester.tap(find.byKey(const ValueKey('annotation-fill')));
       await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
@@ -259,15 +310,13 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('annotation-effect-brush')));
         await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('annotation-effect-width')),
+          findsOneWidget,
+        );
+        await setSlider(tester, 'annotation-effect-width', 36);
         await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
-        await tester.tap(
-          find.byKey(const ValueKey('annotation-effect-strength')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('annotation-effect-strength-5')),
-        );
-        await tester.pumpAndSettle();
+        await setSlider(tester, 'annotation-effect-strength', 5);
         await tester.dragFrom(
           origin + const Offset(30, 30),
           const Offset(120, 80),
@@ -281,14 +330,7 @@ void main() {
         expect(brush.width, greaterThan(24));
         expect(brush.points.length, greaterThan(2));
         final count = c.markup.items.length;
-        await tester.tap(
-          find.byKey(const ValueKey('annotation-effect-strength')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('annotation-effect-strength-1')),
-        );
-        await tester.pumpAndSettle();
+        await setSlider(tester, 'annotation-effect-strength', 1, controller: c);
         expect(c.markup.items.length, count);
         expect(c.markup.items.last.toJson()['effectStrength'], 1);
         await tester.tap(find.byKey(const ValueKey('annotation-undo')));
@@ -298,15 +340,11 @@ void main() {
           find.byKey(const ValueKey('annotation-effect-rectangle')),
         );
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('annotation-effect-strength')),
+        await setSlider(tester, 'annotation-effect-strength', 5);
+        expect(
+          find.byKey(const ValueKey('annotation-effect-width')),
+          findsNothing,
         );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('annotation-effect-strength-5')),
-        );
-        await tester.pumpAndSettle();
-        expect(find.byKey(const ValueKey('annotation-width')), findsNothing);
         await tester.dragFrom(
           origin + const Offset(200, 30),
           const Offset(60, 50),

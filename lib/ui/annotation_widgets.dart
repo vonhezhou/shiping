@@ -904,6 +904,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     IconData icon,
     VoidCallback? action, {
     bool active = false,
+    bool compact = false,
   }) => IconButton(
     key: ValueKey(id),
     tooltip: label,
@@ -913,10 +914,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     isSelected: active,
     iconSize: 18,
     padding: EdgeInsets.zero,
-    constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+    constraints: BoxConstraints.tightFor(
+      width: compact ? 28 : 30,
+      height: compact ? 28 : 30,
+    ),
     style: IconButton.styleFrom(
-      minimumSize: const Size(30, 30),
-      maximumSize: const Size(30, 30),
+      minimumSize: Size.square(compact ? 28 : 30),
+      maximumSize: Size.square(compact ? 28 : 30),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       padding: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
@@ -936,14 +940,15 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     child: VerticalDivider(width: 8, thickness: 1, color: Color(0xFF555555)),
   );
 
-  Widget toolbarPanel(Widget child, {Key? key}) => Material(
-    key: key,
-    color: toolbarSurface,
-    elevation: 4,
-    shadowColor: Colors.black54,
-    borderRadius: BorderRadius.circular(4),
-    child: Padding(padding: const EdgeInsets.all(3), child: child),
-  );
+  Widget toolbarPanel(Widget child, {Key? key, bool compact = false}) =>
+      Material(
+        key: key,
+        color: toolbarSurface,
+        elevation: 4,
+        shadowColor: Colors.black54,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(padding: EdgeInsets.all(compact ? 2 : 3), child: child),
+      );
 
   String get propertyKind => textEditing
       ? 'text'
@@ -959,6 +964,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       padding: EdgeInsets.zero,
       color: toolbarSurface,
       tooltip: '',
+      menuPadding: const EdgeInsets.all(4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       constraints: const BoxConstraints(minWidth: 100, maxWidth: 160),
       onSelected: (v) => font ? style(nextFont: v) : style(nextWidth: v),
       itemBuilder: (_) =>
@@ -968,6 +975,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               .map(
                 (v) => PopupMenuItem(
                   value: v,
+                  height: 28,
                   child: Row(
                     children: [
                       if (!font) ...[
@@ -996,13 +1004,35 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: SizedBox(
-          width: font ? 44 : 30,
-          height: 30,
+          width: font ? 52 : 28,
+          height: 28,
           child: Center(
             child: font
-                ? Text(
-                    fontSize.toStringAsFixed(0),
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                ? Container(
+                    height: 22,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF454545),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: const Color(0xFF666666)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          fontSize.toStringAsFixed(0),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const Icon(
+                          Icons.arrow_drop_down,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
                   )
                 : Container(
                     width: math.min(14, width + 2),
@@ -1053,8 +1083,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         ),
       ),
       SizedBox(
-        width: 154,
-        height: 26,
+        width: 130,
+        height: 22,
         child: Wrap(
           spacing: 2,
           runSpacing: 2,
@@ -1068,11 +1098,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   onTap: () => style(nextColor: value),
                   mouseCursor: SystemMouseCursors.click,
                   child: Container(
-                    width: 12,
-                    height: 12,
+                    width: 10,
+                    height: 10,
                     decoration: BoxDecoration(
                       color: Color(value),
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(1),
                       border: Border.all(
                         color: value == color
                             ? toolbarBlue
@@ -1100,37 +1130,112 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     focus.requestFocus();
   }
 
-  Widget effectStrengthMenu() => PopupMenuButton<int>(
-    key: const ValueKey('annotation-effect-strength'),
-    tooltip: propertyKind == 'mosaic' ? '色块大小' : '模糊程度',
-    color: toolbarSurface,
-    padding: EdgeInsets.zero,
-    onSelected: (value) => style(nextEffectStrength: value),
-    itemBuilder: (_) => [
-      for (var value = 1; value <= 5; value++)
-        PopupMenuItem(
-          key: ValueKey('annotation-effect-strength-$value'),
-          value: value,
-          child: Text(
-            '$value  ${const ['很轻', '轻', '中', '强', '很强'][value - 1]}',
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
-        ),
-    ],
-    child: MouseRegion(
-      cursor: SystemMouseCursors.click,
+  // Sliders preview continuously but commit a selected mark once per gesture.
+  void beginParameter() {
+    cancelGesture();
+    if (selected != null && selected! < items.length) {
+      original = items[selected!];
+    }
+    focus.requestFocus();
+  }
+
+  void updateParameter(double value, {required bool strength}) {
+    setState(() {
+      if (strength) {
+        effectStrength = value.round();
+      } else {
+        width = value.roundToDouble();
+      }
+      if (original != null) {
+        preview = original!.copyWith(
+          width: strength ? null : width,
+          effectStrength: strength ? effectStrength : null,
+        );
+      }
+    });
+  }
+
+  void finishParameter() {
+    final next = preview, index = selected;
+    cancelGesture();
+    if (next != null && index != null && index < items.length) {
+      commit(List.of(items)..[index] = next);
+    }
+  }
+
+  Widget effectParameter({required bool strength}) {
+    final label = strength
+        ? (propertyKind == 'mosaic' ? '色块大小' : '模糊程度')
+        : '画笔宽度';
+    final value = strength ? effectStrength.toDouble() : width;
+    return Tooltip(
+      message: '$label · ${value.round()}${strength ? "/5" : " px"}',
       child: SizedBox(
-        width: 64,
-        height: 30,
-        child: Center(
-          child: Text(
-            '强度 $effectStrength ▾',
-            style: const TextStyle(color: Colors.white, fontSize: 12),
-          ),
+        height: 28,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: strength
+                  ? const Icon(Icons.tune, size: 14, color: Color(0xFFCCCCCC))
+                  : const Icon(Icons.circle, size: 8, color: Colors.white),
+            ),
+            SizedBox(
+              width: strength ? 72 : 88,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 2,
+                  activeTrackColor: toolbarBlue,
+                  inactiveTrackColor: const Color(0xFF666666),
+                  thumbColor: Colors.white,
+                  overlayColor: toolbarBlue.withValues(alpha: .16),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 4,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 7),
+                  tickMarkShape: SliderTickMarkShape.noTickMark,
+                ),
+                child: Slider(
+                  key: ValueKey(
+                    strength
+                        ? 'annotation-effect-strength'
+                        : 'annotation-effect-width',
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  min: 1,
+                  max: strength ? 5 : 80,
+                  divisions: strength ? 4 : 79,
+                  value: value,
+                  mouseCursor: SystemMouseCursors.click,
+                  semanticFormatterCallback: (v) => '$label ${v.round()}',
+                  onChangeStart: (_) => beginParameter(),
+                  onChanged: (v) => updateParameter(v, strength: strength),
+                  onChangeEnd: (_) => finishParameter(),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 22,
+              child: Text(
+                '${value.round()}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
         ),
       ),
-    ),
-  );
+    );
+  }
+
+  Widget propertyButton(
+    String id,
+    String label,
+    IconData icon,
+    VoidCallback? action, {
+    bool active = false,
+  }) => toolbarButton(id, label, icon, action, active: active, compact: true);
 
   Widget propertyBar() {
     final kind = propertyKind;
@@ -1139,13 +1244,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     final effect = ['mosaic', 'blur'].contains(kind);
     return toolbarPanel(
       key: const ValueKey('annotation-properties'),
+      compact: true,
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if ((!effect && kind != 'text') || (effect && effectBrush))
-            numericMenu(font: false),
+          if (!effect && kind != 'text') numericMenu(font: false),
           if (shape) ...[
-            toolbarButton(
+            propertyButton(
               'annotation-fill',
               '填充形状',
               Icons.square,
@@ -1153,14 +1258,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               active: filled,
             ),
             divider,
-            toolbarButton(
+            propertyButton(
               'annotation-tool-rectangle',
               '矩形',
               Icons.crop_square,
               () => selectTool('rectangle'),
               active: kind == 'rectangle',
             ),
-            toolbarButton(
+            propertyButton(
               'annotation-tool-ellipse',
               '椭圆',
               Icons.circle_outlined,
@@ -1170,14 +1275,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             divider,
           ],
           if (line) ...[
-            toolbarButton(
+            propertyButton(
               'annotation-tool-line',
               '直线 / 折线 · Tab 切换箭头',
               Icons.show_chart,
               () => selectTool('line'),
               active: kind == 'line',
             ),
-            toolbarButton(
+            propertyButton(
               'annotation-tool-arrow',
               '箭头 · Tab 切换直线',
               Icons.north_east,
@@ -1187,14 +1292,29 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             divider,
           ],
           if (effect) ...[
-            toolbarButton(
+            propertyButton(
+              'annotation-effect-brush',
+              '涂画',
+              Icons.circle,
+              () => setEffectMode(true),
+              active: effectBrush,
+            ),
+            propertyButton(
+              'annotation-effect-rectangle',
+              '框选',
+              Icons.rectangle,
+              () => setEffectMode(false),
+              active: !effectBrush,
+            ),
+            divider,
+            propertyButton(
               'annotation-tool-mosaic',
               '马赛克',
               Icons.grid_view,
               () => selectTool('mosaic'),
               active: kind == 'mosaic',
             ),
-            toolbarButton(
+            propertyButton(
               'annotation-tool-blur',
               '高斯模糊',
               Icons.blur_on,
@@ -1202,32 +1322,18 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               active: kind == 'blur',
             ),
             divider,
-            toolbarButton(
-              'annotation-effect-brush',
-              '涂画',
-              Icons.brush_outlined,
-              () => setEffectMode(true),
-              active: effectBrush,
-            ),
-            toolbarButton(
-              'annotation-effect-rectangle',
-              '框选',
-              Icons.crop_square,
-              () => setEffectMode(false),
-              active: !effectBrush,
-            ),
-            divider,
-            effectStrengthMenu(),
+            if (effectBrush) effectParameter(strength: false),
+            effectParameter(strength: true),
           ] else ...[
             if (kind == 'text') ...[
-              toolbarButton(
+              propertyButton(
                 'annotation-bold',
                 '粗体',
                 Icons.format_bold,
                 () => style(nextBold: !bold),
                 active: bold,
               ),
-              toolbarButton(
+              propertyButton(
                 'annotation-italic',
                 '斜体',
                 Icons.format_italic,
@@ -1236,7 +1342,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               ),
               numericMenu(font: true),
               if (selected != null && !textEditing)
-                toolbarButton(
+                propertyButton(
                   'annotation-edit-text',
                   '编辑文字',
                   Icons.edit_note,
@@ -1467,7 +1573,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             412.0 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
-          final totalHeight = hasProperties ? 76.0 : 36.0;
+          final totalHeight = hasProperties ? 72.0 : 36.0;
           final above =
               rect.bottom + totalHeight + 8 > constraints.maxHeight &&
               rect.top > totalHeight + 8;

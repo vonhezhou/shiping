@@ -35,6 +35,34 @@ Future<void> mouseDrag(
   await gesture.removePointer();
 }
 
+Future<void> setParameterSlider(
+  WidgetTester tester,
+  String key,
+  double value,
+) async {
+  final finder = find.byKey(ValueKey(key));
+  final slider = tester.widget<Slider>(finder);
+  final rect = tester.getRect(finder);
+  ui.Offset at(double v) => ui.Offset(
+    rect.left +
+        7 +
+        (rect.width - 14) * (v - slider.min) / (slider.max - slider.min),
+    rect.center.dy,
+  );
+  final gesture = mouse(tester);
+  await gesture.addPointer(location: at(slider.value));
+  await gesture.down(at(slider.value));
+  await tester.pump(const Duration(milliseconds: 30));
+  await gesture.moveTo(at((slider.value + value) / 2));
+  await tester.pump(const Duration(milliseconds: 30));
+  await gesture.moveTo(at(value));
+  await tester.pump(const Duration(milliseconds: 30));
+  await gesture.up();
+  await gesture.removePointer();
+  await tester.pumpAndSettle();
+  expect(tester.widget<Slider>(finder).value, closeTo(value, .5));
+}
+
 /// Only global shortcut registration is suppressed to avoid taking shortcuts
 /// away from the interactive app. Capture, events, storage and clipboard are real.
 class NativeDesktop extends MacDesktopService {
@@ -128,14 +156,18 @@ void main() {
                 display.frame.width * display.frame.height * 4,
               );
             }
+            final beforeKey = events.length;
             await driver.invokeMethod<void>('key', {
               'keyCode': 125,
             }); // Cocoa down arrow
             await waitFor(
               tester,
-              () => events.any((e) => e['type'] == 'nudge'),
+              () => events
+                  .skip(beforeKey)
+                  .any(
+                    (e) => e['type'] == 'nudge' && e['dx'] == 0 && e['dy'] == 1,
+                  ),
             );
-            expect(events.lastWhere((e) => e['type'] == 'nudge')['dy'], 1);
             await driver.invokeMethod<void>('key', {
               'keyCode': 53,
             }); // Cocoa Escape
@@ -322,15 +354,15 @@ void main() {
               tester,
               find.byKey(const ValueKey('annotation-effect-brush')),
             );
+            await setParameterSlider(tester, 'annotation-effect-width', 36);
             await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
-            await click(
-              tester,
-              find.byKey(const ValueKey('annotation-effect-strength')),
+            expect(
+              tester
+                  .getSize(find.byKey(const ValueKey('annotation-properties')))
+                  .height,
+              32,
             );
-            await click(
-              tester,
-              find.byKey(const ValueKey('annotation-effect-strength-5')),
-            );
+            await setParameterSlider(tester, 'annotation-effect-strength', 5);
             await mouseDrag(
               tester,
               tester.getCenter(canvas) - const Offset(100, 60),
