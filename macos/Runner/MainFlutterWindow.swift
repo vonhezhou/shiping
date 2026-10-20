@@ -186,6 +186,25 @@ private final class FrulerDesktopBridge: NSObject, FlutterStreamHandler {
           timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
           context:nil,eventNumber:1,clickCount:1,pressure:1) else {result(nil);return}
         panel.sendEvent(event);result(nil)
+      case "scroll":
+        guard let host=self.screenshotHost, let view=self.flutterController?.view,
+          let x=args["x"] as? Double, let y=args["y"] as? Double,
+          let delta=args["delta"] as? Int32,
+          let cg=CGEvent(scrollWheelEvent2Source:nil,units:.line,wheelCount:1,
+            wheel1:delta,wheel2:0,wheel3:0) else {
+          result(FlutterError(code:"test_no_scroll_target",message:"No screenshot scroll target",details:nil));return
+        }
+        host.makeKeyAndOrderFront(nil)
+        let point=view.convert(NSPoint(x:x,y:view.isFlipped ? y : view.bounds.height-y),to:nil)
+        // CGEvent-created NSEvents have no window; encode the target window
+        // point as their screen location before passing to the Cocoa responder.
+        cg.location=CGPoint(x:point.x,y:(NSScreen.screens.first?.frame.maxY ?? 0)-point.y)
+        cg.flags=[]
+        guard let event=NSEvent(cgEvent:cg) else {
+          result(FlutterError(code:"test_scroll_event",message:"Cannot create native scroll event",details:nil));return
+        }
+        self.flutterController?.scrollWheel(with:event)
+        result(nil)
       case "key":
         guard let panel=self.overlays.values.first(where:{$0.isKeyWindow}) ?? self.overlays.values.first,
           let code=args["keyCode"] as? UInt16,

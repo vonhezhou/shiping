@@ -108,7 +108,7 @@ class Annotation {
     return copyWith(points: points.map((p) => p + d).toList());
   }
 
-  Annotation resize(Rect next) {
+  Annotation resize(Rect next, {double fontScale = 1}) {
     final b = bounds;
     final sx = next.width / math.max(1, b.width);
     final sy = next.height / math.max(1, b.height);
@@ -122,7 +122,7 @@ class Annotation {
           )
           .toList(),
       fontSize: kind == AnnotationKind.text
-          ? (fontSize * math.min(sx, sy)).clamp(8, 200)
+          ? (fontSize * math.min(sx, sy)).clamp(8 * fontScale, 200 * fontScale)
           : fontSize,
     );
   }

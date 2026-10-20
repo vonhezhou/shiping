@@ -5,6 +5,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  for (final ratio in [1.0, 2.0, 3.0]) {
+    test('文字缩放的字号上下限按 pt ${ratio}x', () {
+      final a = Annotation(
+        kind: AnnotationKind.text,
+        points: const [Offset(0, 0), Offset(100, 100)],
+        fontSize: 24 * ratio,
+        text: 'text',
+      );
+      expect(
+        a.resize(const Rect.fromLTWH(0, 0, 1, 1), fontScale: ratio).fontSize,
+        8 * ratio,
+      );
+      expect(
+        a
+            .resize(const Rect.fromLTWH(0, 0, 10000, 10000), fontScale: ratio)
+            .fontSize,
+        200 * ratio,
+      );
+    });
+  }
+
   test('效果笔刷路径、强度和旧数据兼容，命中与框擦沿笔迹检测', () {
     final json = Annotation(
       kind: AnnotationKind.mosaic,

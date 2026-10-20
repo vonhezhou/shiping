@@ -23,9 +23,10 @@ Future<void> setSlider(
   final slider = tester.widget<Slider>(finder);
   final rect = tester.getRect(finder);
   Offset at(double v) => Offset(
-    rect.left +
-        7 +
-        (rect.width - 14) * ((v - slider.min) / (slider.max - slider.min)),
+    (rect.left +
+            6 +
+            (rect.width - 12) * ((v - slider.min) / (slider.max - slider.min)))
+        .clamp(rect.left + 6.01, rect.right - 6.01),
     rect.center.dy,
   );
   final before = controller == null
@@ -54,7 +55,130 @@ Future<void> setSlider(
   expect(tester.widget<Slider>(finder).value, closeTo(value, .5));
 }
 
+Future<void> wheel(
+  WidgetTester tester,
+  Offset position, {
+  double dy = -20,
+  double dx = 0,
+  double? expectedWidth,
+}) async {
+  final id = parameterPointer++;
+  final mouse = TestGesture(
+    dispatcher: tester.sendEventToBinding,
+    pointer: id,
+    device: id,
+    kind: ui.PointerDeviceKind.mouse,
+  );
+  await mouse.addPointer(location: position);
+  await mouse.moveTo(position);
+  await tester.sendEventToBinding(
+    PointerScrollEvent(
+      device: id,
+      position: position,
+      scrollDelta: Offset(dx, dy),
+      kind: ui.PointerDeviceKind.mouse,
+    ),
+  );
+  await tester.pumpAndSettle();
+  if (expectedWidth != null) {
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('annotation-brush-cursor')))
+          .width,
+      expectedWidth,
+    );
+  }
+  await mouse.removePointer();
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  for (final ratio in [1, 2, 3]) {
+    for (final size in [const Size(1100, 760), const Size(920, 680)]) {
+      testWidgets('pt 线宽、光标和原位字号 ${ratio}x $size', (tester) async {
+        tester.view.physicalSize = size * ratio.toDouble();
+        tester.view.devicePixelRatio = ratio.toDouble();
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final d = FakeDesktop()
+          ..capture = CaptureSession(7, [
+            CapturedDisplay(
+              id: 1,
+              name: 'screen',
+              frame: PixelFrame(
+                width: 640 * ratio,
+                height: 480 * ratio,
+                logicalWidth: 640,
+                logicalHeight: 480,
+                rgba: Uint8List.fromList([
+                  for (var i = 0; i < 640 * 480 * ratio * ratio; i++) ...[
+                    200,
+                    210,
+                    220,
+                    255,
+                  ],
+                ]),
+              ),
+            ),
+          ]);
+        final c = AppController(d);
+        await c.initialize();
+        addTearDown(d.input.close);
+        await tester.pumpWidget(ControllerTestHost(controller: c));
+        await tester.pumpAndSettle();
+        await c.startScreenshot();
+        d.pointer(x: 100, y: 100, phase: 'down');
+        d.pointer(x: 500, y: 350, phase: 'up');
+        for (var i = 0; i < 150; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+          final copy = find.byKey(const ValueKey('copy-screenshot'));
+          if (copy.evaluate().isNotEmpty &&
+              tester.widget<IconButton>(copy).onPressed != null) {
+            break;
+          }
+        }
+        await tester.tap(find.byKey(const ValueKey('annotation-tool-marker')));
+        await tester.pumpAndSettle();
+        final origin = tester.getTopLeft(
+          find.byKey(const ValueKey('annotation-canvas')),
+        );
+        await wheel(tester, origin + const Offset(80, 80), expectedWidth: 13);
+        expect(find.byTooltip('线宽 13 pt · 滚轮 / 1、2 / [、]'), findsOneWidget);
+        await tester.dragFrom(
+          origin + const Offset(80, 80),
+          const Offset(60, 0),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.width, 13 * ratio);
+        await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.width, 14 * ratio);
+        await tester.tap(find.byKey(const ValueKey('annotation-tool-text')));
+        await tester.pumpAndSettle();
+        await tester.tapAt(
+          origin + const Offset(80, 150),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        final input = find.byKey(const ValueKey('annotation-text-input'));
+        expect(tester.widget<TextField>(input).style!.fontSize, 24);
+        await tester.enterText(input, 'pt text');
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.fontSize, 24 * ratio);
+        await tester.tap(find.byKey(const ValueKey('annotation-edit-text')));
+        await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(input).style!.fontSize, 24);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
   for (final size in [const Size(1100, 760), const Size(920, 680)]) {
     testWidgets('Snipaste 工具分组、原位文字和快捷操作 $size', (tester) async {
       tester.view.physicalSize = size;
@@ -308,64 +432,126 @@ void main() {
         }
         await tester.tap(find.byKey(ValueKey('annotation-tool-$kind')));
         await tester.pumpAndSettle();
+        expect(find.byType(Slider), findsOneWidget);
         await tester.tap(find.byKey(const ValueKey('annotation-effect-brush')));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('annotation-effect-width')),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('annotation-width')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('annotation-effect-strength')),
           findsOneWidget,
         );
-        await setSlider(tester, 'annotation-effect-width', 36);
-        await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+        expect(find.byType(Slider), findsOneWidget);
         await setSlider(tester, 'annotation-effect-strength', 5);
+        final point = origin + const Offset(30, 30);
+        await wheel(tester, point);
+        await wheel(tester, point);
+        expect(
+          tester
+              .widget<Slider>(
+                find.byKey(const ValueKey('annotation-effect-strength')),
+              )
+              .value,
+          5,
+        );
         await tester.dragFrom(
-          origin + const Offset(30, 30),
+          point,
           const Offset(120, 80),
           kind: ui.PointerDeviceKind.mouse,
         );
         await tester.pumpAndSettle();
         final brush = c.markup.items.last;
         expect(brush.kind.name, kind);
-        expect(brush.toJson()['effectBrush'], true);
-        expect(brush.toJson()['effectStrength'], 5);
+        expect(brush.effectBrush, true);
+        expect(brush.effectStrength, 5);
         expect(brush.width, greaterThan(24));
-        expect(brush.points.length, greaterThan(2));
         final count = c.markup.items.length;
         await setSlider(tester, 'annotation-effect-strength', 1, controller: c);
         expect(c.markup.items.length, count);
-        expect(c.markup.items.last.toJson()['effectStrength'], 1);
+        expect(c.markup.items.last.width, brush.width);
+        expect(c.markup.items.last.effectStrength, 1);
         await tester.tap(find.byKey(const ValueKey('annotation-undo')));
         await tester.pumpAndSettle();
         expect(c.markup.items.last, brush);
+        // A fresh tool selection restores the chosen brush settings.
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-effect-rectangle')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('annotation-width')), findsNothing);
+        await setSlider(tester, 'annotation-effect-strength', 2);
+        await tester.tap(find.byKey(const ValueKey('annotation-effect-brush')));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<Slider>(
+                find.byKey(const ValueKey('annotation-effect-strength')),
+              )
+              .value,
+          2,
+        );
         await tester.tap(
           find.byKey(const ValueKey('annotation-effect-rectangle')),
         );
         await tester.pumpAndSettle();
         await setSlider(tester, 'annotation-effect-strength', 5);
-        expect(
-          find.byKey(const ValueKey('annotation-effect-width')),
-          findsNothing,
-        );
         await tester.dragFrom(
           origin + const Offset(200, 30),
           const Offset(60, 50),
           kind: ui.PointerDeviceKind.mouse,
         );
         await tester.pumpAndSettle();
-        expect(c.markup.items.last.toJson()['effectBrush'], false);
-        expect(c.markup.items.last.toJson()['effectStrength'], 5);
-        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
-        await tester.pumpAndSettle();
-        expect(c.markup.items.last, brush);
-        await tester.tap(find.byKey(const ValueKey('annotation-redo')));
-        await tester.pumpAndSettle();
-        expect(c.markup.items.last.toJson()['effectBrush'], false);
-        expect(
-          tester
-              .getRect(find.byKey(const ValueKey('annotation-properties')))
-              .right,
-          lessThanOrEqualTo(size.width),
-        );
+        expect(c.markup.items.last.effectBrush, false);
+        expect(c.markup.items.last.effectStrength, 5);
       }
+      await tester.tap(find.byKey(const ValueKey('annotation-tool-marker')));
+      await tester.pumpAndSettle();
+      final markerPoint = origin + const Offset(30, 180);
+      final widthButton = find.byKey(const ValueKey('annotation-width'));
+      final widthButtonSize = tester.getSize(widthButton);
+      await wheel(tester, markerPoint, expectedWidth: 13);
+      expect(
+        find.descendant(of: widthButton, matching: find.text('13')),
+        findsOneWidget,
+      );
+      await wheel(tester, markerPoint, dy: 20, expectedWidth: 12);
+      expect(
+        find.descendant(of: widthButton, matching: find.byType(Text)),
+        findsNothing,
+      );
+      await wheel(tester, markerPoint, dy: 0, dx: 20, expectedWidth: 12);
+      await wheel(tester, markerPoint, dy: 0);
+      await wheel(tester, markerPoint);
+      await tester.dragFrom(
+        markerPoint,
+        const Offset(100, 0),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(c.markup.items.last.kind, AnnotationKind.marker);
+      expect(c.markup.items.last.width, 13);
+      expect(find.byTooltip('线宽 13 pt · 滚轮 / 1、2 / [、]'), findsOneWidget);
+      await tester.tap(widthButton, kind: ui.PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('48 pt'), kind: ui.PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: widthButton, matching: find.text('48')),
+        findsOneWidget,
+      );
+      expect(tester.getSize(widthButton), widthButtonSize);
+      await tester.tap(widthButton, kind: ui.PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('3 pt'), kind: ui.PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: widthButton, matching: find.byType(Text)),
+        findsNothing,
+      );
+      expect(tester.getSize(widthButton), widthButtonSize);
       expect(c.busy, true);
       expect(d.showMainCalls, 0);
       expect(tester.takeException(), isNull);

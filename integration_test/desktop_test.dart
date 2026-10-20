@@ -44,9 +44,10 @@ Future<void> setParameterSlider(
   final slider = tester.widget<Slider>(finder);
   final rect = tester.getRect(finder);
   ui.Offset at(double v) => ui.Offset(
-    rect.left +
-        7 +
-        (rect.width - 14) * (v - slider.min) / (slider.max - slider.min),
+    (rect.left +
+            6 +
+            (rect.width - 12) * (v - slider.min) / (slider.max - slider.min))
+        .clamp(rect.left + 6.01, rect.right - 6.01),
     rect.center.dy,
   );
   final gesture = mouse(tester);
@@ -61,6 +62,32 @@ Future<void> setParameterSlider(
   await gesture.removePointer();
   await tester.pumpAndSettle();
   expect(tester.widget<Slider>(finder).value, closeTo(value, .5));
+}
+
+Future<void> nativeWheel(
+  WidgetTester tester,
+  Offset position,
+  int delta,
+  int expectedWidth,
+) async {
+  final old = tester.binding.shouldPropagateDevicePointerEvents;
+  tester.binding.shouldPropagateDevicePointerEvents = true;
+  try {
+    await driver.invokeMethod<void>('scroll', {
+      'x': position.dx,
+      'y': position.dy,
+      'delta': delta,
+    });
+    await waitFor(
+      tester,
+      () => find
+          .byTooltip('线宽 $expectedWidth pt · 滚轮 / 1、2 / [、]')
+          .evaluate()
+          .isNotEmpty,
+    );
+  } finally {
+    tester.binding.shouldPropagateDevicePointerEvents = old;
+  }
 }
 
 /// Only global shortcut registration is suppressed to avoid taking shortcuts
@@ -348,21 +375,71 @@ void main() {
           if (kind == AnnotationKind.rectangle) {
             expect(c.markup.items.last.filled, true);
           }
+          if (kind == AnnotationKind.marker) {
+            await nativeWheel(tester, tester.getCenter(canvas), 1, 13);
+            expect(c.markup.items.last.width / c.screenshotScaleX, 13);
+            expect(
+              find.descendant(
+                of: find.byKey(const ValueKey('annotation-width')),
+                matching: find.text('13'),
+              ),
+              findsOneWidget,
+            );
+            await nativeWheel(tester, tester.getCenter(canvas), -1, 12);
+            expect(c.markup.items.last.width / c.screenshotScaleX, 12);
+            expect(
+              find.descendant(
+                of: find.byKey(const ValueKey('annotation-width')),
+                matching: find.byType(Text),
+              ),
+              findsNothing,
+            );
+          }
           if ([AnnotationKind.mosaic, AnnotationKind.blur].contains(kind)) {
             expect(c.markup.items.last.effectBrush, false);
+            expect(
+              find.byKey(const ValueKey('annotation-effect-width')),
+              findsNothing,
+            );
+            expect(find.byType(Slider), findsOneWidget);
+            await setParameterSlider(tester, 'annotation-effect-strength', 5);
             await click(
               tester,
               find.byKey(const ValueKey('annotation-effect-brush')),
             );
-            await setParameterSlider(tester, 'annotation-effect-width', 36);
-            await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+            expect(
+              find.byKey(const ValueKey('annotation-effect-width')),
+              findsNothing,
+            );
+            expect(
+              find.byKey(const ValueKey('annotation-width')),
+              findsOneWidget,
+            );
+            await nativeWheel(
+              tester,
+              tester.getCenter(canvas),
+              1,
+              kind == AnnotationKind.mosaic ? 25 : 26,
+            );
             expect(
               tester
                   .getSize(find.byKey(const ValueKey('annotation-properties')))
                   .height,
               32,
             );
-            await setParameterSlider(tester, 'annotation-effect-strength', 5);
+            expect(
+              find.byKey(const ValueKey('annotation-effect-strength')),
+              findsOneWidget,
+            );
+            expect(find.byType(Slider), findsOneWidget);
+            expect(
+              tester
+                  .widget<Slider>(
+                    find.byKey(const ValueKey('annotation-effect-strength')),
+                  )
+                  .value,
+              5,
+            );
             await mouseDrag(
               tester,
               tester.getCenter(canvas) - const Offset(100, 60),
@@ -373,7 +450,7 @@ void main() {
             expect(brush.kind, kind);
             expect(brush.effectBrush, true);
             expect(brush.effectStrength, 5);
-            expect(brush.width, greaterThan(24));
+            expect(brush.width / c.screenshotScaleX, greaterThan(24));
             expect(brush.points.length, greaterThan(2));
             await click(tester, find.byKey(const ValueKey('annotation-undo')));
             expect(c.markup.items.last.effectBrush, false);
@@ -409,6 +486,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.markup.items.length, 11);
         expect(c.markup.items.last.text, '原位标注\n第二行');
+        expect(c.markup.items.last.fontSize / c.screenshotScaleY, 24);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items.length, 10);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));
@@ -507,7 +585,14 @@ void main() {
             'x': 180.0,
             'y': 240.0,
           });
-          await waitFor(tester, () => !c.busy);
+          try {
+            await waitFor(tester, () => !c.busy);
+          } catch (_) {
+            debugPrint(
+              'picker completion: busy=${c.busy}, error=${c.error}, colors=${c.colors.length}, native=${await driver.invokeMethod<Object?>("status")}',
+            );
+            rethrow;
+          }
           expect(
             (await driver.invokeMapMethod<String, Object?>(
               'status',

@@ -38,7 +38,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         })
       >{};
   int color = 0xFFFF0000;
+  // Toolbar values are logical points; annotations use bitmap pixels.
   double width = 3, fontSize = 24;
+  double get pixelWidth => width * c.screenshotScaleX;
+  double get pixelFontSize => fontSize * c.screenshotScaleY;
   int? selected, pointerId;
   Annotation? preview, original;
   Offset? start, resizeAnchor, eraserEnd, hoverPosition;
@@ -156,8 +159,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     kind: kind,
     points: points,
     color: color,
-    width: width,
-    fontSize: fontSize,
+    width: pixelWidth,
+    fontSize: pixelFontSize,
     text: text,
     filled: filled,
     bold: bold,
@@ -277,8 +280,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       final next = List<Annotation>.of(items);
       next[selected!] = next[selected!].copyWith(
         color: nextColor,
-        width: nextWidth,
-        fontSize: nextFont,
+        width: nextWidth == null ? null : nextWidth * c.screenshotScaleX,
+        fontSize: nextFont == null ? null : nextFont * c.screenshotScaleY,
         filled: nextFilled,
         bold: nextBold,
         italic: nextItalic,
@@ -292,12 +295,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   void beginText(Rect rect, {int? index}) {
     finishText();
     final existing = index == null ? null : items[index];
-    final minWidth = math.min(80.0, imageSize.width);
-    final w = rect.width < 12 ? math.min(320.0, imageSize.width) : rect.width;
+    final minWidth = math.min(80.0 * c.screenshotScaleX, imageSize.width);
+    final w = rect.width < 12 * c.screenshotScaleX
+        ? math.min(320.0 * c.screenshotScaleX, imageSize.width)
+        : rect.width;
     final left = rect.left.clamp(0.0, imageSize.width - minWidth);
     final top = rect.top.clamp(
       0.0,
-      math.max(0.0, imageSize.height - fontSize * 1.4),
+      math.max(0.0, imageSize.height - pixelFontSize * 1.4),
     );
     textInput.text = existing?.text ?? '';
     setState(() {
@@ -322,8 +327,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     if (cancel && index != null && index < items.length) {
       final old = items[index];
       color = old.color;
-      width = old.width;
-      fontSize = old.fontSize;
+      width = old.width / c.screenshotScaleX;
+      fontSize = old.fontSize / c.screenshotScaleY;
       filled = old.filled;
       bold = old.bold;
       italic = old.italic;
@@ -338,7 +343,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         text: TextSpan(
           text: value,
           style: TextStyle(
-            fontSize: fontSize,
+            fontSize: pixelFontSize,
             fontFamily: AnnotationRenderer.fontFamily,
             height: 1.2,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
@@ -350,8 +355,20 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       final b = Rect.fromLTWH(
         rect.left,
         rect.top,
-        math.min(rect.width, math.max(24.0, painter.width + 2)),
-        math.min(rect.height, math.max(fontSize * 1.3, painter.height + 2)),
+        math.min(
+          rect.width,
+          math.max(
+            24.0 * c.screenshotScaleX,
+            painter.width + 2 * c.screenshotScaleX,
+          ),
+        ),
+        math.min(
+          rect.height,
+          math.max(
+            pixelFontSize * 1.3,
+            painter.height + 2 * c.screenshotScaleY,
+          ),
+        ),
       );
       painter.dispose();
       final annotation = makeAnnotation(AnnotationKind.text, [
@@ -380,8 +397,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     }
     final a = items[selected!];
     color = a.color;
-    width = a.width;
-    fontSize = a.fontSize;
+    width = a.width / c.screenshotScaleX;
+    fontSize = a.fontSize / c.screenshotScaleY;
     bold = a.bold;
     italic = a.italic;
     beginText(a.bounds, index: selected);
@@ -572,8 +589,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       if (selected != null) {
         original = items[selected!];
         color = original!.color;
-        width = original!.width;
-        fontSize = original!.fontSize;
+        width = original!.width / c.screenshotScaleX;
+        fontSize = original!.fontSize / c.screenshotScaleY;
         filled = original!.filled;
         bold = original!.bold;
         italic = original!.italic;
@@ -602,7 +619,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     if (original != null) {
       if (resizeAnchor != null) {
         final b = Rect.fromPoints(resizeAnchor!, p);
-        if (b.width >= 1 && b.height >= 1) preview = original!.resize(b);
+        if (b.width >= 1 && b.height >= 1) {
+          preview = original!.resize(b, fontScale: c.screenshotScaleY);
+        }
       } else {
         preview = original!.move(p - start!, imageSize);
       }
@@ -829,7 +848,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             imageSize.height,
           ),
         );
-        next[selected!] = a.resize(r);
+        next[selected!] = a.resize(r, fontScale: c.screenshotScaleY);
       } else {
         next[selected!] = a.move(delta, imageSize);
       }
@@ -958,7 +977,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   bool get hasProperties => !['select', 'eraser'].contains(propertyKind);
 
   Widget numericMenu({required bool font}) => Tooltip(
-    message: font ? '字号' : '线宽 · 滚轮 / 1、2 / [、]',
+    message: font ? '字号' : '线宽 ${width.round()} pt · 滚轮 / 1、2 / [、]',
     child: PopupMenuButton<double>(
       key: ValueKey(font ? 'annotation-font' : 'annotation-width'),
       padding: EdgeInsets.zero,
@@ -990,7 +1009,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                         const SizedBox(width: 8),
                       ],
                       Text(
-                        '${v.toStringAsFixed(0)}${font ? "" : " px"}',
+                        '${v.toStringAsFixed(0)} pt',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -1034,9 +1053,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                       ],
                     ),
                   )
+                : width > 12
+                ? Text(
+                    width.toStringAsFixed(0),
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  )
                 : Container(
-                    width: math.min(14, width + 2),
-                    height: math.min(14, width + 2),
+                    width: width + 2,
+                    height: width + 2,
                     decoration: const BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
@@ -1148,7 +1172,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       }
       if (original != null) {
         preview = original!.copyWith(
-          width: strength ? null : width,
+          width: strength ? null : pixelWidth,
           effectStrength: strength ? effectStrength : null,
         );
       }
@@ -1169,7 +1193,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         : '画笔宽度';
     final value = strength ? effectStrength.toDouble() : width;
     return Tooltip(
-      message: '$label · ${value.round()}${strength ? "/5" : " px"}',
+      message: '$label · ${value.round()}${strength ? "/5" : " pt"}',
       child: SizedBox(
         height: 28,
         child: Row(
@@ -1236,6 +1260,44 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     VoidCallback? action, {
     bool active = false,
   }) => toolbarButton(id, label, icon, action, active: active, compact: true);
+
+  bool get showBrushCursor =>
+      hoverPosition != null &&
+      editable &&
+      canvasCursor == SystemMouseCursors.precise &&
+      (tool == 'marker' || (['mosaic', 'blur'].contains(tool) && effectBrush));
+
+  Widget brushCursor(Rect rect) => Positioned.fromRect(
+    rect: rect,
+    child: IgnorePointer(
+      child: ClipRect(
+        child: Stack(
+          children: [
+            Positioned(
+              left:
+                  hoverPosition!.dx / c.screenshotScaleX -
+                  math.max(3.0, width) / 2,
+              top:
+                  hoverPosition!.dy / c.screenshotScaleY -
+                  math.max(3.0, width) / 2,
+              child: Container(
+                key: const ValueKey('annotation-brush-cursor'),
+                width: math.max(3.0, width),
+                height: math.max(3.0, width),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black54, spreadRadius: 1),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Widget propertyBar() {
     final kind = propertyKind;
@@ -1322,7 +1384,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               active: kind == 'blur',
             ),
             divider,
-            if (effectBrush) effectParameter(strength: false),
+            if (effectBrush) numericMenu(font: false),
             effectParameter(strength: true),
           ] else ...[
             if (kind == 'text') ...[
@@ -1516,7 +1578,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           cursorColor: Color(color),
           style: TextStyle(
             color: Color(color),
-            fontSize: fontSize / c.screenshotScaleY,
+            fontSize: fontSize,
             fontFamily: AnnotationRenderer.fontFamily,
             height: 1.2,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
@@ -1613,6 +1675,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                         onPointerCancel: (_) => cancelGesture(),
                         onPointerSignal: (event) {
                           if (event is PointerScrollEvent &&
+                              event.scrollDelta.dy != 0 &&
                               editable &&
                               !textEditing) {
                             GestureBinding.instance.pointerSignalResolver
@@ -1695,6 +1758,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 selectionHandle('sw', activeRect.bottomLeft),
                 selectionHandle('w', activeRect.centerLeft),
               ],
+              if (showBrushCursor) brushCursor(rect),
               if (textEditing) inlineText(rect),
               if (toolbarVisible && selectionDrag == null)
                 Positioned(
