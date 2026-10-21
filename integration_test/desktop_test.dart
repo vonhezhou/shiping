@@ -1331,6 +1331,22 @@ void main() {
         );
         final samplingMouse = mouse(tester);
         await samplingMouse.addPointer(location: const Offset(100, 220));
+        await samplingMouse.moveTo(const Offset(20, 220));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('screenshot-magnifier')),
+          findsNothing,
+        );
+        await samplingMouse.moveTo(const Offset(40, 220));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('screenshot-magnifier')),
+          findsOneWidget,
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('screenshot-color-swatch'))),
+          const Size(12, 12),
+        );
         await samplingMouse.moveTo(const Offset(101, 221));
         await tester.pump();
         expect(

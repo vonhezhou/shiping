@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
@@ -67,10 +68,89 @@ void main() {
         await mouse.addPointer(location: const Offset(30, 30));
         await mouse.moveTo(const Offset(40, 40));
         await tester.pump();
+        expect(byKey('screenshot-picker-feedback'), findsNothing);
+        await mouse.moveTo(const Offset(300, 340));
+        await tester.pump();
         expect(byKey('screenshot-picker-feedback'), findsOneWidget);
         expect(byKey('screenshot-magnifier'), findsOneWidget);
-        expect(find.textContaining('X: 40'), findsOneWidget);
+        expect(find.textContaining('X: 300'), findsOneWidget);
+        expect(
+          tester.getSize(byKey('screenshot-color-swatch')),
+          const Size(12, 12),
+        );
+        expect(
+          tester.getSize(byKey('screenshot-picker-feedback')).width,
+          lessThan(240),
+        );
+        final stack = tester.widget<Stack>(
+          find
+              .ancestor(
+                of: byKey('screenshot-picker-feedback'),
+                matching: find.byType(Stack),
+              )
+              .first,
+        );
+        // 放大镜和工具条发生重叠时，最后绘制放大镜。
+        expect(
+          find.descendant(
+            of: find.byWidget(stack.children.last),
+            matching: byKey('screenshot-picker-feedback'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .getRect(byKey('screenshot-picker-feedback'))
+              .overlaps(tester.getRect(byKey('annotation-toolbar'))),
+          true,
+        );
+        for (final edge in [
+          const Offset(100, 220),
+          const Offset(500, 220),
+          const Offset(300, 100),
+          const Offset(300, 350),
+        ]) {
+          await mouse.moveTo(edge);
+          await tester.pump();
+          expect(byKey('screenshot-picker-feedback'), findsOneWidget);
+          final boundary = tester.renderObject<RenderRepaintBoundary>(
+            byKey('screenshot-magnifier'),
+          );
+          final pixels = await tester.runAsync(() async {
+            final image = await boundary.toImage();
+            try {
+              return (await image.toByteData())!.buffer.asUint8List();
+            } finally {
+              image.dispose();
+            }
+          });
+          var bluePixels = 0;
+          for (var i = 0; i < pixels!.length; i += 4) {
+            if (pixels[i] == 38 &&
+                pixels[i + 1] == 131 &&
+                pixels[i + 2] == 255) {
+              bluePixels++;
+            }
+          }
+          expect(
+            c.screenshotColorAt(edge.dx, edge.dy),
+            const RgbColor(200, 200, 200),
+          );
+          expect(bluePixels, greaterThan(30), reason: '放大画面应显示选区边界 $edge');
+        }
+        await mouse.moveTo(const Offset(501, 220));
+        await tester.pump();
+        expect(byKey('screenshot-picker-feedback'), findsNothing);
+
         expect(find.textContaining('400 × 250 px'), findsWidgets);
+        await mouse.down(const Offset(500, 225));
+        await mouse.moveTo(const Offset(510, 225));
+        await tester.pump();
+        expect(find.textContaining('410 × 250 px'), findsWidgets);
+        expect(byKey('screenshot-magnifier'), findsOneWidget);
+        await mouse.cancel();
+        await tester.pump();
+        expect(c.screenshotSelection!.width, 400);
         await click('annotation-group-shape');
         expect(byKey('screenshot-picker-feedback'), findsNothing);
         final rectangle = Annotation(

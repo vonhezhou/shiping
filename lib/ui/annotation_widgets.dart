@@ -1722,7 +1722,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     );
   }
 
-  // 未选择标注工具时，取色信息始终跟随鼠标，选区仍可拖动和缩放。
+  // 未选择标注工具时，在选区内及边界显示取色信息，选区仍可拖动和缩放。
   bool get sampling => tool == 'select' && c.canAdjustScreenshotSelection;
 
   Widget pickerFeedback(BoxConstraints constraints) {
@@ -1731,7 +1731,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     final source = c.imageDocument!.frame.source;
     final pixel = source.logicalToPixel(p.dx, p.dy);
     final selection = selectionPreview ?? c.screenshotSelection!;
-    const panelWidth = 264.0, panelHeight = 206.0;
+    const panelWidth = 220.0, panelHeight = 224.0;
     final x = p.dx + 24 + panelWidth > constraints.maxWidth
         ? p.dx - panelWidth - 24
         : p.dx + 24;
@@ -1750,44 +1750,63 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             color: toolbarSurface,
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  SizedBox(
-                    key: const ValueKey('screenshot-magnifier'),
-                    width: 99,
-                    height: 99,
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(
+              fontSize: 11,
+              height: 1.45,
+              fontFamily: 'monospace',
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RepaintBoundary(
+                  key: const ValueKey('screenshot-magnifier'),
+                  child: SizedBox(
+                    width: 200,
+                    height: 112,
                     child: CustomPaint(
                       painter: _CaptureLoupePainter(
                         image,
                         Offset(pixel.x.toDouble(), pixel.y.toDouble()),
                         c.zoom.toDouble() / c.screenshotScaleX,
+                        Rect.fromLTRB(
+                          selection.left.toDouble(),
+                          selection.top.toDouble(),
+                          selection.right.toDouble(),
+                          selection.bottom.toDouble(),
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Container(
-                      height: 99,
-                      color: Color.fromARGB(
-                        255,
-                        sample?.r ?? 0,
-                        sample?.g ?? 0,
-                        sample?.b ?? 0,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Container(
+                      key: const ValueKey('screenshot-color-swatch'),
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Color.fromARGB(
+                          255,
+                          sample?.r ?? 0,
+                          sample?.g ?? 0,
+                          sample?.b ?? 0,
+                        ),
+                        border: Border.all(color: Colors.white54, width: .5),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text('${sample?.hex ?? ''} · ${sample?.rgb ?? ''}'),
-              Text('X: ${pixel.x}  Y: ${pixel.y}'),
-              Text('区域: ${selection.width} × ${selection.height} px'),
-              const Text('C 复制颜色 · M 复制尺寸', style: TextStyle(fontSize: 11)),
-            ],
+                    const SizedBox(width: 6),
+                    Text(sample?.hex ?? ''),
+                  ],
+                ),
+                Text(sample?.rgb ?? ''),
+                Text('X: ${pixel.x}  Y: ${pixel.y}'),
+                Text('区域: ${selection.width} × ${selection.height} px'),
+                const Text('C 复制颜色 · M 复制尺寸'),
+              ],
+            ),
           ),
         ),
       ),
@@ -1982,8 +2001,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   ],
                   if (showBrushCursor) brushCursor(rect),
                   if (textEditing) inlineText(rect),
-                  if (sampling && screenPointer != null)
-                    pickerFeedback(constraints),
                   if (toolbarVisible && selectionDrag == null)
                     Positioned(
                       left: left.toDouble(),
@@ -1994,6 +2011,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                         child: toolbar(above: above),
                       ),
                     ),
+                  // 放在工具条之后绘制；IgnorePointer 保留底下按钮的交互。
+                  if (sampling &&
+                      screenPointer != null &&
+                      screenPointer!.dx >= activeRect.left &&
+                      screenPointer!.dx <= activeRect.right &&
+                      screenPointer!.dy >= activeRect.top &&
+                      screenPointer!.dy <= activeRect.bottom)
+                    pickerFeedback(constraints),
                 ],
               ),
             ),
@@ -2005,10 +2030,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
 }
 
 class _CaptureLoupePainter extends CustomPainter {
-  const _CaptureLoupePainter(this.image, this.pixel, this.cell);
+  const _CaptureLoupePainter(this.image, this.pixel, this.cell, this.selection);
   final ui.Image? image;
   final Offset pixel;
   final double cell;
+  final Rect selection;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2028,6 +2054,29 @@ class _CaptureLoupePainter extends CustomPainter {
         Offset.zero,
         Paint()..filterQuality = FilterQuality.none,
       );
+      // 使用原图像素坐标叠加选区遮罩和边界，不把辅助线混入取色结果。
+      final visible = Rect.fromLTWH(
+        0,
+        0,
+        image!.width.toDouble(),
+        image!.height.toDouble(),
+      );
+      canvas.drawPath(
+        Path.combine(
+          PathOperation.difference,
+          Path()..addRect(visible),
+          Path()..addRect(selection),
+        ),
+        Paint()..color = Colors.black.withValues(alpha: .45),
+      );
+      canvas.drawRect(
+        selection,
+        Paint()
+          ..color = const Color(0xFF2683FF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1 / cell
+          ..isAntiAlias = false,
+      );
       canvas.restore();
     }
     canvas.drawRect(
@@ -2042,7 +2091,10 @@ class _CaptureLoupePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CaptureLoupePainter old) =>
-      old.image != image || old.pixel != pixel || old.cell != cell;
+      old.image != image ||
+      old.pixel != pixel ||
+      old.cell != cell ||
+      old.selection != selection;
 }
 
 class _SelectionShadePainter extends CustomPainter {

@@ -1450,8 +1450,8 @@ private final class CaptureOverlayView: NSView {
 
   private func drawLoupe() {
     let sampling = tool == "picker" || tool == "screenshot"
-    let width: CGFloat = sampling ? 380 : 300
-    let height: CGFloat = sampling ? 208 : 64
+    let width: CGFloat = sampling ? 220 : 300
+    let height: CGFloat = sampling ? (tool == "picker" ? 278 : 250) : 64
     var x = pointer.x + 26
     var y = pointer.y + 26
     if x + width > bounds.width - 12 { x = pointer.x - width - 26 }
@@ -1463,11 +1463,11 @@ private final class CaptureOverlayView: NSView {
       let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
       let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
       let cell = CGFloat(zoom) / (window?.backingScaleFactor ?? 1)
-      let radius = Int(ceil(99 / cell / 2)) + 1
+      let radius = Int(ceil(192 / cell / 2)) + 1
       let minX = max(0, px - radius), minY = max(0, py - radius)
       let maxX = min(snapshot.width, px + radius + 1), maxY = min(snapshot.height, py + radius + 1)
       if let crop = snapshot.image.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)) {
-        let area = NSRect(x: box.minX + 14, y: box.minY + 12, width: 99, height: 99)
+        let area = NSRect(x: box.minX + 14, y: box.minY + 12, width: 192, height: 112)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: area).addClip()
         NSColor.black.setFill(); area.fill()
@@ -1477,21 +1477,47 @@ private final class CaptureOverlayView: NSView {
           width: CGFloat(maxX - minX) * cell, height: CGFloat(maxY - minY) * cell)
         NSImage(cgImage: crop, size: imageRect.size).draw(in: imageRect, from: .zero,
           operation: .copy, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.none])
+        if tool == "screenshot", let rect = measuredRect {
+          let sx = CGFloat(snapshot.width) / bounds.width, sy = CGFloat(snapshot.height) / bounds.height
+          let enlarged = NSRect(x: area.midX + (rect.minX * sx - CGFloat(px) - 0.5) * cell,
+            y: area.midY + (rect.minY * sy - CGFloat(py) - 0.5) * cell,
+            width: rect.width * sx * cell, height: rect.height * sy * cell)
+          accent.setStroke()
+          let edge = NSBezierPath(rect: enlarged); edge.lineWidth = 1; edge.stroke()
+        }
         accent.setStroke()
         let center = NSBezierPath(rect: NSRect(x: area.midX - cell / 2, y: area.midY - cell / 2, width: cell, height: cell))
         center.lineWidth = 1.5; center.stroke()
         NSGraphicsContext.restoreGraphicsState()
       }
-      selectedColor.setFill()
-      NSBezierPath(roundedRect: NSRect(x: box.minX + 130, y: box.minY + 12, width: width - 146, height: 99), xRadius: 7, yRadius: 7).fill()
     }
-    let labelY = sampling ? box.minY + 122 : box.minY + 12
-    (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
-      .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
+    let labelY = sampling ? box.minY + 134 : box.minY + 12
+    if sampling {
+      selectedColor.setFill()
+      NSRect(x: box.minX + 14, y: labelY + 2, width: 12, height: 12).fill()
+      NSColor.white.withAlphaComponent(0.5).setStroke()
+      NSBezierPath(rect: NSRect(x: box.minX + 14, y: labelY + 2, width: 12, height: 12)).stroke()
+      let rgb = selectedColor.usingColorSpace(.sRGB) ?? selectedColor
+      let r = Int((rgb.redComponent * 255).rounded()), g = Int((rgb.greenComponent * 255).rounded()), b = Int((rgb.blueComponent * 255).rounded())
+      let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white]
+      (String(format: "#%02X%02X%02X", r, g, b) as NSString).draw(at: NSPoint(x: box.minX + 32, y: labelY), withAttributes: attrs)
+      let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
+      let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
+      var details = "RGB: \(r), \(g), \(b)\nX: \(px)  Y: \(py)"
+      if tool == "screenshot", let rect = measuredRect {
+        let w = Int((rect.width / bounds.width * Double(snapshot.width)).rounded())
+        let h = Int((rect.height / bounds.height * Double(snapshot.height)).rounded())
+        details += "\n区域: \(w) × \(h) px"
+      }
+      (details as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 18), withAttributes: attrs)
+    } else {
+      (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
+        .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
+    }
     let hint = tool == "rectangle" ? (anchored ? "松手保留 · 方向键微调" : "拖拽新增 · 拖框移动 / 边角缩放 · Enter 复制并结束") :
       (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
-    let actionHint = tool == "screenshot" ? "C 复制颜色 · M 复制尺寸 · Option 暂停吸附" : tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
-    (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y:labelY+21,width:width-28,height:60),withAttributes:[
+    let actionHint = tool == "screenshot" ? "C 复制颜色 · M 复制尺寸\nOption 暂停吸附" : tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
+    (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y: sampling ? box.minY + 207 : labelY + 21,width:width-28,height:60),withAttributes:[
       .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }
 
