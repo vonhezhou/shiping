@@ -392,6 +392,23 @@ void main() {
       expect(tester.getSize(toolbar).height, lessThanOrEqualTo(40));
       expect(tester.getSize(toolbar).width, lessThan(500));
       expect(tester.getRect(toolbar).right, closeTo(500, 1));
+      void expectCompactToolbar() {
+        final bar = tester.getRect(toolbar);
+        final first = tester.getRect(
+          find.byKey(const ValueKey('copy-screenshot-size')),
+        );
+        final last = tester.getRect(
+          find.byKey(const ValueKey('copy-screenshot')),
+        );
+        expect(
+          bar.right - last.right,
+          closeTo(first.left - bar.left, .1),
+          reason: '最后一个按钮右侧只保留与左侧相同的内边距',
+        );
+      }
+
+      expectCompactToolbar();
+
       final redo = find.byKey(const ValueKey('annotation-redo'));
       final cancel = find.byKey(const ValueKey('cancel-screenshot'));
       expect(
@@ -488,6 +505,7 @@ void main() {
       final shape = c.markup.items.single;
       expect(shape.bounds.width, shape.bounds.height);
       expect(shape.toJson()['filled'], true);
+      expectCompactToolbar();
       expect(shape.width, 3);
       expect(
         tester.getRect(cancel).left -

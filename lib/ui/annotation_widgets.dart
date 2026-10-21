@@ -1981,8 +1981,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          // 14 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
           final toolbarWidth = math.min(
-            472.0 + (selected != null ? 30 : 0),
+            14 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
           final totalHeight = hasProperties ? 72.0 : 36.0;
