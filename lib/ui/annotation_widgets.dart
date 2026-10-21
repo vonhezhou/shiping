@@ -52,7 +52,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   int? selected, pointerId;
   Annotation? preview, original;
   Offset? start, resizeAnchor, eraserEnd, hoverPosition;
-  bool textEditing = false;
+  bool textEditing = false, colorPicking = false;
   ({int pointer, Offset start, PixelRect original, String handle})?
   selectionDrag;
   PixelRect? selectionPreview;
@@ -63,7 +63,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     c.imageDocument!.frame.height.toDouble(),
   );
   double get scale => 1 / c.screenshotScaleX;
-  bool get editable => c.screenshotEditing && !c.imageLoading && !c.imageSaving;
+  bool get editable =>
+      c.screenshotEditing && !c.imageLoading && !c.imageSaving && !colorPicking;
   List<Annotation> get visibleItems {
     final result = List<Annotation>.of(items);
     if (textEditing && textIndex != null && textIndex! < result.length) {
@@ -1299,15 +1300,22 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   );
 
   Future<void> customColor() async {
-    final value = await _requestName(
-      context,
-      '标注颜色（6 位 HEX）',
-      color.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase(),
-    );
-    if (!mounted || value == null) return;
-    final hex = value.trim().replaceFirst('#', '');
-    if (RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(hex)) {
-      style(nextColor: 0xFF000000 | int.parse(hex, radix: 16));
+    if (colorPicking) return;
+    setState(() => colorPicking = true);
+    try {
+      final value = await c.desktop.pickAnnotationColor(color);
+      if (!mounted) return;
+      if (value != null) style(nextColor: value);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('无法打开系统调色盘，请重试')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => colorPicking = false);
+        textEditing ? textFocus.requestFocus() : focus.requestFocus();
+      }
     }
   }
 
@@ -2162,6 +2170,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                               screenPointer!.dy >= activeRect.top &&
                               screenPointer!.dy <= activeRect.bottom)))
                     pickerFeedback(constraints),
+                  if (colorPicking)
+                    const Positioned.fill(
+                      child: ModalBarrier(
+                        key: ValueKey('annotation-color-barrier'),
+                        dismissible: false,
+                      ),
+                    ),
                 ],
               ),
             ),

@@ -1074,6 +1074,59 @@ void main() {
         expect(c.markup.items.length, 11);
         expect(c.markup.items.last.text, '原位标注\n第二行');
         expect(c.markup.items.last.fontSize / c.screenshotScaleY, 24);
+        final beforeColor = List<Annotation>.of(c.markup.items);
+        Future<Map<String, Object?>> colorPanel() async =>
+            (await driver.invokeMapMethod<String, Object?>('colorPanelState'))!;
+        await click(tester, find.byKey(const ValueKey('annotation-color')));
+        final panelState = await colorPanel();
+        expect(panelState['nativeClass'], 'NSColorPanel');
+        expect(panelState['visible'], true);
+        expect(panelState['showsAlpha'], true);
+        expect(panelState['pickerCount'], 5);
+        expect(panelState['aboveScreenshot'], true);
+        expect(panelState['color'], beforeColor.last.color);
+        // 系统颜色轮、RGB/HSB 滑杆、色板和蜡笔均使用真实 NSColorPanel。
+        for (final mode in [1, 3, 5, 7, 6]) {
+          await driver.invokeMethod<void>('colorPanelSelect', {
+            'mode': mode,
+            'color': 0x8012AB34,
+          });
+          expect((await colorPanel())['mode'], mode);
+          expect((await colorPanel())['color'], 0x8012AB34);
+        }
+        expect(c.markup.items, beforeColor);
+        await driver.invokeMethod<void>('colorPanelAction', {
+          'action': 'cancel',
+        });
+        await tester.pumpAndSettle();
+        expect(c.markup.items, beforeColor);
+        expect(await driver.invokeMethod<Object?>('colorPanelState'), isNull);
+        await click(tester, find.byKey(const ValueKey('annotation-color')));
+        await driver.invokeMethod<void>('colorPanelSelect', {
+          'color': 0x8012AB34,
+        });
+        await driver.invokeMethod<void>('colorPanelAction', {
+          'action': 'confirm',
+        });
+        await waitFor(tester, () => c.markup.items.last.color == 0x8012AB34);
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))?['mainVisible'],
+          false,
+        );
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        expect(c.markup.items, beforeColor);
+        await click(tester, find.byKey(const ValueKey('annotation-redo')));
+        expect(c.markup.items.last.color, 0x8012AB34);
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        await click(tester, find.byKey(const ValueKey('annotation-color')));
+        await driver.invokeMethod<void>('colorPanelAction', {
+          'action': 'close',
+        });
+        await tester.pumpAndSettle();
+        expect(c.markup.items, beforeColor);
+        expect(await driver.invokeMethod<Object?>('colorPanelState'), isNull);
         final families = await desktop.availableFontFamilies();
         final family = families.lastWhere(
           (value) => value != Annotation.defaultFontFamily,

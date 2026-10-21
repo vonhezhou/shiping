@@ -4,6 +4,36 @@ import XCTest
 @testable import fruler
 
 class RunnerTests: XCTestCase {
+  func testColorPanelUsesNativePickersAndConfirmsOnlyOnce() {
+    var replies: [Int64?] = []
+    let dialog = AnnotationColorDialog(initialColor: 0x7F12AB34) { replies.append($0) }
+    XCTAssertEqual(AnnotationColorDialog.argb(dialog.panel.color), 0x7F12AB34)
+    XCTAssertEqual(dialog.panel.toolbar?.items.count, 5)
+    XCTAssertTrue(dialog.panel.showsAlpha)
+    XCTAssertEqual(dialog.panel.mode, .wheel)
+    XCTAssertEqual(dialog.panel.toolbarStyle, .expanded)
+    dialog.panel.color = AnnotationColorDialog.nsColor(0x80345678)
+    XCTAssertTrue(replies.isEmpty)
+    dialog.confirmButton.performClick(nil)
+    dialog.cancelButton.performClick(nil)
+    XCTAssertEqual(replies.count, 1)
+    XCTAssertEqual(replies[0], 0x80345678)
+    XCTAssertFalse(dialog.panel.isVisible)
+  }
+
+  func testColorPanelCancellationAndColorSpaceConversion() {
+    for color: Int64 in [0x00000000, 0xFFFFFFFF, 0xFF000000, 0x8012AB34] {
+      XCTAssertEqual(AnnotationColorDialog.argb(AnnotationColorDialog.nsColor(color)), color)
+    }
+    XCTAssertEqual(AnnotationColorDialog.argb(NSColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 0.5)), 0x80808080)
+    var replied = false
+    let dialog = AnnotationColorDialog(initialColor: 0xFFFFFFFF) {
+      XCTAssertNil($0); replied = true
+    }
+    dialog.cancelButton.performClick(nil)
+    XCTAssertTrue(replied)
+  }
+
   func testWindowSelectionClipsAcrossNegativeDisplayOriginsAndRetina() {
     let local=CaptureRegionGeometry.localRect(CGRect(x:-1100,y:50,width:400,height:300),
       display:CGRect(x:-1000,y:0,width:1000,height:800))!

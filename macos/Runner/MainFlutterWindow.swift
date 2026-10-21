@@ -57,6 +57,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private var nextSession = 0
   private var preparing = false
   private var screenshotHost: CapturePanel?
+  private var colorDialog: AnnotationColorDialog?
   private var flutterController: FlutterViewController?
   private var lastExternalApplication: NSRunningApplication?
   private var previousApplication: NSRunningApplication?
@@ -193,6 +194,33 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           "statusItemCount":self.statusItem == nil ? 0 : 1,"accessory":NSApp.activationPolicy() == .accessory,
           "rulerViews":self.overlays.values.map { $0.overlay.integrationState },
           "windowNumber":self.screenshotHost?.windowNumber ?? self.overlays.values.first?.windowNumber ?? -1])
+      case "colorPanelState":
+        guard let dialog = self.colorDialog else { result(nil); return }
+        result(["visible": dialog.panel.isVisible, "nativeClass": String(describing: type(of: dialog.panel)),
+          "mode": dialog.panel.mode.rawValue, "showsAlpha": dialog.panel.showsAlpha,
+          "color": AnnotationColorDialog.argb(dialog.panel.color) as Any? ?? NSNull(),
+          "pickerCount": dialog.panel.toolbar?.items.count ?? 0,
+          "aboveScreenshot": dialog.panel.level.rawValue > (self.screenshotHost?.level.rawValue ?? 0)])
+      case "colorPanelSelect":
+        guard let dialog = self.colorDialog, let color = args["color"] as? Int64 else {
+          result(FlutterError(code:"test_no_color_panel",message:"No native color panel",details:nil));return
+        }
+        if let mode = args["mode"] as? Int, let pickerMode = NSColorPanel.Mode(rawValue: mode) {
+          dialog.panel.mode = pickerMode
+        }
+        dialog.panel.color = AnnotationColorDialog.nsColor(color)
+        result(nil)
+      case "colorPanelAction":
+        guard let dialog = self.colorDialog else {
+          result(FlutterError(code:"test_no_color_panel",message:"No native color panel",details:nil));return
+        }
+        switch args["action"] as? String {
+        case "confirm": dialog.confirmButton.performClick(nil)
+        case "cancel": dialog.cancelButton.performClick(nil)
+        case "close": dialog.panel.performClose(nil)
+        default: result(FlutterError(code:"test_invalid_action",message:"Unknown color action",details:nil));return
+        }
+        result(nil)
       case "clickRulerControl":
         guard let panel = self.overlays.values.first(where: { $0.isKeyWindow }) else {
           result(false);return
@@ -339,6 +367,23 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       updateMenuShortcuts()
       completion(.success(registered))
     }
+  }
+
+  func pickAnnotationColor(initialColor: Int64, completion: @escaping (Result<Int64?, Error>) -> Void) {
+    guard initialColor >= 0, initialColor <= 0xFFFFFFFF else {
+      completion(.failure(PigeonError(code: "invalid_color", message: "颜色值无效", details: nil))); return
+    }
+    guard let host = screenshotHost, let captureID = session, colorDialog == nil else {
+      completion(.failure(PigeonError(code: "invalid_state", message: "当前无法打开调色盘", details: nil))); return
+    }
+    let dialog = AnnotationColorDialog(initialColor: initialColor) { [weak self] color in
+      guard let self = self else { completion(.success(nil)); return }
+      self.colorDialog = nil
+      if self.session == captureID { self.screenshotHost?.makeKeyAndOrderFront(nil) }
+      completion(.success(color))
+    }
+    colorDialog = dialog
+    dialog.present(relativeTo: host)
   }
 
   func requestPermission(completion: @escaping (Result<Bool, Error>) -> Void) {
@@ -611,6 +656,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   private func closeSession() {
     session = nil
+    colorDialog?.cancel(nil)
+    colorDialog = nil
     preparing = false
     restoreScreenshotView()
     for panel in overlays.values {
@@ -1586,5 +1633,105 @@ private enum AnnotationRenderer {
     NSGraphicsContext.restoreGraphicsState()
     guard let result = context.makeImage() else { return nil }
     return NSBitmapImageRep(cgImage: result).representation(using: .png,properties: [:])
+  }
+}
+
+/// 复用与 macOS Snipaste 相同的原生颜色选择器，确认前不修改标注。
+final class AnnotationColorDialog: NSObject, NSWindowDelegate {
+  let panel: NSColorPanel
+  let confirmButton: NSButton
+  let cancelButton: NSButton
+  private var completion: ((Int64?) -> Void)?
+
+  init(initialColor: Int64, completion: @escaping (Int64?) -> Void) {
+    panel = NSColorPanel(contentRect: NSRect(x: 0, y: 0, width: 266, height: 390),
+      styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    confirmButton = NSButton(title: "确定", target: nil, action: nil)
+    cancelButton = NSButton(title: "取消", target: nil, action: nil)
+    self.completion = completion
+    super.init()
+    panel.title = "颜色"
+    panel.toolbarStyle = .expanded
+    panel.toolbar?.displayMode = .iconOnly
+    panel.isReleasedWhenClosed = false
+    panel.delegate = self
+    panel.showsAlpha = true
+    panel.mode = .wheel
+    panel.color = Self.nsColor(initialColor)
+    panel.setTarget(nil)
+    panel.setAction(nil)
+    panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    panel.hidesOnDeactivate = false
+    let footer = NSView(frame: NSRect(x: 0, y: 0, width: 266, height: 44))
+    for button in [cancelButton, confirmButton] {
+      button.bezelStyle = .rounded
+      button.target = self
+      button.translatesAutoresizingMaskIntoConstraints = false
+      footer.addSubview(button)
+    }
+    confirmButton.action = #selector(confirm(_:))
+    confirmButton.keyEquivalent = "\r"
+    cancelButton.action = #selector(cancel(_:))
+    cancelButton.keyEquivalent = "\u{1b}"
+    NSLayoutConstraint.activate([
+      confirmButton.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -12),
+      confirmButton.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+      confirmButton.widthAnchor.constraint(equalToConstant: 72),
+      cancelButton.trailingAnchor.constraint(equalTo: confirmButton.leadingAnchor, constant: -8),
+      cancelButton.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+      cancelButton.widthAnchor.constraint(equalToConstant: 72),
+    ])
+    // 将系统选色内容整体放在按钮上方，保留样本网格的位置与 Snipaste 一致。
+    let systemContent = panel.contentView!
+    let size = NSSize(width: systemContent.frame.width, height: systemContent.frame.height + 44)
+    let content = NSView(frame: NSRect(origin: .zero, size: size))
+    panel.contentView = nil
+    systemContent.setFrameOrigin(NSPoint(x: 0, y: 44))
+    systemContent.autoresizingMask = [.width, .height]
+    content.addSubview(systemContent)
+    footer.autoresizingMask = [.width]
+    content.addSubview(footer)
+    panel.contentView = content
+    panel.setContentSize(size)
+  }
+
+  static func nsColor(_ argb: Int64) -> NSColor {
+    NSColor(srgbRed: CGFloat((argb >> 16) & 255) / 255,
+      green: CGFloat((argb >> 8) & 255) / 255, blue: CGFloat(argb & 255) / 255,
+      alpha: CGFloat((argb >> 24) & 255) / 255)
+  }
+
+  static func argb(_ color: NSColor) -> Int64? {
+    guard let rgb = color.usingColorSpace(.sRGB) else { return nil }
+    func byte(_ value: CGFloat) -> Int64 { Int64((min(1, max(0, value)) * 255).rounded()) }
+    return byte(rgb.alphaComponent) << 24 | byte(rgb.redComponent) << 16 |
+      byte(rgb.greenComponent) << 8 | byte(rgb.blueComponent)
+  }
+
+  func present(relativeTo owner: NSWindow) {
+    if let screen = owner.screen {
+      let frame = screen.visibleFrame
+      panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2,
+        y: frame.midY - panel.frame.height / 2))
+    }
+    NSApp.activate(ignoringOtherApps: true)
+    panel.makeKeyAndOrderFront(nil)
+  }
+
+  @objc func confirm(_ sender: Any?) {
+    guard let color = Self.argb(panel.color) else { NSSound.beep(); return }
+    finish(color)
+  }
+  @objc func cancel(_ sender: Any?) { finish(nil) }
+  func windowShouldClose(_ sender: NSWindow) -> Bool { finish(nil); return false }
+
+  private func finish(_ color: Int64?) {
+    guard let reply = completion else { return }
+    completion = nil
+    panel.delegate = nil
+    panel.orderOut(nil)
+    panel.close()
+    reply(color)
   }
 }

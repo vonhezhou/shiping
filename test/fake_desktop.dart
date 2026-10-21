@@ -5,6 +5,14 @@ import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
+  Completer<int?>? colorChoice;
+  final colorRequests = <int>[];
+  @override
+  Future<int?> pickAnnotationColor(int initialColor) async {
+    colorRequests.add(initialColor);
+    return colorChoice == null ? null : await colorChoice!.future;
+  }
+
   @override
   Future<List<String>> availableFontFamilies() async => [
     'Comic Sans MS',

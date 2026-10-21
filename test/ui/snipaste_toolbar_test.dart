@@ -1,4 +1,5 @@
 import 'dart:ui' as ui;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -186,6 +187,23 @@ void main() {
         final input = find.byKey(const ValueKey('annotation-text-input'));
         expect(tester.widget<TextField>(input).style!.fontSize, 24);
         await tester.enterText(input, 'pt text');
+        d.colorChoice = Completer<int?>();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-color')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(d.colorRequests.last, 0xFFFF0000);
+        expect(
+          find.byKey(const ValueKey('annotation-color-barrier')),
+          findsOneWidget,
+        );
+        d.colorChoice!.complete(null);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(tester.widget<TextField>(input).controller!.text, 'pt text');
+
         await tester.tap(
           find.byKey(const ValueKey('annotation-font-family')),
           kind: ui.PointerDeviceKind.mouse,
@@ -243,6 +261,30 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.markup.items.last.fontSize, 36 * ratio);
         expect(c.markup.items.last.fontFamily, 'Comic Sans MS');
+        final beforeColor = List<Annotation>.of(c.markup.items);
+        d.colorChoice = Completer<int?>();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-color')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items, beforeColor);
+        await tester.tapAt(
+          origin + const Offset(160, 160),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items, beforeColor);
+        d.colorChoice!.complete(0x8012AB34);
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.color, 0x8012AB34);
+        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items, beforeColor);
+        await tester.tap(find.byKey(const ValueKey('annotation-redo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.color, 0x8012AB34);
+
         await tester.tap(
           find.byKey(const ValueKey('annotation-font-family')),
           kind: ui.PointerDeviceKind.mouse,

@@ -11,6 +11,23 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
+  test('原生调色盘保留 ARGB 透明度，取消返回 null', () async {
+    final channel = BasicMessageChannel<Object?>(
+      'dev.flutter.pigeon.fruler.DesktopHostApi.pickAnnotationColor',
+      wire.DesktopHostApi.pigeonChannelCodec,
+    );
+    addTearDown(
+      () => messenger.setMockDecodedMessageHandler<Object?>(channel, null),
+    );
+    for (final result in [null, 0x8012AB34]) {
+      messenger.setMockDecodedMessageHandler<Object?>(channel, (message) async {
+        expect(message, [0xFFABCDEF]);
+        return [result];
+      });
+      expect(await MacDesktopService().pickAnnotationColor(0xFFABCDEF), result);
+    }
+  });
+
   test('capture channel carries Retina metadata and buffer handle, never pixel bytes', () async {
     messenger.setMockDecodedMessageHandler<Object?>(
       BasicMessageChannel<Object?>(

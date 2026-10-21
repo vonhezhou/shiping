@@ -228,6 +228,8 @@ class NativeEvent {
 @HostApi()
 abstract class DesktopHostApi {
   @async
+  int? pickAnnotationColor(int initialColor);
+  @async
   List<String> availableFontFamilies();
   @async
   NativeStatus initialize();
