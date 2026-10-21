@@ -26,6 +26,9 @@ class AnnotationRenderer {
     canvas.save();
     canvas.clipRect(full);
     canvas.drawImage(image, ui.Offset.zero, ui.Paint());
+    // Clear only annotation pixels; the captured image lives below this layer.
+    final hasErasures = items.any((a) => a.kind == AnnotationKind.eraser);
+    if (hasErasures) canvas.saveLayer(full, ui.Paint());
     for (final a in items) {
       final b = a.bounds;
       final paint = ui.Paint()
@@ -35,6 +38,13 @@ class AnnotationRenderer {
         ..strokeCap = ui.StrokeCap.round
         ..strokeJoin = ui.StrokeJoin.round;
       switch (a.kind) {
+        case AnnotationKind.eraser:
+          final clear = ui.Paint()..blendMode = ui.BlendMode.clear;
+          if (a.effectBrush) {
+            canvas.drawPath(effectMask(a), clear);
+          } else {
+            canvas.drawRect(b, clear);
+          }
         case AnnotationKind.rectangle:
           paint.style = a.filled
               ? ui.PaintingStyle.fill
@@ -135,6 +145,7 @@ class AnnotationRenderer {
           canvas.restore();
       }
     }
+    if (hasErasures) canvas.restore();
     canvas.restore();
   }
 

@@ -16,6 +16,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   String lastShape = 'rectangle', lastLine = 'arrow', lastEffect = 'mosaic';
   bool filled = false, bold = false, italic = false, toolbarVisible = true;
   bool effectBrush = false;
+  bool eraserBrush = false;
   int effectStrength = 3;
   final textInput = TextEditingController();
   final textFocus = FocusNode();
@@ -195,7 +196,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           next?.width ??
           (value == 'marker'
               ? 12
-              : ['mosaic', 'blur'].contains(value)
+              : ['mosaic', 'blur', 'eraser'].contains(value)
               ? 24
               : 3);
       fontSize = next?.fontSize ?? 24;
@@ -404,7 +405,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     if (tool == 'text' ||
         (selected != null && items[selected!].kind == AnnotationKind.text)) {
       style(nextFont: (fontSize + direction).clamp(8, 200));
-    } else if (!['select', 'eraser'].contains(tool) &&
+    } else if (tool != 'select' &&
+        (tool != 'eraser' || eraserBrush) &&
         (!['mosaic', 'blur'].contains(tool) || effectBrush)) {
       style(nextWidth: (width + direction).clamp(1, 80));
     }
@@ -497,20 +499,39 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ].any((corner) => (p - corner).distance < 9 / scale);
   }
 
+  // Pick complete objects in reverse paint order. Eraser mode always draws
+  // an independent erasure, even over an existing object's edge.
+  int? annotationAt(Offset p) {
+    if (tool == 'eraser') return null;
+    for (var i = items.length - 1; i >= 0; i--) {
+      final a = items[i];
+      if (tool != 'select' && selected != i && a.kind.name != tool) continue;
+      if (a.hitTest(
+        p,
+        6 / scale,
+        edgeOnly: tool != 'select' && selected != i,
+      )) {
+        return i;
+      }
+    }
+    return null;
+  }
+
   MouseCursor get canvasCursor {
     if (!editable || image == null) return SystemMouseCursors.basic;
     if (selectionDrag != null) return SystemMouseCursors.grabbing;
     if (canAdjustSelection) return SystemMouseCursors.grab;
-    if (tool != 'select' && selected == null) return SystemMouseCursors.precise;
     if (pointerId != null && original != null) {
       return SystemMouseCursors.grabbing;
     }
     final p = hoverPosition;
-    if (p == null) return SystemMouseCursors.basic;
+    if (p == null || tool == 'eraser') {
+      return tool == 'select'
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.precise;
+    }
     if (selectedHandle(p)) return SystemMouseCursors.grab;
-    final hit = tool == 'select'
-        ? items.any((a) => a.hitTest(p, 6 / scale))
-        : selected != null && items[selected!].hitTest(p, 6 / scale);
+    final hit = annotationAt(p) != null;
     return hit
         ? SystemMouseCursors.grab
         : tool == 'select'
@@ -555,13 +576,17 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     resizeAnchor = null;
     if (tool == 'eraser') {
       selected = null;
-      setState(() => eraserEnd = p);
+      setState(() {
+        eraserEnd = p;
+        preview = makeAnnotation(AnnotationKind.eraser, [
+          p,
+          p,
+        ]).copyWith(effectBrush: eraserBrush);
+      });
       return;
     }
-    if (tool == 'select' ||
-        (selected != null &&
-            tool != 'eraser' &&
-            (selectedHandle(p) || items[selected!].hitTest(p, 6 / scale)))) {
+    final hit = annotationAt(p);
+    if (tool == 'select' || selectedHandle(p) || hit != null) {
       if (selected != null && selected! < items.length) {
         final b = items[selected!].bounds;
         final corners = [b.topLeft, b.topRight, b.bottomRight, b.bottomLeft];
@@ -574,13 +599,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           }
         }
       }
-      selected = null;
-      for (var i = items.length - 1; i >= 0; i--) {
-        if (items[i].hitTest(p, 6 / scale)) {
-          selected = i;
-          break;
-        }
-      }
+      selected = hit;
       if (selected != null) {
         original = items[selected!];
         color = original!.color;
@@ -608,7 +627,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     final p = clamp(event.localPosition);
     hoverPosition = p;
     if (tool == 'eraser') {
-      setState(() => eraserEnd = p);
+      setState(() {
+        eraserEnd = p;
+        preview = preview!.copyWith(
+          points: eraserBrush
+              ? [...preview!.points.take(19999), p]
+              : [start!, p],
+        );
+      });
       return;
     }
     if (original != null) {
@@ -647,18 +673,20 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     hoverPosition = clamp(event.localPosition);
     if (tool == 'eraser' && start != null && editable) {
       final end = clamp(event.localPosition);
-      final origin = start!;
+      final erased = preview!.copyWith(
+        points: eraserBrush
+            ? [...preview!.points.take(19999), end]
+            : [start!, end],
+      );
       cancelGesture();
-      if ((end - origin).distance < 3 / scale) {
-        for (var i = items.length - 1; i >= 0; i--) {
-          if (items[i].hitTest(end, 6 / scale)) {
-            commit(List<Annotation>.of(items)..removeAt(i));
-            break;
-          }
-        }
-      } else {
-        final region = Rect.fromPoints(origin, end);
-        commit(items.where((a) => !a.intersects(region)).toList());
+      final region = eraserBrush
+          ? erased.bounds.inflate(erased.width / 2)
+          : erased.bounds;
+      if (!region.isEmpty &&
+          items.any(
+            (a) => a.kind != AnnotationKind.eraser && a.intersects(region),
+          )) {
+        commit([...items, erased]);
       }
       return;
     }
@@ -969,7 +997,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       : selected != null && selected! < items.length
       ? items[selected!].kind.name
       : tool;
-  bool get hasProperties => !['select', 'eraser'].contains(propertyKind);
+  bool get hasProperties => propertyKind != 'select';
 
   Widget numericMenu({required bool font}) => Tooltip(
     message: font ? '字号' : '线宽 ${width.round()} pt · 滚轮 / 1、2 / [、]',
@@ -1260,7 +1288,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       hoverPosition != null &&
       editable &&
       canvasCursor == SystemMouseCursors.precise &&
-      (tool == 'marker' || (['mosaic', 'blur'].contains(tool) && effectBrush));
+      (tool == 'marker' ||
+          (tool == 'eraser' && eraserBrush) ||
+          (['mosaic', 'blur'].contains(tool) && effectBrush));
 
   Widget brushCursor(Rect rect) => Positioned.fromRect(
     rect: rect,
@@ -1305,7 +1335,31 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (!effect && kind != 'text') numericMenu(font: false),
+          if (kind == 'eraser') ...[
+            propertyButton(
+              'annotation-eraser-rectangle',
+              '框选擦除',
+              Icons.rectangle_outlined,
+              () {
+                cancelGesture();
+                setState(() => eraserBrush = false);
+              },
+              active: !eraserBrush,
+            ),
+            propertyButton(
+              'annotation-eraser-brush',
+              '画笔擦除',
+              Icons.circle_outlined,
+              () {
+                cancelGesture();
+                setState(() => eraserBrush = true);
+              },
+              active: eraserBrush,
+            ),
+            if (eraserBrush) numericMenu(font: false),
+          ],
+          if (!effect && kind != 'text' && kind != 'eraser')
+            numericMenu(font: false),
           if (shape) ...[
             propertyButton(
               'annotation-fill',
@@ -1381,7 +1435,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             divider,
             if (effectBrush) numericMenu(font: false),
             effectParameter(strength: true),
-          ] else ...[
+          ] else if (kind != 'eraser') ...[
             if (kind == 'text') ...[
               propertyButton(
                 'annotation-bold',
@@ -1468,7 +1522,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         ),
         toolbarButton(
           'annotation-tool-eraser',
-          '橡皮擦 · 拖拽框选删除',
+          '橡皮擦 · 框选 / 画笔局部擦除',
           Icons.auto_fix_normal,
           () => selectTool(tool == 'eraser' ? 'select' : 'eraser'),
           active: tool == 'eraser',
@@ -1692,16 +1746,24 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                             height: imageSize.height,
                             child: image == null
                                 ? const SizedBox.shrink()
-                                : CustomPaint(
-                                    painter: _AnnotationPainter(
-                                      image!,
-                                      mosaics,
-                                      visibleItems,
-                                      textEditing ? null : selected,
-                                      scale,
-                                      start != null && eraserEnd != null
-                                          ? Rect.fromPoints(start!, eraserEnd!)
-                                          : null,
+                                : RepaintBoundary(
+                                    key: const ValueKey('annotation-content'),
+                                    child: CustomPaint(
+                                      painter: _AnnotationPainter(
+                                        image!,
+                                        mosaics,
+                                        visibleItems,
+                                        textEditing ? null : selected,
+                                        scale,
+                                        !eraserBrush &&
+                                                start != null &&
+                                                eraserEnd != null
+                                            ? Rect.fromPoints(
+                                                start!,
+                                                eraserEnd!,
+                                              )
+                                            : null,
+                                      ),
                                     ),
                                   ),
                           ),
@@ -1849,7 +1911,13 @@ class _AnnotationPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _AnnotationPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _AnnotationPainter old) =>
+      old.image != image ||
+      old.mosaics != mosaics ||
+      old.selected != selected ||
+      old.scale != scale ||
+      old.eraserRegion != eraserRegion ||
+      !listEquals(old.items, items);
 }
 
 class _ToolbarGlyphPainter extends CustomPainter {

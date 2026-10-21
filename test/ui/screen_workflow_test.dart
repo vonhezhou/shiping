@@ -168,7 +168,10 @@ void main() {
       final saved = List<Annotation>.of(c.markup.items);
       await tester.tap(find.byKey(const ValueKey('annotation-tool-eraser')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('annotation-properties')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('annotation-eraser-rectangle')),
+        findsOneWidget,
+      );
       final origin = tester.getTopLeft(canvas);
       final gesture = await tester.startGesture(
         origin + const Offset(140, 105),
@@ -179,7 +182,9 @@ void main() {
       expect(c.markup.items, saved);
       await gesture.up();
       await tester.pumpAndSettle();
-      expect(c.markup.items, isEmpty);
+      expect(c.markup.items.take(saved.length), saved);
+      expect(c.markup.items.last.kind, AnnotationKind.eraser);
+      expect(c.markup.items.last.effectBrush, false);
       await tester.tap(find.byKey(const ValueKey('annotation-undo')));
       await tester.pumpAndSettle();
       expect(c.markup.items, saved);
@@ -193,7 +198,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(c.markup.items, saved);
       expect(c.screenshotEditing, true);
-      // Reverse marquee deletes multiple tiny objects in a single undo step.
+      await tester.tap(find.byKey(const ValueKey('annotation-eraser-brush')));
+      await tester.pumpAndSettle();
+      await tester.dragFrom(
+        origin + const Offset(180, 100),
+        const Offset(0, 80),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(c.markup.items.take(saved.length), saved);
+      expect(c.markup.items.last.kind, AnnotationKind.eraser);
+      expect(c.markup.items.last.effectBrush, true);
+      expect(c.markup.items.last.points.length, greaterThan(2));
+      await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+      await tester.pumpAndSettle();
+      expect(c.markup.items, saved);
+      // Reverse marquee clears local pixels in a single undo step.
+      await tester.tap(
+        find.byKey(const ValueKey('annotation-eraser-rectangle')),
+      );
+      await tester.pumpAndSettle();
       final tiny = [
         for (final x in [20.0, 30.0])
           Annotation(
@@ -210,13 +234,21 @@ void main() {
         kind: ui.PointerDeviceKind.mouse,
       );
       await tester.pumpAndSettle();
-      expect(c.markup.items, saved);
+      expect(c.markup.items.take(saved.length + tiny.length), [
+        ...saved,
+        ...tiny,
+      ]);
+      expect(c.markup.items.last.kind, AnnotationKind.eraser);
       await tester.tap(find.byKey(const ValueKey('annotation-undo')));
       await tester.pumpAndSettle();
       expect(c.markup.items, [...saved, ...tiny]);
       await tester.tap(find.byKey(const ValueKey('annotation-redo')));
       await tester.pumpAndSettle();
-      expect(c.markup.items, saved);
+      expect(c.markup.items.take(saved.length + tiny.length), [
+        ...saved,
+        ...tiny,
+      ]);
+      expect(c.markup.items.last.kind, AnnotationKind.eraser);
       // An empty box does not consume history or clear redo.
       await tester.tap(find.byKey(const ValueKey('annotation-undo')));
       await tester.pumpAndSettle();
@@ -253,7 +285,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
       await tester.pumpAndSettle();
-      expect(c.markup.items.length, 2);
+      expect(c.markup.items.length, saved.length + tiny.length + 2);
       final done = find.byKey(const ValueKey('copy-screenshot'));
       await tester.ensureVisible(done);
       await tester.runAsync(() => c.exportScreenshot(save: false));

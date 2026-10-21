@@ -5,6 +5,107 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('橡皮擦序列化保存模式和路径，不作为可选中标注', () {
+    for (final brush in [false, true]) {
+      final a = Annotation(
+        kind: AnnotationKind.eraser,
+        points: [
+          const Offset(10, 10),
+          if (brush) const Offset(30, 20),
+          const Offset(80, 80),
+        ],
+        width: 24,
+        effectBrush: brush,
+      );
+      final decoded = Annotation.decodeList(
+        jsonDecode(jsonEncode([a.toJson()])),
+        100,
+        100,
+      ).single;
+      expect(decoded.toJson(), a.toJson());
+      expect(decoded.isPath, brush);
+      expect(decoded.hitTest(const Offset(30, 20), 6), false);
+      expect(
+        () => Annotation.decodeList([a.toJson()..['width'] = 0], 100, 100),
+        throwsFormatException,
+      );
+      expect(
+        () => Annotation.decodeList(
+          [
+            a.toJson()
+              ..['points'] = [
+                [-1, 0],
+                [10, 20],
+              ],
+          ],
+          100,
+          100,
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+  test('旧形状按原始边缘命中，空白内部不抢占新的绘制', () {
+    final rectangle = Annotation(
+      kind: AnnotationKind.rectangle,
+      points: const [Offset(20, 20), Offset(120, 80)],
+      width: 4,
+    );
+    expect(rectangle.hitTest(const Offset(60, 20), 3, edgeOnly: true), true);
+    expect(rectangle.hitTest(const Offset(60, 24), 3, edgeOnly: true), true);
+    expect(rectangle.hitTest(const Offset(60, 50), 3, edgeOnly: true), false);
+    expect(rectangle.hitTest(const Offset(60, 50), 3), true);
+    expect(rectangle.hitTest(const Offset(60, 10), 3, edgeOnly: true), false);
+    final ellipse = Annotation(
+      kind: AnnotationKind.ellipse,
+      points: rectangle.points,
+      width: 4,
+    );
+    expect(ellipse.hitTest(const Offset(70, 20), 3, edgeOnly: true), true);
+    expect(ellipse.hitTest(const Offset(120, 50), 3, edgeOnly: true), true);
+    expect(ellipse.hitTest(const Offset(70, 50), 3, edgeOnly: true), false);
+    expect(ellipse.hitTest(const Offset(20, 20), 3, edgeOnly: true), false);
+  });
+
+  test('擦除后移动缩放的是完整对象，保留擦除位置、顺序和历史', () {
+    for (final kind in AnnotationKind.values.where(
+      (k) => k != AnnotationKind.eraser,
+    )) {
+      final a = Annotation(
+        kind: kind,
+        points: const [Offset(20, 20), Offset(60, 60)],
+        text: '文字',
+      );
+      final eraser = Annotation(
+        kind: AnnotationKind.eraser,
+        points: const [Offset(35, 10), Offset(45, 30)],
+      );
+      final history = AnnotationHistory()..reset([a, eraser]);
+      final moved = a.move(const Offset(0, 30), const Size(120, 120));
+      history.commit([moved, eraser]);
+      expect(history.items.length, 2);
+      expect(history.items.last, same(eraser));
+      expect(moved.points.length, a.points.length);
+      expect(a.bounds, const Rect.fromLTRB(20, 20, 60, 60));
+      history.commit([
+        moved.resize(const Rect.fromLTRB(10, 40, 90, 100)),
+        eraser,
+      ]);
+      final decoded = Annotation.decodeList(
+        jsonDecode(jsonEncode(history.items.map((a) => a.toJson()).toList())),
+        120,
+        120,
+      );
+      expect(decoded.last.toJson(), eraser.toJson());
+      expect(decoded.first.points.length, 2);
+      history.undo();
+      expect(history.items, [moved, eraser]);
+      history.undo();
+      expect(history.items, [a, eraser]);
+      history.redo();
+      expect(history.items, [moved, eraser]);
+    }
+  });
   for (final ratio in [1.0, 2.0, 3.0]) {
     test('文字缩放的字号上下限按 pt ${ratio}x', () {
       final a = Annotation(

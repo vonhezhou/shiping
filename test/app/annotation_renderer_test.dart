@@ -17,6 +17,219 @@ Future<PixelFrame> rawFrame(ui.Image image) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('局部橡皮擦只清除先前标注，保留原图、剩余笔迹和后续绘制', () async {
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawColor(const ui.Color(0xFF13579B), ui.BlendMode.src);
+    final picture = recorder.endRecording();
+    final base = await picture.toImage(100, 100);
+    picture.dispose();
+    addTearDown(base.dispose);
+    final frame = await rawFrame(base);
+    for (final brush in [false, true]) {
+      final eraser = Annotation.decodeList(
+        [
+          Annotation(
+            kind: AnnotationKind.rectangle,
+            points: const [ui.Offset(45, 20), ui.Offset(55, 80)],
+            width: 10,
+            effectBrush: brush,
+          ).toJson()..['kind'] = 'eraser',
+        ],
+        100,
+        100,
+      ).single;
+      final stroke = Annotation(
+        kind: AnnotationKind.line,
+        points: const [ui.Offset(10, 50), ui.Offset(90, 50)],
+        color: 0xFFFF0000,
+        width: 8,
+      );
+      final history = AnnotationHistory()..reset([stroke]);
+      history.commit([stroke, eraser]);
+      expect(history.items.first, same(stroke));
+      history.undo();
+      expect(history.items, [stroke]);
+      history.redo();
+      expect(history.items.last.toJson(), eraser.toJson());
+      final png = await AnnotationRenderer.export(frame, history.items);
+      final codec = await ui.instantiateImageCodec(png);
+      final output = (await codec.getNextFrame()).image;
+      final pixels = await rawFrame(output);
+      List<int> pixel(int x, int y) =>
+          pixels.rgba.sublist((y * 100 + x) * 4, (y * 100 + x) * 4 + 4);
+      expect(pixel(50, 50), [19, 87, 155, 255]);
+      expect(pixel(20, 50), [255, 0, 0, 255]);
+      expect(pixel(80, 50), [255, 0, 0, 255]);
+      expect(pixel(50, 10), [19, 87, 155, 255]);
+      output.dispose();
+      codec.dispose();
+      final later = await AnnotationRenderer.export(frame, [
+        ...history.items,
+        stroke.copyWith(color: 0xFF00FF00),
+      ]);
+      final laterCodec = await ui.instantiateImageCodec(later);
+      final laterImage = (await laterCodec.getNextFrame()).image;
+      final laterPixels = await rawFrame(laterImage);
+      expect(laterPixels.rgba.sublist(20200, 20204), [0, 255, 0, 255]);
+      laterImage.dispose();
+      laterCodec.dispose();
+    }
+  });
+  test('完整矩形移出擦除区域恢复笔迹，移入后重新被擦除，后画内容不受影响', () async {
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawColor(const ui.Color(0xFF13579B), ui.BlendMode.src);
+    final picture = recorder.endRecording();
+    final base = await picture.toImage(160, 160);
+    picture.dispose();
+    addTearDown(base.dispose);
+    final frame = await rawFrame(base);
+    final a = Annotation(
+      kind: AnnotationKind.rectangle,
+      points: const [ui.Offset(20, 30), ui.Offset(120, 90)],
+      width: 4,
+      color: 0xFFFF0000,
+    );
+    for (final brush in [false, true]) {
+      final eraser = Annotation(
+        kind: AnnotationKind.eraser,
+        points: const [ui.Offset(50, 20), ui.Offset(80, 40)],
+        width: 24,
+        effectBrush: brush,
+      );
+      final moved = a.move(const ui.Offset(0, 50), const ui.Size(160, 160));
+      final resized = moved.resize(const ui.Rect.fromLTRB(20, 30, 140, 140));
+      final later = Annotation(
+        kind: AnnotationKind.line,
+        points: const [ui.Offset(40, 30), ui.Offset(90, 30)],
+        color: 0xFF00FF00,
+        width: 4,
+      );
+      Future<List<int>> pixel(List<Annotation> items, int x, int y) async {
+        final codec = await ui.instantiateImageCodec(
+          await AnnotationRenderer.export(frame, items),
+        );
+        final output = (await codec.getNextFrame()).image;
+        final pixels = await rawFrame(output);
+        final result = pixels.rgba.sublist(
+          (y * 160 + x) * 4,
+          (y * 160 + x) * 4 + 4,
+        );
+        output.dispose();
+        codec.dispose();
+        return result;
+      }
+
+      expect(await pixel([a, eraser], 65, 30), [19, 87, 155, 255]);
+      expect(await pixel([moved, eraser], 65, 80), [255, 0, 0, 255]);
+      expect(await pixel([moved, eraser], 65, 30), [19, 87, 155, 255]);
+      expect(await pixel([resized, eraser], 65, 30), [19, 87, 155, 255]);
+      expect(await pixel([resized, eraser], 30, 30), [255, 0, 0, 255]);
+      expect(await pixel([resized, eraser, later], 65, 30), [0, 255, 0, 255]);
+      expect(eraser.points, const [ui.Offset(50, 20), ui.Offset(80, 40)]);
+    }
+  });
+  test('笔刷单点、连续路径和矩形擦除适用于所有标注，预览导出一致', () async {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    for (var x = 0; x < 100; x++) {
+      canvas.drawRect(
+        ui.Rect.fromLTWH(x.toDouble(), 0, 1, 100),
+        ui.Paint()..color = ui.Color.fromARGB(255, x * 2, 80, 160),
+      );
+    }
+    final picture = recorder.endRecording();
+    final base = await picture.toImage(100, 100);
+    picture.dispose();
+    addTearDown(base.dispose);
+    final frame = await rawFrame(base);
+    final mosaics = await AnnotationRenderer.prepareMosaics(base);
+    addTearDown(() {
+      for (final m in mosaics.values) {
+        m.dispose();
+      }
+    });
+    for (final kind in AnnotationKind.values.where(
+      (k) => k != AnnotationKind.eraser,
+    )) {
+      final a = Annotation(
+        kind: kind,
+        points: const [ui.Offset(10, 10), ui.Offset(90, 90)],
+        filled: true,
+        text: '测试',
+        width: 20,
+      );
+      for (final eraser in [
+        Annotation(
+          kind: AnnotationKind.eraser,
+          points: const [ui.Offset(50, 50), ui.Offset(50, 50)],
+          effectBrush: true,
+          width: 24,
+        ),
+        Annotation(
+          kind: AnnotationKind.eraser,
+          points: const [
+            ui.Offset(20, 20),
+            ui.Offset(50, 50),
+            ui.Offset(80, 80),
+          ],
+          effectBrush: true,
+          width: 24,
+        ),
+        Annotation(
+          kind: AnnotationKind.eraser,
+          points: const [ui.Offset(60, 60), ui.Offset(40, 40)],
+        ),
+      ]) {
+        final items = [a, eraser];
+        final previewRecorder = ui.PictureRecorder();
+        AnnotationRenderer.paint(
+          ui.Canvas(previewRecorder),
+          base,
+          mosaics,
+          items,
+        );
+        final pp = previewRecorder.endRecording();
+        final preview = await pp.toImage(100, 100);
+        pp.dispose();
+        final codec = await ui.instantiateImageCodec(
+          await AnnotationRenderer.export(frame, items),
+        );
+        final output = (await codec.getNextFrame()).image;
+        final actual = await rawFrame(output);
+        expect(actual.rgba, orderedEquals((await rawFrame(preview)).rgba));
+        expect(
+          actual.rgba.sublist(20200, 20204),
+          frame.rgba.sublist(20200, 20204),
+        );
+        output.dispose();
+        codec.dispose();
+        preview.dispose();
+      }
+    }
+    // A diagonal brush must preserve pixels in empty corners of its bounds.
+    final fill = Annotation(
+      kind: AnnotationKind.rectangle,
+      points: const [ui.Offset(0, 0), ui.Offset(100, 100)],
+      filled: true,
+    );
+    final codec = await ui.instantiateImageCodec(
+      await AnnotationRenderer.export(frame, [
+        fill,
+        Annotation(
+          kind: AnnotationKind.eraser,
+          points: const [ui.Offset(10, 10), ui.Offset(90, 90)],
+          width: 10,
+          effectBrush: true,
+        ),
+      ]),
+    );
+    final output = (await codec.getNextFrame()).image;
+    final actual = await rawFrame(output);
+    expect(actual.rgba.sublist(32080, 32084), [255, 82, 82, 255]);
+    expect(frame.rgba, orderedEquals((await rawFrame(base)).rgba));
+    output.dispose();
+    codec.dispose();
+  });
   test('原始像素导出保留无标注画面，边缘标注预览与输出一致', () async {
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder).drawColor(const ui.Color(0xFF13579B), ui.BlendMode.src);

@@ -419,7 +419,7 @@ void main() {
               .isNotEmpty,
         );
         for (final kind in AnnotationKind.values.where(
-          (k) => k != AnnotationKind.text,
+          (k) => k != AnnotationKind.text && k != AnnotationKind.eraser,
         )) {
           await chooseAnnotationTool(tester, kind);
           if (kind == AnnotationKind.rectangle) {
@@ -551,15 +551,85 @@ void main() {
         expect(c.markup.items.length, 10);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));
         expect(c.markup.items.length, 11);
-        // Erase all intersecting objects in the same native capture panel.
+        // Re-pick and transform a whole old rectangle after a local erasure.
+        // Both edits stay in this real native capture panel.
+        final beforeObjectEditing = List<Annotation>.of(c.markup.items);
+        final rectangle = beforeObjectEditing.firstWhere(
+          (a) => a.kind == AnnotationKind.rectangle,
+        );
+        c.markup.commit([rectangle]);
+        await tester.pumpAndSettle();
+        final canvasOrigin = tester.getTopLeft(canvas);
+        Offset onCanvas(Offset p) =>
+            canvasOrigin +
+            Offset(p.dx / c.screenshotScaleX, p.dy / c.screenshotScaleY);
+        await click(
+          tester,
+          find.byKey(const ValueKey('annotation-tool-eraser')),
+        );
+        await mouseDrag(
+          tester,
+          onCanvas(rectangle.bounds.topCenter) - const Offset(12, 8),
+          const Offset(24, 16),
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.length, 2);
+        final stationaryErasure = c.markup.items.last;
+        expect(c.markup.items.first, same(rectangle));
+        await chooseAnnotationTool(tester, AnnotationKind.rectangle);
+        await mouseDrag(
+          tester,
+          onCanvas(rectangle.bounds.centerLeft),
+          const Offset(30, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.length, 2);
+        final movedRectangle = c.markup.items.first;
+        expect(
+          movedRectangle.points,
+          rectangle.points.map((p) => p + Offset(30 * c.screenshotScaleX, 0)),
+        );
+        expect(c.markup.items.last, same(stationaryErasure));
+        await mouseDrag(
+          tester,
+          onCanvas(movedRectangle.bounds.bottomRight),
+          const Offset(10, 15),
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.first.points.length, 2);
+        expect(
+          c.markup.items.first.bounds.topLeft,
+          movedRectangle.bounds.topLeft,
+        );
+        expect(
+          c.markup.items.first.bounds.bottomRight,
+          movedRectangle.bounds.bottomRight +
+              Offset(10 * c.screenshotScaleX, 15 * c.screenshotScaleY),
+        );
+        expect(c.markup.items.last, same(stationaryErasure));
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        expect(c.markup.items, [movedRectangle, stationaryErasure]);
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        expect(c.markup.items, [rectangle, stationaryErasure]);
+        await click(tester, find.byKey(const ValueKey('annotation-redo')));
+        expect(c.markup.items, [movedRectangle, stationaryErasure]);
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))?['windowNumber'],
+          selectionStatus?['windowNumber'],
+        );
+        c.markup.commit(beforeObjectEditing);
+        await tester.pumpAndSettle();
+        // Partially erase annotation pixels in the same native capture panel.
         final beforeErase = List<Annotation>.of(c.markup.items);
         await click(
           tester,
           find.byKey(const ValueKey('annotation-tool-eraser')),
         );
         expect(
-          find.byKey(const ValueKey('annotation-properties')),
-          findsNothing,
+          find.byKey(const ValueKey('annotation-eraser-rectangle')),
+          findsOneWidget,
         );
         final erase = mouse(tester);
         final center = tester.getCenter(canvas);
@@ -571,13 +641,34 @@ void main() {
         await erase.up();
         await erase.removePointer();
         await tester.pumpAndSettle();
-        expect(c.markup.items, isEmpty);
+        expect(c.markup.items.take(beforeErase.length), beforeErase);
+        expect(c.markup.items.last.kind, AnnotationKind.eraser);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items, beforeErase);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));
-        expect(c.markup.items, isEmpty);
+        expect(c.markup.items.take(beforeErase.length), beforeErase);
+        expect(c.markup.items.last.kind, AnnotationKind.eraser);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items, beforeErase);
+        await click(
+          tester,
+          find.byKey(const ValueKey('annotation-eraser-brush')),
+        );
+        await mouseDrag(
+          tester,
+          center - const Offset(20, 40),
+          const Offset(0, 80),
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.take(beforeErase.length), beforeErase);
+        expect(c.markup.items.last.kind, AnnotationKind.eraser);
+        expect(c.markup.items.last.effectBrush, true);
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        expect(c.markup.items, beforeErase);
+        await click(tester, find.byKey(const ValueKey('annotation-redo')));
+        final erasedX = (doc.frame.width / 2 - 20 * c.screenshotScaleX).round();
+        final erasedY = (doc.frame.height / 2).round();
+        final originalPixel = doc.frame.pixelAt(erasedX, erasedY);
         expect(
           (await driver.invokeMapMethod<String, Object?>(
             'status',
@@ -589,7 +680,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.screenshotEditing, true);
         expect(c.busy, true);
-        expect(c.markup.items.length, 11);
+        expect(c.markup.items.length, 12);
         expect(
           (await driver.invokeMapMethod<String, Object?>(
             'status',
@@ -606,6 +697,20 @@ void main() {
           (image.width, image.height),
           (doc.frame.width, doc.frame.height),
         );
+        final raw = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        final pixels = raw.buffer.asUint8List(
+          raw.offsetInBytes,
+          raw.lengthInBytes,
+        );
+        final pixelOffset = (erasedY * image.width + erasedX) * 4;
+        expect(pixels.sublist(pixelOffset, pixelOffset + 4), [
+          originalPixel.r,
+          originalPixel.g,
+          originalPixel.b,
+          255,
+        ]);
         image.dispose();
         codec.dispose();
         final done = await driver.invokeMapMethod<String, Object?>('status');

@@ -12,7 +12,8 @@ enum AnnotationKind {
   marker,
   text,
   mosaic,
-  blur;
+  blur,
+  eraser;
 
   String get label => const {
     rectangle: '矩形',
@@ -24,6 +25,7 @@ enum AnnotationKind {
     text: '文字',
     mosaic: '马赛克',
     blur: '模糊',
+    eraser: '橡皮擦',
   }[this]!;
 }
 
@@ -55,7 +57,7 @@ class Annotation {
   bool get isEffect =>
       kind == AnnotationKind.mosaic || kind == AnnotationKind.blur;
   bool get isPath =>
-      effectBrush && isEffect ||
+      effectBrush && (isEffect || kind == AnnotationKind.eraser) ||
       [
         AnnotationKind.line,
         AnnotationKind.arrow,
@@ -127,8 +129,28 @@ class Annotation {
     );
   }
 
-  bool hitTest(Offset p, double tolerance) {
+  /// Edge picking lets a drawing tool edit old shapes without capturing their
+  /// empty interiors. Erasure is a separate operation, never a split or mask
+  /// attached to this object's geometry.
+  bool hitTest(Offset p, double tolerance, {bool edgeOnly = false}) {
+    if (kind == AnnotationKind.eraser) return false;
     if (!bounds.inflate(tolerance + width / 2).contains(p)) return false;
+    if (edgeOnly && !isPath) {
+      final b = bounds, radius = tolerance + width / 2;
+      if (kind == AnnotationKind.ellipse) {
+        bool inside(Rect r) {
+          if (r.isEmpty) return false;
+          final x = (p.dx - r.center.dx) / (r.width / 2);
+          final y = (p.dy - r.center.dy) / (r.height / 2);
+          return x * x + y * y <= 1;
+        }
+
+        return inside(b.inflate(radius)) && !inside(b.deflate(radius));
+      }
+      if (kind != AnnotationKind.text) {
+        return b.inflate(radius).contains(p) && !b.deflate(radius).contains(p);
+      }
+    }
     if (isPath) {
       for (var i = 1; i < points.length; i++) {
         final a = points[i - 1], d = points[i] - a;
@@ -276,7 +298,9 @@ class Annotation {
           kind != AnnotationKind.marker &&
           kind != AnnotationKind.line &&
           !(effectBrush &&
-              (kind == AnnotationKind.mosaic || kind == AnnotationKind.blur)) &&
+              (kind == AnnotationKind.mosaic ||
+                  kind == AnnotationKind.blur ||
+                  kind == AnnotationKind.eraser)) &&
           points.length != 2) {
         throw const FormatException('标注端点数量无效');
       }
