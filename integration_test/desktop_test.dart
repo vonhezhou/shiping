@@ -78,6 +78,11 @@ Future<void> nativeWheel(
       'y': position.dy,
       'delta': delta,
     });
+    // An unchanged width must still wait for the native event to arrive.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 150)),
+    );
+    await tester.pump();
     await waitFor(
       tester,
       () => find
@@ -424,6 +429,23 @@ void main() {
           await chooseAnnotationTool(tester, kind);
           if (kind == AnnotationKind.rectangle) {
             await click(tester, find.byKey(const ValueKey('annotation-fill')));
+            await click(tester, find.byKey(const ValueKey('annotation-fill')));
+            expect(
+              tester
+                  .widget<IconButton>(
+                    find.byKey(const ValueKey('annotation-fill')),
+                  )
+                  .isSelected,
+              true,
+            );
+            expect(
+              tester
+                  .widget<IconButton>(
+                    find.byKey(const ValueKey('annotation-width')),
+                  )
+                  .isSelected,
+              false,
+            );
           }
           await mouseDrag(
             tester,
@@ -434,9 +456,34 @@ void main() {
           expect(c.markup.items.last.kind, kind);
           if (kind == AnnotationKind.rectangle) {
             expect(c.markup.items.last.filled, true);
+            await click(tester, find.byKey(const ValueKey('annotation-width')));
+            expect(c.markup.items.last.filled, false);
+            expect(
+              tester
+                  .widget<IconButton>(
+                    find.byKey(const ValueKey('annotation-fill')),
+                  )
+                  .isSelected,
+              false,
+            );
+            await nativeWheel(
+              tester,
+              tester.getCenter(find.byKey(const ValueKey('annotation-width'))),
+              1,
+              4,
+            );
+            expect(c.markup.items.last.width / c.screenshotScaleX, 4);
+            await nativeWheel(tester, tester.getCenter(canvas), -1, 3);
+            await click(tester, find.byKey(const ValueKey('annotation-fill')));
+            expect(c.markup.items.last.filled, true);
           }
           if (kind == AnnotationKind.marker) {
-            await nativeWheel(tester, tester.getCenter(canvas), 1, 13);
+            final widthControl = find.byKey(const ValueKey('annotation-width'));
+            await click(tester, widthControl);
+            await click(tester, widthControl);
+            expect(tester.widget<IconButton>(widthControl).isSelected, true);
+            expect(find.byType(PopupMenuItem<double>), findsNothing);
+            await nativeWheel(tester, tester.getCenter(widthControl), 1, 13);
             expect(c.markup.items.last.width / c.screenshotScaleX, 13);
             expect(
               find.descendant(
@@ -447,10 +494,37 @@ void main() {
             );
             await nativeWheel(tester, tester.getCenter(canvas), -1, 12);
             expect(c.markup.items.last.width / c.screenshotScaleX, 12);
+            final canvasRect = tester.getRect(canvas);
+            final shade = Offset(canvasRect.left / 2, canvasRect.top / 2);
+            expect(canvasRect.contains(shade), false);
+            await nativeWheel(tester, shade, 1, 13);
+            expect(c.markup.items.last.width / c.screenshotScaleX, 13);
+            await nativeWheel(tester, shade, -1, 12);
+            await nativeWheel(
+              tester,
+              tester.getCenter(find.byKey(const ValueKey('annotation-undo'))),
+              1,
+              12,
+            );
+            await nativeWheel(
+              tester,
+              tester.getTopLeft(
+                    find.byKey(const ValueKey('annotation-toolbar')),
+                  ) +
+                  const Offset(1, 1),
+              1,
+              12,
+            );
+            await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+            await tester.pumpAndSettle();
+            expect(c.markup.items.last.width / c.screenshotScaleX, 13);
+            await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+            await tester.pumpAndSettle();
+            expect(c.markup.items.last.width / c.screenshotScaleX, 12);
             expect(
               find.descendant(
                 of: find.byKey(const ValueKey('annotation-width')),
-                matching: find.byType(Text),
+                matching: find.text('12'),
               ),
               findsNothing,
             );
@@ -477,7 +551,7 @@ void main() {
             );
             await nativeWheel(
               tester,
-              tester.getCenter(canvas),
+              tester.getCenter(find.byKey(const ValueKey('annotation-width'))),
               1,
               kind == AnnotationKind.mosaic ? 25 : 26,
             );
@@ -653,6 +727,28 @@ void main() {
         await click(
           tester,
           find.byKey(const ValueKey('annotation-eraser-brush')),
+        );
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byKey(const ValueKey('annotation-width')),
+              )
+              .isSelected,
+          true,
+        );
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byKey(const ValueKey('annotation-eraser-rectangle')),
+              )
+              .isSelected,
+          false,
+        );
+        await nativeWheel(
+          tester,
+          tester.getCenter(find.byKey(const ValueKey('annotation-width'))),
+          1,
+          25,
         );
         await mouseDrag(
           tester,

@@ -145,6 +145,18 @@ void main() {
         final origin = tester.getTopLeft(
           find.byKey(const ValueKey('annotation-canvas')),
         );
+        final widthControl = find.byKey(const ValueKey('annotation-width'));
+        await tester.tap(widthControl, kind: ui.PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(find.byType(PopupMenuItem<double>), findsNothing);
+        expect(tester.widget<IconButton>(widthControl).isSelected, true);
+        await tester.tap(widthControl, kind: ui.PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(tester.widget<IconButton>(widthControl).isSelected, true);
+        await wheel(tester, tester.getCenter(widthControl));
+        expect(find.byTooltip('线宽 13 pt · 滚轮 / 1、2 / [、]'), findsOneWidget);
+        await wheel(tester, tester.getCenter(widthControl), dy: 20);
+
         await wheel(tester, origin + const Offset(80, 80), expectedWidth: 13);
         expect(find.byTooltip('线宽 13 pt · 滚轮 / 1、2 / [、]'), findsOneWidget);
         await tester.dragFrom(
@@ -154,6 +166,13 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(c.markup.items.last.width, 13 * ratio);
+        await tester.tap(widthControl, kind: ui.PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        await wheel(tester, tester.getCenter(widthControl));
+        expect(c.markup.items.last.width, 14 * ratio);
+        await wheel(tester, tester.getCenter(widthControl), dy: 20);
+        expect(c.markup.items.last.width, 13 * ratio);
+
         await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
         await tester.pumpAndSettle();
         expect(c.markup.items.last.width, 14 * ratio);
@@ -321,7 +340,7 @@ void main() {
       final shape = c.markup.items.single;
       expect(shape.bounds.width, shape.bounds.height);
       expect(shape.toJson()['filled'], true);
-      expect(shape.width, 4);
+      expect(shape.width, 3);
       expect(
         tester.getRect(cancel).left -
             tester
@@ -342,7 +361,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(c.markup.items.last.filled, true);
-      expect(c.markup.items.last.width, 4);
+      expect(c.markup.items.last.width, 3);
       await tester.tap(find.byKey(const ValueKey('annotation-undo')));
       await tester.pumpAndSettle();
       expect(c.markup.items, hasLength(1));
@@ -481,7 +500,14 @@ void main() {
           find.byKey(const ValueKey('annotation-effect-rectangle')),
         );
         await tester.pumpAndSettle();
-        expect(find.byKey(const ValueKey('annotation-width')), findsNothing);
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byKey(const ValueKey('annotation-width')),
+              )
+              .isSelected,
+          false,
+        );
         await setSlider(tester, 'annotation-effect-strength', 2);
         await tester.tap(find.byKey(const ValueKey('annotation-effect-brush')));
         await tester.pumpAndSettle();
@@ -519,7 +545,7 @@ void main() {
       );
       await wheel(tester, markerPoint, dy: 20, expectedWidth: 12);
       expect(
-        find.descendant(of: widthButton, matching: find.byType(Text)),
+        find.descendant(of: widthButton, matching: find.text('12')),
         findsNothing,
       );
       await wheel(tester, markerPoint, dy: 0, dx: 20, expectedWidth: 12);
@@ -536,19 +562,19 @@ void main() {
       expect(find.byTooltip('线宽 13 pt · 滚轮 / 1、2 / [、]'), findsOneWidget);
       await tester.tap(widthButton, kind: ui.PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('48 pt'), kind: ui.PointerDeviceKind.mouse);
-      await tester.pumpAndSettle();
-      expect(
-        find.descendant(of: widthButton, matching: find.text('48')),
-        findsOneWidget,
-      );
+      expect(find.byType(PopupMenuItem<double>), findsNothing);
+      expect(tester.widget<IconButton>(widthButton).isSelected, true);
+      await wheel(tester, tester.getCenter(widthButton));
+      expect(c.markup.items.last.width, 14);
       expect(tester.getSize(widthButton), widthButtonSize);
       await tester.tap(widthButton, kind: ui.PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('3 pt'), kind: ui.PointerDeviceKind.mouse);
-      await tester.pumpAndSettle();
+      expect(tester.widget<IconButton>(widthButton).isSelected, true);
+      await wheel(tester, tester.getCenter(widthButton), dy: 20);
+      await wheel(tester, tester.getCenter(widthButton), dy: 20);
+      expect(c.markup.items.last.width, 12);
       expect(
-        find.descendant(of: widthButton, matching: find.byType(Text)),
+        find.descendant(of: widthButton, matching: find.text('12')),
         findsNothing,
       );
       expect(tester.getSize(widthButton), widthButtonSize);

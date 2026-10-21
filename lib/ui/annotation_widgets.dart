@@ -176,7 +176,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   void selectTool(String value) {
     finishText();
     finishLine();
-    styles[styleKey(tool)] = (
+    styles[styleKey(propertyKind)] = (
       color: color,
       width: width,
       fontSize: fontSize,
@@ -400,15 +400,52 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     beginText(a.bounds, index: selected);
   }
 
+  bool get strokeActive {
+    final kind = propertyKind;
+    if (['rectangle', 'ellipse'].contains(kind)) return !filled;
+    if (['mosaic', 'blur'].contains(kind)) return effectBrush;
+    if (kind == 'eraser') return eraserBrush;
+    return ['line', 'arrow', 'pencil', 'marker'].contains(kind);
+  }
+
+  void activateStroke() {
+    final kind = propertyKind;
+    if (['rectangle', 'ellipse'].contains(kind)) {
+      if (filled) style(nextFilled: false);
+    } else if (['mosaic', 'blur'].contains(kind)) {
+      setEffectMode(true);
+    } else if (kind == 'eraser') {
+      setEraserMode(true);
+    }
+    focus.requestFocus();
+  }
+
+  void selectFill() {
+    if (!filled) style(nextFilled: true);
+    focus.requestFocus();
+  }
+
   void adjustWidth(int direction) {
     if (textEditing) return;
-    if (tool == 'text' ||
-        (selected != null && items[selected!].kind == AnnotationKind.text)) {
-      style(nextFont: (fontSize + direction).clamp(8, 200));
-    } else if (tool != 'select' &&
-        (tool != 'eraser' || eraserBrush) &&
-        (!['mosaic', 'blur'].contains(tool) || effectBrush)) {
-      style(nextWidth: (width + direction).clamp(1, 80));
+    if (propertyKind == 'text') {
+      final next = (fontSize + direction).clamp(8.0, 200.0);
+      if (next != fontSize) style(nextFont: next);
+    } else if (strokeActive) {
+      final next = (width + direction).clamp(1.0, 80.0);
+      if (next != width) style(nextWidth: next);
+    }
+  }
+
+  void widthScroll(PointerSignalEvent event) {
+    if (event is PointerScrollEvent &&
+        event.scrollDelta.dy != 0 &&
+        editable &&
+        !textEditing &&
+        strokeActive) {
+      GestureBinding.instance.pointerSignalResolver.register(
+        event,
+        (_) => adjustWidth(event.scrollDelta.dy < 0 ? 1 : -1),
+      );
     }
   }
 
@@ -999,96 +1036,99 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       : tool;
   bool get hasProperties => propertyKind != 'select';
 
-  Widget numericMenu({required bool font}) => Tooltip(
-    message: font ? '字号' : '线宽 ${width.round()} pt · 滚轮 / 1、2 / [、]',
+  Widget widthButton({String? modeKey}) => Listener(
+    key: modeKey == null ? null : ValueKey(modeKey),
+    onPointerSignal: widthScroll,
+    child: IconButton(
+      key: const ValueKey('annotation-width'),
+      tooltip: '线宽 ${width.round()} pt · 滚轮 / 1、2 / [、]',
+      isSelected: strokeActive,
+      mouseCursor: SystemMouseCursors.click,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(28),
+        maximumSize: const Size.square(28),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: strokeActive ? toolbarBlue : Colors.transparent,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+      ),
+      onPressed: activateStroke,
+      icon: SizedBox(
+        width: 18,
+        height: 18,
+        child: Center(
+          child: width > 12
+              ? Text(
+                  width.toStringAsFixed(0),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                )
+              : Container(
+                  width: width + 2,
+                  height: width + 2,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+        ),
+      ),
+    ),
+  );
+
+  Widget fontMenu() => Tooltip(
+    message: '字号',
     child: PopupMenuButton<double>(
-      key: ValueKey(font ? 'annotation-font' : 'annotation-width'),
+      key: const ValueKey('annotation-font'),
       padding: EdgeInsets.zero,
       color: toolbarSurface,
       tooltip: '',
       menuPadding: const EdgeInsets.all(4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       constraints: const BoxConstraints(minWidth: 100, maxWidth: 160),
-      onSelected: (v) => font ? style(nextFont: v) : style(nextWidth: v),
-      itemBuilder: (_) =>
-          (font
-                  ? <double>{12, 18, 24, 36, 48, 72, fontSize}
-                  : <double>{1, 2, 3, 6, 12, 24, 48, width})
-              .map(
-                (v) => PopupMenuItem(
-                  value: v,
-                  height: 28,
-                  child: Row(
-                    children: [
-                      if (!font) ...[
-                        Container(
-                          width: math.min(16, v + 2),
-                          height: math.min(16, v + 2),
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      Text(
-                        '${v.toStringAsFixed(0)} pt',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
+      onSelected: (v) => style(nextFont: v),
+      itemBuilder: (_) => <double>{12, 18, 24, 36, 48, 72, fontSize}
+          .map(
+            (v) => PopupMenuItem(
+              value: v,
+              height: 28,
+              child: Text(
+                '${v.toStringAsFixed(0)} pt',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          )
+          .toList(),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: SizedBox(
-          width: font ? 52 : 28,
+          width: 52,
           height: 28,
           child: Center(
-            child: font
-                ? Container(
-                    height: 22,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF454545),
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: const Color(0xFF666666)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          fontSize.toStringAsFixed(0),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const Icon(
-                          Icons.arrow_drop_down,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  )
-                : width > 12
-                ? Text(
-                    width.toStringAsFixed(0),
+            child: Container(
+              height: 22,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF454545),
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: const Color(0xFF666666)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    fontSize.toStringAsFixed(0),
                     style: const TextStyle(color: Colors.white, fontSize: 12),
-                  )
-                : Container(
-                    width: width + 2,
-                    height: width + 2,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
                   ),
+                  const Icon(
+                    Icons.arrow_drop_down,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1168,12 +1208,24 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
 
   void setEffectMode(bool brush) {
     final kind = propertyKind;
+    if (effectBrush == brush) {
+      focus.requestFocus();
+      return;
+    }
     cancelGesture();
     setState(() {
       tool = kind;
       selected = null;
       effectBrush = brush;
     });
+    focus.requestFocus();
+  }
+
+  void setEraserMode(bool brush) {
+    if (eraserBrush != brush) {
+      cancelGesture();
+      setState(() => eraserBrush = brush);
+    }
     focus.requestFocus();
   }
 
@@ -1336,36 +1388,22 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (kind == 'eraser') ...[
+            widthButton(modeKey: 'annotation-eraser-brush'),
             propertyButton(
               'annotation-eraser-rectangle',
               '框选擦除',
               Icons.rectangle_outlined,
-              () {
-                cancelGesture();
-                setState(() => eraserBrush = false);
-              },
+              () => setEraserMode(false),
               active: !eraserBrush,
             ),
-            propertyButton(
-              'annotation-eraser-brush',
-              '画笔擦除',
-              Icons.circle_outlined,
-              () {
-                cancelGesture();
-                setState(() => eraserBrush = true);
-              },
-              active: eraserBrush,
-            ),
-            if (eraserBrush) numericMenu(font: false),
           ],
-          if (!effect && kind != 'text' && kind != 'eraser')
-            numericMenu(font: false),
+          if (!effect && kind != 'text' && kind != 'eraser') widthButton(),
           if (shape) ...[
             propertyButton(
               'annotation-fill',
               '填充形状',
               Icons.square,
-              () => style(nextFilled: !filled),
+              selectFill,
               active: filled,
             ),
             divider,
@@ -1403,13 +1441,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             divider,
           ],
           if (effect) ...[
-            propertyButton(
-              'annotation-effect-brush',
-              '涂画',
-              Icons.circle,
-              () => setEffectMode(true),
-              active: effectBrush,
-            ),
+            widthButton(modeKey: 'annotation-effect-brush'),
             propertyButton(
               'annotation-effect-rectangle',
               '框选',
@@ -1433,7 +1465,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               active: kind == 'blur',
             ),
             divider,
-            if (effectBrush) numericMenu(font: false),
             effectParameter(strength: true),
           ] else if (kind != 'eraser') ...[
             if (kind == 'text') ...[
@@ -1451,7 +1482,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 () => style(nextItalic: !italic),
                 active: italic,
               ),
-              numericMenu(font: true),
+              fontMenu(),
               if (selected != null && !textEditing)
                 propertyButton(
                   'annotation-edit-text',
@@ -1700,6 +1731,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 );
           return Stack(
             children: [
+              Positioned.fill(
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerSignal: widthScroll,
+                ),
+              ),
               Positioned.fromRect(
                 rect: rect,
                 child: ClipRect(
