@@ -1347,6 +1347,25 @@ void main() {
           tester.getSize(find.byKey(const ValueKey('screenshot-color-swatch'))),
           const Size(12, 12),
         );
+        // 从右边控制点外半边开始缩放，拖动中即使光标在选区外也持续显示。
+        await samplingMouse.down(const Offset(244, 260));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('screenshot-magnifier')),
+          findsOneWidget,
+        );
+        await samplingMouse.moveTo(const Offset(254, 260));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('screenshot-magnifier')),
+          findsOneWidget,
+        );
+        await samplingMouse.cancel();
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('screenshot-magnifier')),
+          findsNothing,
+        );
         await samplingMouse.moveTo(const Offset(101, 221));
         await tester.pump();
         expect(
@@ -1355,6 +1374,7 @@ void main() {
         );
         expect(find.textContaining('X:'), findsOneWidget);
         final expectedColor = c.screenshotColorAt(101, 221)!;
+        await samplingMouse.removePointer();
         await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
         await waitFor(tester, () => !c.busy);
         expect(
@@ -1363,7 +1383,6 @@ void main() {
           ),
           c.formatColor(expectedColor),
         );
-        await samplingMouse.removePointer();
         expect(
           (await tester.runAsync(
             () => driver.invokeMapMethod<String, Object?>('status'),
@@ -1375,6 +1394,8 @@ void main() {
         await tester.runAsync(
           () => driver.invokeMethod<void>('restoreClipboard'),
         );
+        // 断言产品不会打开主窗口后，清理时恢复测试窗口的帧调度。
+        await desktop.showMainWindow();
         c.dispose();
         await tester.pumpWidget(const SizedBox.shrink());
       }

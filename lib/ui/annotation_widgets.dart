@@ -1722,7 +1722,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     );
   }
 
-  // 未选择标注工具时，在选区内及边界显示取色信息，选区仍可拖动和缩放。
+  // 静止时只在选区内及边界取色；拖动期间持续显示，允许从控制点外半边操作。
   bool get sampling => tool == 'select' && c.canAdjustScreenshotSelection;
 
   Widget pickerFeedback(BoxConstraints constraints) {
@@ -1863,6 +1863,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               }
             },
             child: Listener(
+              onPointerDown: (event) {
+                if (sampling) {
+                  setState(() => screenPointer = event.localPosition);
+                }
+              },
               onPointerMove: (event) {
                 if (sampling) {
                   setState(() => screenPointer = event.localPosition);
@@ -2014,10 +2019,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   // 放在工具条之后绘制；IgnorePointer 保留底下按钮的交互。
                   if (sampling &&
                       screenPointer != null &&
-                      screenPointer!.dx >= activeRect.left &&
-                      screenPointer!.dx <= activeRect.right &&
-                      screenPointer!.dy >= activeRect.top &&
-                      screenPointer!.dy <= activeRect.bottom)
+                      (selectionDrag != null ||
+                          (screenPointer!.dx >= activeRect.left &&
+                              screenPointer!.dx <= activeRect.right &&
+                              screenPointer!.dy >= activeRect.top &&
+                              screenPointer!.dy <= activeRect.bottom)))
                     pickerFeedback(constraints),
                 ],
               ),

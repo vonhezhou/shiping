@@ -143,14 +143,37 @@ void main() {
         expect(byKey('screenshot-picker-feedback'), findsNothing);
 
         expect(find.textContaining('400 × 250 px'), findsWidgets);
-        await mouse.down(const Offset(500, 225));
-        await mouse.moveTo(const Offset(510, 225));
+        // 控制点的外半边也可开始拖动，光标会始终在实时选区外 4 px。
+        await mouse.down(const Offset(504, 225));
+        await tester.pump();
+        expect(byKey('screenshot-magnifier'), findsOneWidget);
+        await mouse.moveTo(const Offset(514, 225));
         await tester.pump();
         expect(find.textContaining('410 × 250 px'), findsWidgets);
         expect(byKey('screenshot-magnifier'), findsOneWidget);
+        final draggedLoupe = tester.renderObject<RenderRepaintBoundary>(
+          byKey('screenshot-magnifier'),
+        );
+        final draggedPixels = await tester.runAsync(() async {
+          final image = await draggedLoupe.toImage();
+          try {
+            return (await image.toByteData())!.buffer.asUint8List();
+          } finally {
+            image.dispose();
+          }
+        });
+        // 中心像素为 514，预览右边为 510；12 倍放大后边线应在 x=46，
+        // 旧右边 500 则在画面外，避免只画出了静止选区却误通过。
+        final edgeIndex = (56 * 200 + 46) * 4;
+        expect(draggedPixels!.sublist(edgeIndex, edgeIndex + 3), [
+          38,
+          131,
+          255,
+        ]);
         await mouse.cancel();
         await tester.pump();
         expect(c.screenshotSelection!.width, 400);
+        expect(byKey('screenshot-magnifier'), findsNothing);
         await click('annotation-group-shape');
         expect(byKey('screenshot-picker-feedback'), findsNothing);
         final rectangle = Annotation(
