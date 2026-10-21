@@ -29,6 +29,8 @@ enum EventKind {
   confirm,
   clearPins,
   pointer,
+  sampleColor,
+  copyCaptureSize,
 }
 
 enum InputPhase { move, down, drag, up, start, update, end }
@@ -194,6 +196,7 @@ class NativeEvent {
     this.resize,
     this.steps,
     this.save,
+    this.suggestedRect,
   });
   EventKind kind;
   int? sessionId;
@@ -215,6 +218,7 @@ class NativeEvent {
   bool? resize;
   int? steps;
   bool? save;
+  PixelBounds? suggestedRect;
 }
 
 @HostApi()

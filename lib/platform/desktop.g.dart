@@ -136,6 +136,8 @@ enum EventKind {
   confirm,
   clearPins,
   pointer,
+  sampleColor,
+  copyCaptureSize,
 }
 
 enum InputPhase {
@@ -746,6 +748,7 @@ class NativeEvent {
     this.resize,
     this.steps,
     this.save,
+    this.suggestedRect,
   });
 
   EventKind kind;
@@ -788,6 +791,8 @@ class NativeEvent {
 
   bool? save;
 
+  PixelBounds? suggestedRect;
+
   List<Object?> _toList() {
     return <Object?>[
       kind,
@@ -810,6 +815,7 @@ class NativeEvent {
       resize,
       steps,
       save,
+      suggestedRect,
     ];
   }
 
@@ -839,6 +845,7 @@ class NativeEvent {
       resize: result[17] as bool?,
       steps: result[18] as int?,
       save: result[19] as bool?,
+      suggestedRect: result[20] as PixelBounds?,
     );
   }
 
@@ -851,7 +858,7 @@ class NativeEvent {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(kind, other.kind) && _deepEquals(sessionId, other.sessionId) && _deepEquals(displayId, other.displayId) && _deepEquals(tool, other.tool) && _deepEquals(permission, other.permission) && _deepEquals(chord, other.chord) && _deepEquals(x, other.x) && _deepEquals(y, other.y) && _deepEquals(phase, other.phase) && _deepEquals(button, other.button) && _deepEquals(keep, other.keep) && _deepEquals(keyboard, other.keyboard) && _deepEquals(enabled, other.enabled) && _deepEquals(id, other.id) && _deepEquals(handle, other.handle) && _deepEquals(dx, other.dx) && _deepEquals(dy, other.dy) && _deepEquals(resize, other.resize) && _deepEquals(steps, other.steps) && _deepEquals(save, other.save);
+    return _deepEquals(kind, other.kind) && _deepEquals(sessionId, other.sessionId) && _deepEquals(displayId, other.displayId) && _deepEquals(tool, other.tool) && _deepEquals(permission, other.permission) && _deepEquals(chord, other.chord) && _deepEquals(x, other.x) && _deepEquals(y, other.y) && _deepEquals(phase, other.phase) && _deepEquals(button, other.button) && _deepEquals(keep, other.keep) && _deepEquals(keyboard, other.keyboard) && _deepEquals(enabled, other.enabled) && _deepEquals(id, other.id) && _deepEquals(handle, other.handle) && _deepEquals(dx, other.dx) && _deepEquals(dy, other.dy) && _deepEquals(resize, other.resize) && _deepEquals(steps, other.steps) && _deepEquals(save, other.save) && _deepEquals(suggestedRect, other.suggestedRect);
   }
 
   @override

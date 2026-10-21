@@ -4,6 +4,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('窗口候选必须包含光标并位于截图像素范围，拒绝损坏边界', () {
+    final frame = PixelFrame(
+      width: 60,
+      height: 30,
+      logicalWidth: 40,
+      logicalHeight: 20,
+      rgba: Uint8List(60 * 30 * 4),
+    );
+    const valid = {'left': 15, 'top': 6, 'right': 45, 'bottom': 24};
+    expect(
+      CaptureControls.suggestedRect(frame, valid, 20, 10)!.toJson(),
+      valid,
+    );
+    for (final value in [
+      null,
+      {'left': -1, 'top': 0, 'right': 61, 'bottom': 30},
+      {'left': 15, 'top': 6, 'right': 15, 'bottom': 24},
+      {'left': 15.0, 'top': 6, 'right': 45, 'bottom': 24},
+    ]) {
+      expect(CaptureControls.suggestedRect(frame, value, 20, 10), isNull);
+    }
+    expect(CaptureControls.suggestedRect(frame, valid, 1, 1), isNull);
+  });
+
   test('非整数缩放连续微调无累计误差，边界钳制到像素中心', () {
     final frame = PixelFrame(
       width: 60,

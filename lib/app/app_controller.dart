@@ -215,6 +215,9 @@ class AppController extends ChangeNotifier {
     markup.reset();
     _anchor = null;
     _anchorDisplay = null;
+    _selectionPress = null;
+    _pressedCandidate = null;
+    _captureMeasurement = null;
     _redraw();
     _notify();
   }
@@ -477,6 +480,10 @@ class AppController extends ChangeNotifier {
   CaptureSession? _session;
   String? _tool;
   PixelPoint? _anchor;
+  ({double x, double y})? _selectionPress;
+  PixelRect? _pressedCandidate;
+  RulerMeasurement? _captureMeasurement;
+
   int? _anchorDisplay;
   bool _committing = false;
   bool _disposed = false;
@@ -627,6 +634,48 @@ class AppController extends ChangeNotifier {
 
   Future<void> startScreenshot() => _begin('screenshot');
 
+  RgbColor? screenshotColorAt(double x, double y) {
+    final display = _session?.displays
+        .where((d) => d.id == screenshotDisplayId)
+        .firstOrNull;
+    if (display == null || !x.isFinite || !y.isFinite) return null;
+    final point = display.frame.logicalToPixel(x, y);
+    return display.frame.pixelAt(point.x, point.y);
+  }
+
+  Future<void> sampleCaptureColor(int displayId, double x, double y) async {
+    if (_session == null || _committing || screenshotExporting) return;
+    final display = _session!.displays
+        .where((d) => d.id == displayId)
+        .firstOrNull;
+    if (display == null || !x.isFinite || !y.isFinite) return;
+    final p = display.frame.logicalToPixel(x, y);
+    await _commitColor(
+      display.frame.pixelAt(p.x, p.y),
+      action: PickerMouseAction.pickAndClose,
+    );
+  }
+
+  Future<void> copyCaptureSize(int displayId, PixelRect rect) async {
+    if (_session == null || _committing || screenshotExporting) return;
+    final display = _session!.displays
+        .where((d) => d.id == displayId)
+        .firstOrNull;
+    if (display == null ||
+        rect.left < 0 ||
+        rect.top < 0 ||
+        rect.right > display.frame.width ||
+        rect.bottom > display.frame.height ||
+        rect.width < 1 ||
+        rect.height < 1) {
+      return;
+    }
+    await _commitMeasurement(
+      RulerMeasurement.fromRect(display.frame, rect, RulerMode.rectangle),
+      display,
+    );
+  }
+
   Future<void> _commitScreenshot(
     RulerMeasurement measurement,
     CapturedDisplay display,
@@ -688,6 +737,9 @@ class AppController extends ChangeNotifier {
     _committing = false;
     _anchor = null;
     _anchorDisplay = null;
+    _selectionPress = null;
+    _pressedCandidate = null;
+    _captureMeasurement = null;
     _pending.clear();
     _pins.clear();
     _pinUndo.clear();
@@ -783,6 +835,18 @@ class AppController extends ChangeNotifier {
     }
     if (_committing || screenshotEditing) return;
     switch (event['type']) {
+      case 'sampleColor':
+        final p = _lastPointer;
+        if (_tool == 'screenshot' && p != null) {
+          unawaited(sampleCaptureColor(p.displayId, p.x, p.y));
+        }
+        return;
+      case 'copyCaptureSize':
+        final p = _lastPointer;
+        if (_tool == 'screenshot' && p != null && _captureMeasurement != null) {
+          unawaited(copyCaptureSize(p.displayId, _captureMeasurement!.rect));
+        }
+        return;
       case 'continuousChanged':
         setContinuousPicker(event['enabled'] == true);
         return;
@@ -835,9 +899,19 @@ class AppController extends ChangeNotifier {
         final next = RulerMode.values
             .where((m) => m.name == event['tool'])
             .firstOrNull;
-        if (_tool != 'picker' && _tool != 'screenshot' && next != null) {
-          _tool = next.name;
-          mode = next;
+        final requested = event['tool'] as String?;
+        if (_contrastTarget == null &&
+            requested != null &&
+            [
+              'picker',
+              'screenshot',
+              ...RulerMode.values.map((m) => m.name),
+            ].contains(requested)) {
+          _tool = requested;
+          if (next != null) mode = next;
+          _pressedCandidate = null;
+          _selectionPress = null;
+          _captureMeasurement = null;
           _editingPins = false;
           _anchor = null;
           _anchorDisplay = null;
@@ -983,21 +1057,38 @@ class AppController extends ChangeNotifier {
     final color = frame.pixelAt(pixel.x, pixel.y);
     RulerMeasurement? measurement;
     if (_tool == RulerMode.rectangle.name || _tool == 'screenshot') {
+      final candidate = _tool == 'screenshot' && event['keyboard'] != true
+          ? CaptureControls.suggestedRect(frame, event['suggestedRect'], x, y)
+          : null;
       if (phase == 'down') {
+        _selectionPress = (x: x, y: y);
+        _pressedCandidate = candidate;
         _selectedPin = null;
         _keyboardRectangle = event['keyboard'] == true;
         _anchor = _keyboardRectangle ? pixel : frame.logicalToBoundary(x, y);
         _anchorDisplay = display.id;
       }
-      if (_anchor != null && _anchorDisplay == display.id) {
+      final press = _selectionPress;
+      if (press != null &&
+          ((x - press.x) * (x - press.x) + (y - press.y) * (y - press.y) > 4)) {
+        _pressedCandidate = null;
+      }
+      if (_anchor == null && candidate != null) {
         measurement = RulerMeasurement.fromRect(
           frame,
-          PixelRect.fromPoints(
-            _anchor!,
-            (_keyboardRectangle || event['keyboard'] == true)
-                ? pixel
-                : frame.logicalToBoundary(x, y),
-          ),
+          candidate,
+          RulerMode.rectangle,
+        );
+      } else if (_anchor != null && _anchorDisplay == display.id) {
+        measurement = RulerMeasurement.fromRect(
+          frame,
+          _pressedCandidate ??
+              PixelRect.fromPoints(
+                _anchor!,
+                (_keyboardRectangle || event['keyboard'] == true)
+                    ? pixel
+                    : frame.logicalToBoundary(x, y),
+              ),
           RulerMode.rectangle,
         );
       }
@@ -1010,8 +1101,11 @@ class AppController extends ChangeNotifier {
         tolerance: tolerance,
       );
     }
+    if (_tool == 'screenshot') _captureMeasurement = measurement;
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}'
+        : _tool == 'screenshot'
+        ? '${measurement?.label ?? '拖动框选截图'}\n${color.hex} · ${color.rgb}'
         : measurement?.label ?? '按住并拖拽，测量矩形区域';
     _updateOverlay({
       ..._overlayOptions,
@@ -1372,6 +1466,9 @@ class AppController extends ChangeNotifier {
     busy = false;
     _anchor = null;
     _anchorDisplay = null;
+    _selectionPress = null;
+    _pressedCandidate = null;
+    _captureMeasurement = null;
     _committing = false;
     _pending.clear();
     _pins.clear();

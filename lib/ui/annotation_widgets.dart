@@ -13,6 +13,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   Map<int, ui.Image> mosaics = {};
   String? loadError;
   String tool = 'select';
+  Offset? screenPointer;
   String lastShape = 'rectangle', lastLine = 'arrow', lastEffect = 'mosaic';
   bool filled = false, bold = false, italic = false, toolbarVisible = true;
   bool effectBrush = false;
@@ -799,6 +800,15 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       }
       return KeyEventResult.ignored;
     }
+    if (!meta && k == LogicalKeyboardKey.keyC && screenPointer != null) {
+      final p = screenPointer!;
+      c.sampleCaptureColor(c.screenshotDisplayId!, p.dx, p.dy);
+      return KeyEventResult.handled;
+    }
+    if (!meta && k == LogicalKeyboardKey.keyM) {
+      c.copyCaptureSize(c.screenshotDisplayId!, c.screenshotSelection!);
+      return KeyEventResult.handled;
+    }
     if (!meta && k == LogicalKeyboardKey.space) {
       setState(() => toolbarVisible = !toolbarVisible);
       return KeyEventResult.handled;
@@ -828,16 +838,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       return KeyEventResult.handled;
     }
     if (meta && k == LogicalKeyboardKey.keyZ) {
-      if (linePoints.isNotEmpty) {
-        setState(() {
-          linePoints.clear();
-          lineHover = null;
-        });
-        return KeyEventResult.handled;
-      }
-      cancelGesture();
-      selected = null;
-      shift ? c.markup.redo() : c.markup.undo();
+      history(shift);
       return KeyEventResult.handled;
     }
     if ((meta && k == LogicalKeyboardKey.keyS) ||
@@ -928,8 +929,29 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     }
     finishText();
     cancelGesture();
-    setState(() => selected = null);
+    if (!(redo ? c.markup.canRedo : c.markup.canUndo)) {
+      focus.requestFocus();
+      return;
+    }
+    final before = List<Annotation>.of(items);
     redo ? c.markup.redo() : c.markup.undo();
+    final restored = items.indexWhere(
+      (a) => a.kind != AnnotationKind.eraser && !before.contains(a),
+    );
+    setState(() {
+      selected = restored < 0 ? null : restored;
+      if (selected != null) {
+        final a = items[selected!];
+        color = a.color;
+        width = a.width / c.screenshotScaleX;
+        fontSize = a.fontSize / c.screenshotScaleY;
+        filled = a.filled;
+        bold = a.bold;
+        italic = a.italic;
+        effectBrush = a.effectBrush;
+        effectStrength = a.effectStrength;
+      }
+    });
     focus.requestFocus();
   }
 
@@ -1034,7 +1056,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       : selected != null && selected! < items.length
       ? items[selected!].kind.name
       : tool;
-  bool get hasProperties => propertyKind != 'select';
+  bool get hasProperties => !['select', 'picker'].contains(propertyKind);
 
   Widget widthButton({String? modeKey}) => Listener(
     key: modeKey == null ? null : ValueKey(modeKey),
@@ -1504,6 +1526,20 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     Row(
       children: [
         toolbarButton(
+          'annotation-tool-picker',
+          '取色 C · 点击像素复制并结束',
+          Icons.colorize,
+          () => selectTool(tool == 'picker' ? 'select' : 'picker'),
+          active: tool == 'picker',
+        ),
+        toolbarButton(
+          'copy-screenshot-size',
+          '复制选区尺寸 M',
+          Icons.straighten,
+          () =>
+              c.copyCaptureSize(c.screenshotDisplayId!, c.screenshotSelection!),
+        ),
+        toolbarButton(
           'annotation-group-shape',
           '形状：矩形 / 椭圆',
           Icons.interests_outlined,
@@ -1688,6 +1724,44 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     );
   }
 
+  Widget pickerFeedback(BoxConstraints constraints) {
+    final p = screenPointer!;
+    final sample = c.screenshotColorAt(p.dx, p.dy);
+    return Positioned(
+      left: (p.dx + 20).clamp(8.0, math.max(8.0, constraints.maxWidth - 200)),
+      top: (p.dy + 20).clamp(8.0, math.max(8.0, constraints.maxHeight - 80)),
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: toolbarSurface,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                color: Color.fromARGB(
+                  255,
+                  sample?.r ?? 0,
+                  sample?.g ?? 0,
+                  sample?.b ?? 0,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${sample?.hex ?? ''}\n点击复制 · 右键返回',
+                style: const TextStyle(fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (selected != null && selected! >= items.length) selected = null;
@@ -1712,7 +1786,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final toolbarWidth = math.min(
-            412.0 + (selected != null ? 30 : 0),
+            472.0 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
           final totalHeight = hasProperties ? 72.0 : 36.0;
@@ -1729,142 +1803,177 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   8.0,
                   math.max(8.0, constraints.maxHeight - totalHeight - 8),
                 );
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: Listener(
-                  behavior: HitTestBehavior.opaque,
-                  onPointerSignal: widthScroll,
+          return MouseRegion(
+            onHover: (event) {
+              if (tool == 'picker') {
+                setState(() => screenPointer = event.localPosition);
+              } else {
+                screenPointer = event.localPosition;
+              }
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerSignal: widthScroll,
+                  ),
                 ),
-              ),
-              Positioned.fromRect(
-                rect: rect,
-                child: ClipRect(
-                  child: OverflowBox(
-                    alignment: Alignment.topLeft,
-                    minWidth: 0,
-                    minHeight: 0,
-                    maxWidth: double.infinity,
-                    maxHeight: double.infinity,
-                    child: Transform(
+                Positioned.fromRect(
+                  rect: rect,
+                  child: ClipRect(
+                    child: OverflowBox(
                       alignment: Alignment.topLeft,
-                      transform: Matrix4.diagonal3Values(
-                        1 / c.screenshotScaleX,
-                        1 / c.screenshotScaleY,
-                        1,
-                      ),
-                      child: Listener(
-                        key: const ValueKey('annotation-canvas'),
-                        onPointerDown: down,
-                        onPointerMove: move,
-                        onPointerUp: up,
-                        onPointerCancel: (_) => cancelGesture(),
-                        onPointerSignal: (event) {
-                          if (event is PointerScrollEvent &&
-                              event.scrollDelta.dy != 0 &&
-                              editable &&
-                              !textEditing) {
-                            GestureBinding.instance.pointerSignalResolver
-                                .register(
-                                  event,
-                                  (_) => adjustWidth(
-                                    event.scrollDelta.dy < 0 ? 1 : -1,
-                                  ),
-                                );
-                          }
-                        },
-                        child: MouseRegion(
-                          cursor: canvasCursor,
-                          onEnter: (event) => hover(event.localPosition),
-                          onHover: (event) => hover(event.localPosition),
-                          onExit: (_) => hover(null),
-                          child: SizedBox(
-                            width: imageSize.width,
-                            height: imageSize.height,
-                            child: image == null
-                                ? const SizedBox.shrink()
-                                : RepaintBoundary(
-                                    key: const ValueKey('annotation-content'),
-                                    child: CustomPaint(
-                                      painter: _AnnotationPainter(
-                                        image!,
-                                        mosaics,
-                                        visibleItems,
-                                        textEditing ? null : selected,
-                                        scale,
-                                        !eraserBrush &&
-                                                start != null &&
-                                                eraserEnd != null
-                                            ? Rect.fromPoints(
-                                                start!,
-                                                eraserEnd!,
-                                              )
-                                            : null,
+                      minWidth: 0,
+                      minHeight: 0,
+                      maxWidth: double.infinity,
+                      maxHeight: double.infinity,
+                      child: Transform(
+                        alignment: Alignment.topLeft,
+                        transform: Matrix4.diagonal3Values(
+                          1 / c.screenshotScaleX,
+                          1 / c.screenshotScaleY,
+                          1,
+                        ),
+                        child: Listener(
+                          key: const ValueKey('annotation-canvas'),
+                          onPointerDown: down,
+                          onPointerMove: move,
+                          onPointerUp: up,
+                          onPointerCancel: (_) => cancelGesture(),
+                          onPointerSignal: (event) {
+                            if (event is PointerScrollEvent &&
+                                event.scrollDelta.dy != 0 &&
+                                editable &&
+                                !textEditing) {
+                              GestureBinding.instance.pointerSignalResolver
+                                  .register(
+                                    event,
+                                    (_) => adjustWidth(
+                                      event.scrollDelta.dy < 0 ? 1 : -1,
+                                    ),
+                                  );
+                            }
+                          },
+                          child: MouseRegion(
+                            cursor: canvasCursor,
+                            onEnter: (event) => hover(event.localPosition),
+                            onHover: (event) => hover(event.localPosition),
+                            onExit: (_) => hover(null),
+                            child: SizedBox(
+                              width: imageSize.width,
+                              height: imageSize.height,
+                              child: image == null
+                                  ? const SizedBox.shrink()
+                                  : RepaintBoundary(
+                                      key: const ValueKey('annotation-content'),
+                                      child: CustomPaint(
+                                        painter: _AnnotationPainter(
+                                          image!,
+                                          mosaics,
+                                          visibleItems,
+                                          textEditing ? null : selected,
+                                          scale,
+                                          !eraserBrush &&
+                                                  start != null &&
+                                                  eraserEnd != null
+                                              ? Rect.fromPoints(
+                                                  start!,
+                                                  eraserEnd!,
+                                                )
+                                              : null,
+                                        ),
                                       ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: _SelectionShadePainter(activeRect),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _SelectionShadePainter(activeRect),
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: activeRect.left.clamp(4.0, constraints.maxWidth - 160),
-                top: math.max(4.0, activeRect.top - 24),
-                child: IgnorePointer(
-                  child: Container(
-                    key: const ValueKey('screenshot-size-label'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    child: Text(
-                      '${activeSelection.width} × ${activeSelection.height} px',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.white,
-                        fontFamily: 'monospace',
+                Positioned(
+                  left: activeRect.left.clamp(4.0, constraints.maxWidth - 160),
+                  top: math.max(4.0, activeRect.top - 24),
+                  child: IgnorePointer(
+                    child: Container(
+                      key: const ValueKey('screenshot-size-label'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        '${activeSelection.width} × ${activeSelection.height} px',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                          fontFamily: 'monospace',
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              if (canAdjustSelection) ...[
-                selectionHandle('nw', activeRect.topLeft),
-                selectionHandle('n', activeRect.topCenter),
-                selectionHandle('ne', activeRect.topRight),
-                selectionHandle('e', activeRect.centerRight),
-                selectionHandle('se', activeRect.bottomRight),
-                selectionHandle('s', activeRect.bottomCenter),
-                selectionHandle('sw', activeRect.bottomLeft),
-                selectionHandle('w', activeRect.centerLeft),
-              ],
-              if (showBrushCursor) brushCursor(rect),
-              if (textEditing) inlineText(rect),
-              if (toolbarVisible && selectionDrag == null)
-                Positioned(
-                  left: left.toDouble(),
-                  top: top.toDouble(),
-                  width: toolbarWidth,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.basic,
-                    child: toolbar(above: above),
+                if (canAdjustSelection) ...[
+                  selectionHandle('nw', activeRect.topLeft),
+                  selectionHandle('n', activeRect.topCenter),
+                  selectionHandle('ne', activeRect.topRight),
+                  selectionHandle('e', activeRect.centerRight),
+                  selectionHandle('se', activeRect.bottomRight),
+                  selectionHandle('s', activeRect.bottomCenter),
+                  selectionHandle('sw', activeRect.bottomLeft),
+                  selectionHandle('w', activeRect.centerLeft),
+                ],
+                if (showBrushCursor) brushCursor(rect),
+                if (textEditing) inlineText(rect),
+                if (tool == 'picker')
+                  Positioned.fill(
+                    child: Listener(
+                      key: const ValueKey('screenshot-picker-surface'),
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (event) {
+                        if (event.buttons == kSecondaryMouseButton) {
+                          selectTool('select');
+                          return;
+                        }
+                        if (event.buttons == kPrimaryMouseButton) {
+                          c.sampleCaptureColor(
+                            c.screenshotDisplayId!,
+                            event.localPosition.dx,
+                            event.localPosition.dy,
+                          );
+                        }
+                      },
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.precise,
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
                   ),
-                ),
-            ],
+                if (tool == 'picker' && screenPointer != null)
+                  pickerFeedback(constraints),
+                if (toolbarVisible && selectionDrag == null)
+                  Positioned(
+                    left: left.toDouble(),
+                    top: top.toDouble(),
+                    width: toolbarWidth,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.basic,
+                      child: toolbar(above: above),
+                    ),
+                  ),
+              ],
+            ),
           );
         },
       ),

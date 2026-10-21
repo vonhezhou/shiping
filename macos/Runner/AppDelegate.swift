@@ -7,11 +7,12 @@ class AppDelegate: FlutterAppDelegate {
   private var reopenObserver: NSObjectProtocol?
   override func applicationDidFinishLaunching(_ notification: Notification) {
     super.applicationDidFinishLaunching(notification)
+    mainFlutterWindow?.orderOut(nil)
     reopenObserver = DistributedNotificationCenter.default().addObserver(
       forName: FrulerInstance.reopenNotification, object: nil, queue: .main
     ) { [weak self] _ in
       NSApp.activate(ignoringOtherApps: true)
-      self?.mainFlutterWindow?.makeKeyAndOrderFront(nil)
+      (self?.mainFlutterWindow as? MainFlutterWindow)?.presentHistory()
     }
   }
 
@@ -25,7 +26,7 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if !flag {
-      mainFlutterWindow?.makeKeyAndOrderFront(nil)
+      (mainFlutterWindow as? MainFlutterWindow)?.presentHistory()
     }
     return true
   }

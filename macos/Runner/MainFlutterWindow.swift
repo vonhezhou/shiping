@@ -6,7 +6,16 @@ import UniformTypeIdentifiers
 
 class MainFlutterWindow: NSWindow {
   private var desktopBridge: FrulerDesktopBridge?
-
+  private var historyRequested = false
+  override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    if place != .out && !historyRequested { return }
+    super.order(place, relativeTo: otherWin)
+  }
+  func presentHistory() {
+    historyRequested = true
+    deminiaturize(nil)
+    makeKeyAndOrderFront(nil)
+  }
 
   func requestQuitConfirmation() -> Bool { desktopBridge?.requestQuitConfirmation() ?? false }
 
@@ -14,6 +23,8 @@ class MainFlutterWindow: NSWindow {
     guard FrulerInstance.acquire() else { NSApp.terminate(nil); return }
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
+    // Start the engine even though the history window stays hidden at launch.
+    _ = flutterViewController.view
     title = "fruler"
     setContentSize(NSSize(width: 1100, height: 760))
     minSize = NSSize(width: 920, height: 680)
@@ -26,6 +37,7 @@ class MainFlutterWindow: NSWindow {
     desktopBridge?.installIntegrationDriver(messenger: flutterViewController.engine.binaryMessenger)
     #endif
 
+    flutterViewController.engine.run(withEntrypoint: nil)
     super.awakeFromNib()
   }
 }
@@ -142,10 +154,15 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard let self = self else { return }
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
+      case "raiseRegionFixture":
+        DistributedNotificationCenter.default().postNotificationName(
+          Notification.Name("dev.fruler.integration.raiseRegionFixture"),object:nil,userInfo:nil,deliverImmediately:true)
+        result(nil)
       case "status":
         result(["panels":self.overlays.count,"active":self.session != nil,
           "permission":CGPreflightScreenCaptureAccess(),"bundleId":Bundle.main.bundleIdentifier ?? "",
           "mainVisible":self.mainWindow?.isVisible == true,"editing":self.screenshotHost != nil,
+          "statusItemCount":self.statusItem == nil ? 0 : 1,"accessory":NSApp.activationPolicy() == .accessory,
           "rulerViews":self.overlays.values.map { $0.overlay.integrationState },
           "windowNumber":self.screenshotHost?.windowNumber ?? self.overlays.values.first?.windowNumber ?? -1])
       case "clickRulerControl":
@@ -196,17 +213,34 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         self.flutterController?.scrollWheel(with:event)
         result(nil)
       case "key":
+        let keyCharacters: [UInt16:String] = [51:"\u{7f}",117:"\u{f728}",6:"z",16:"y",8:"c",46:"m"]
         guard let panel=self.overlays.values.first(where:{$0.isKeyWindow}) ?? self.overlays.values.first,
           let code=args["keyCode"] as? UInt16,
           let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:
             (args["command"] as? Bool == true ? NSEvent.ModifierFlags.command : []).union(
               args["shift"] as? Bool == true ? .shift : []),
             timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
-            context:nil,characters:"",charactersIgnoringModifiers:"",isARepeat:false,keyCode:code) else {
+            context:nil,characters:keyCharacters[code] ?? "",charactersIgnoringModifiers:keyCharacters[code] ?? "",isARepeat:false,keyCode:code) else {
           result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
         }
-        panel.makeKeyAndOrderFront(nil);panel.makeFirstResponder(panel.overlay)
-        panel.sendEvent(event);result(nil)
+        if let host = self.screenshotHost {
+          host.makeKeyAndOrderFront(nil)
+          // Keep Flutter's text input responder when editing text.
+          if host.firstResponder === host.overlay {
+            host.makeFirstResponder(self.flutterController?.view)
+          }
+          NSApp.sendEvent(event)
+          if let up = NSEvent.keyEvent(with: .keyUp, location: .zero,
+            modifierFlags: event.modifierFlags, timestamp: event.timestamp,
+            windowNumber: host.windowNumber, context: nil,
+            characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code) {
+            NSApp.sendEvent(up)
+          }
+        } else {
+          panel.makeKeyAndOrderFront(nil);panel.makeFirstResponder(panel.overlay)
+          panel.sendEvent(event)
+        }
+        result(nil)
       case "insertText":
         guard let host=self.screenshotHost,
           let client=host.firstResponder as? NSTextInputClient,
@@ -497,8 +531,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
         try Task.checkCancellation()
         guard self.session == id, !captures.isEmpty else { throw CaptureFailure.unavailable }
+        let targets = CaptureRegionTarget.visibleWindows()
         for snapshot in captures {
           let panel = CapturePanel(snapshot: snapshot, tool: tool)
+          panel.overlay.regionTargets = targets
           panel.overlay.onEvent = { [weak self] event in
             guard let self = self, self.session == id else { return }
             var data = event
@@ -600,8 +636,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   @objc private func presentMainWindow() {
     if session != nil { cancelSession() }
     NSApp.activate(ignoringOtherApps: true)
-    mainWindow?.deminiaturize(nil)
-    mainWindow?.makeKeyAndOrderFront(nil)
+    (mainWindow as? MainFlutterWindow)?.presentHistory()
   }
   @objc private func quitApp() { NSApp.terminate(nil) }
 
@@ -725,6 +760,37 @@ private enum CaptureFailure: LocalizedError {
   var errorDescription: String? { "没有可用的显示器或像素缓冲区。" }
 }
 
+struct CaptureRegionGeometry {
+  static func localRect(_ rect: CGRect, display: CGRect) -> CGRect? {
+    let clipped = rect.intersection(display)
+    guard !clipped.isNull, clipped.width >= 1, clipped.height >= 1 else { return nil }
+    return clipped.offsetBy(dx: -display.minX, dy: -display.minY)
+  }
+  static func pixels(_ rect: CGRect, size: CGSize, width: Int, height: Int) -> [String:Int] {
+    ["left":max(0,Int(floor(rect.minX / size.width * Double(width)))),
+     "top":max(0,Int(floor(rect.minY / size.height * Double(height)))),
+     "right":min(width,Int(ceil(rect.maxX / size.width * Double(width)))),
+     "bottom":min(height,Int(ceil(rect.maxY / size.height * Double(height))))]
+  }
+}
+private struct CaptureRegionTarget {
+  let rect: CGRect
+  let title: String
+  static func visibleWindows() -> [CaptureRegionTarget] {
+    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String:Any]] ?? []
+    return windows.compactMap { info in
+      guard let pid = info[kCGWindowOwnerPID as String] as? Int32,
+        pid != ProcessInfo.processInfo.processIdentifier,
+        info[kCGWindowLayer as String] as? Int == 0,
+        (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+        let bounds = info[kCGWindowBounds as String] as? [String:Any],
+        let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+        rect.width > 1, rect.height > 1 else { return nil }
+      return CaptureRegionTarget(rect:rect,title:info[kCGWindowName as String] as? String ?? "")
+    }
+  }
+}
+
 private struct DisplaySnapshot {
   let displayID: UInt32
   let frame: NSRect
@@ -803,6 +869,7 @@ private final class CapturePopUpButton: NSPopUpButton {
 
 private final class CaptureOverlayView: NSView {
   let snapshot: DisplaySnapshot
+  var regionTargets: [CaptureRegionTarget] = []
   private var tool: String
   var onEvent: (([String: Any]) -> Void)?
   var onCancel: (() -> Void)?
@@ -920,6 +987,10 @@ private final class CaptureOverlayView: NSView {
   override func keyDown(with event: NSEvent) {
     switch Int(event.keyCode) {
     case kVK_Escape: onCancel?()
+    case kVK_ANSI_C where tool == "screenshot" && !event.modifierFlags.contains(.command):
+      onEvent?(["type":"sampleColor"])
+    case kVK_ANSI_M where tool == "screenshot" && !event.modifierFlags.contains(.command):
+      onEvent?(["type":"copyCaptureSize"])
     case kVK_ANSI_C where tool == "rectangle" && event.modifierFlags.contains(.command):
       onEvent?(["type": "copyMeasurement"])
     case kVK_ANSI_Z where event.modifierFlags.contains(.command):
@@ -949,6 +1020,13 @@ private final class CaptureOverlayView: NSView {
       onEvent?(["type": "scroll", "steps": steps])
     }
     if event.phase == .ended || event.momentumPhase == .ended { scrollRemainder = 0 }
+  }
+
+  private func suggestedRegion(at location: NSPoint) -> CGRect {
+    let display = CGDisplayBounds(snapshot.displayID)
+    let global = CGPoint(x:display.minX+location.x,y:display.minY+location.y)
+    guard let target = regionTargets.first(where:{$0.rect.contains(global)}) else { return bounds }
+    return CaptureRegionGeometry.localRect(target.rect,display:display) ?? bounds
   }
 
   private func send(_ event: NSEvent, phase: String) {
@@ -985,9 +1063,14 @@ private final class CaptureOverlayView: NSView {
     pointer = location
     isPointerActive = true
     needsDisplay = true
-    onEvent?(["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": phase,
+    var data: [String:Any] = ["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": phase,
       "keep": event.modifierFlags.contains(.shift),
-      "button": event.buttonNumber == 1 ? "secondary" : event.buttonNumber == 2 ? "middle" : "primary"])
+      "button": event.buttonNumber == 1 ? "secondary" : event.buttonNumber == 2 ? "middle" : "primary"]
+    if tool == "screenshot" && !event.modifierFlags.contains(.option) {
+      data["suggestedRect"] = CaptureRegionGeometry.pixels(suggestedRegion(at:location),
+        size:bounds.size,width:snapshot.width,height:snapshot.height)
+    }
+    onEvent?(data)
   }
   private func resizeHandle(_ rect: NSRect, at point: NSPoint) -> String? {
     let handles: [(String, NSPoint)] = [
@@ -1001,7 +1084,14 @@ private final class CaptureOverlayView: NSView {
     guard let window = window else { return }
     pointer = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
     isPointerActive = bounds.contains(pointer)
-    if isPointerActive { onEvent?(["type": "pointer", "x": pointer.x, "y": pointer.y, "phase": "move"]) }
+    if isPointerActive {
+      var data: [String:Any] = ["type":"pointer","x":pointer.x,"y":pointer.y,"phase":"move"]
+      if tool == "screenshot" {
+        data["suggestedRect"] = CaptureRegionGeometry.pixels(suggestedRegion(at:pointer),
+          size:bounds.size,width:snapshot.width,height:snapshot.height)
+      }
+      onEvent?(data)
+    }
     needsDisplay = true
   }
 
@@ -1028,7 +1118,8 @@ private final class CaptureOverlayView: NSView {
 
   #if FRULER_INTEGRATION_TEST
   func integrationClickControl(_ name: String) -> Bool {
-    guard let button = ["delete": deleteButton, "undo": undoButton][name], button.isEnabled else { return false }
+    let control: NSButton? = modeButtons[name] ?? ["delete":deleteButton,"undo":undoButton][name]
+    guard let button=control, button.isEnabled else { return false }
     button.performClick(nil)
     return true
   }
@@ -1053,6 +1144,12 @@ private final class CaptureOverlayView: NSView {
         result[entry.0] = ["x": rect.midX, "y": rect.midY, "enabled": entry.1.isEnabled]
       }
     return ["cursor": cursorName, "controls": controls,"displayId": snapshot.displayID, "tool": tool,
+     "preview":measuredRect.map { CaptureRegionGeometry.pixels($0,size:bounds.size,width:snapshot.width,height:snapshot.height) } as Any? ?? NSNull(),
+     "regions":regionTargets.compactMap { target -> [String:Any]? in
+       guard let rect=CaptureRegionGeometry.localRect(target.rect,display:CGDisplayBounds(snapshot.displayID)) else { return nil }
+       return ["title":target.title,"x":rect.minX,"y":rect.minY,"width":rect.width,"height":rect.height]
+     },
+
      "selectedPin": selectedPin as Any? ?? NSNull(),
      "pins": pins.map { ["id": $0.id, "x": $0.rect.minX, "y": $0.rect.minY,
        "width": $0.rect.width, "height": $0.rect.height, "label": $0.label] as [String: Any] },
@@ -1105,14 +1202,14 @@ private final class CaptureOverlayView: NSView {
     }
     for (mode, button) in modeButtons {
       let selected = mode == tool
-      button.isHidden = tool == "picker" || tool == "screenshot"
+      button.isHidden = (tool == "picker" || tool == "screenshot") && !["screenshot","picker","rectangle"].contains(mode)
       button.layer?.backgroundColor = (selected ? accent : NSColor.white.withAlphaComponent(0.07)).cgColor
       button.contentTintColor = selected ? .black : .white
       button.setAccessibilityValue(selected ? "已选中" : "")
     }
     clearButton.isHidden = tool == "picker" || tool == "screenshot"
     infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? "取色" : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
-      tool == "screenshot" ? "框选截图 · 松开进入标注 · 方向键微调 · Enter 确认" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "空白处新增 · 拖框移动 / 边角缩放 · Enter 完成" : "容差 \(tolerance) · 滚轮调整"
+      tool == "screenshot" ? "单击吸附 · 拖动框选 · C 取色 · M 复制尺寸" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "空白处新增 · 拖框移动 / 边角缩放 · Enter 完成" : "容差 \(tolerance) · 滚轮调整"
     toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
     needsDisplay = true
     window?.invalidateCursorRects(for: self)
@@ -1133,9 +1230,9 @@ private final class CaptureOverlayView: NSView {
     stack.spacing = 7
     stack.alignment = .centerY
     toolbar.addSubview(stack)
-    for (index, mode) in ["rectangle", "horizontal", "vertical", "cross"].enumerated() {
-      let names = ["矩形", "水平", "垂直", "交叉"]
-      let button = CaptureButton(title: "\(index + 1) \(names[index])", target: self, action: #selector(changeMode(_:)))
+    for (index, mode) in ["screenshot", "picker", "rectangle", "horizontal", "vertical", "cross"].enumerated() {
+      let names = ["截图", "取色", "矩形", "水平", "垂直", "交叉"]
+      let button = CaptureButton(title: names[index], target: self, action: #selector(changeMode(_:)))
       button.identifier = NSUserInterfaceItemIdentifier(mode)
       button.font = .systemFont(ofSize: 11, weight: .medium)
       button.isBordered = false
@@ -1143,7 +1240,7 @@ private final class CaptureOverlayView: NSView {
       button.layer?.cornerRadius = 6
       button.widthAnchor.constraint(equalToConstant: 67).isActive = true
       button.heightAnchor.constraint(equalToConstant: 28).isActive = true
-      button.toolTip = "切换\(names[index])模式（\(index + 1)）"
+      button.toolTip = index >= 2 ? "切换\(names[index])模式（\(index - 1)）" : "切换\(names[index])，复用当前截图"
       modeButtons[mode] = button
       stack.addArrangedSubview(button)
     }
@@ -1274,6 +1371,11 @@ private final class CaptureOverlayView: NSView {
     }
     guard isPointerActive, !editingPins else { return }
     if tool == "rectangle", !anchored, selectedPin != nil { return }
+    if tool == "screenshot", let rect = measuredRect {
+      let shade = NSBezierPath(rect:bounds)
+      shade.appendRect(rect);shade.windingRule = .evenOdd
+      NSColor.black.withAlphaComponent(0.22).setFill();shade.fill()
+    }
     if let rect = measuredRect { drawMeasurement(rect) }
     drawCrosshair()
     drawLoupe()
@@ -1316,8 +1418,9 @@ private final class CaptureOverlayView: NSView {
   }
 
   private func drawLoupe() {
-    let width: CGFloat = tool == "picker" ? 380 : 300
-    let height: CGFloat = tool == "picker" ? 208 : 64
+    let sampling = tool == "picker" || tool == "screenshot"
+    let width: CGFloat = sampling ? 380 : 300
+    let height: CGFloat = sampling ? 208 : 64
     var x = pointer.x + 26
     var y = pointer.y + 26
     if x + width > bounds.width - 12 { x = pointer.x - width - 26 }
@@ -1325,7 +1428,7 @@ private final class CaptureOverlayView: NSView {
     let box = NSRect(x: max(12, x), y: max(12, y), width: width, height: height)
     NSColor(srgbRed: 0.065, green: 0.075, blue: 0.085, alpha: 0.97).setFill()
     NSBezierPath(roundedRect: box, xRadius: 12, yRadius: 12).fill()
-    if tool == "picker" {
+    if sampling {
       let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
       let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
       let cell = CGFloat(zoom) / (window?.backingScaleFactor ?? 1)
@@ -1351,12 +1454,12 @@ private final class CaptureOverlayView: NSView {
       selectedColor.setFill()
       NSBezierPath(roundedRect: NSRect(x: box.minX + 130, y: box.minY + 12, width: width - 146, height: 99), xRadius: 7, yRadius: 7).fill()
     }
-    let labelY = tool == "picker" ? box.minY + 122 : box.minY + 12
+    let labelY = sampling ? box.minY + 122 : box.minY + 12
     (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
       .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
     let hint = tool == "rectangle" ? (anchored ? "松手保留 · 方向键微调" : "拖拽新增 · 拖框移动 / 边角缩放 · Enter 复制并结束") :
       (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
-    let actionHint = tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
+    let actionHint = tool == "screenshot" ? "C 复制颜色 · M 复制尺寸 · Option 暂停吸附" : tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
     (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y:labelY+21,width:width-28,height:60),withAttributes:[
       .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }

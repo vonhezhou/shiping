@@ -99,8 +99,17 @@ Future<void> nativeWheel(
 /// away from the interactive app. Capture, events, storage and clipboard are real.
 class NativeDesktop extends MacDesktopService {
   CaptureSession? lastCapture;
+  int captureCount = 0;
+  Map<String, Object?>? overlay;
+  @override
+  Future<void> updateOverlay(Map<String, Object?> data) async {
+    overlay = data;
+    await super.updateOverlay(data);
+  }
+
   @override
   Future<CaptureSession> begin(String tool) async {
+    captureCount++;
     lastCapture = await super.begin(tool);
     return lastCapture!;
   }
@@ -151,6 +160,246 @@ Future<void> chooseAnnotationTool(
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('launch stays in menu bar without opening main window', (
+    tester,
+  ) async {
+    final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+    expect(status['mainVisible'], false);
+    expect(status['statusItemCount'], 1);
+    expect(status['accessory'], true);
+  });
+
+  testWidgets(
+    'real window hover suggests bounds and a click selects the same frozen capture',
+    (tester) async {
+      final desktop = NativeDesktop();
+      final c = AppController(desktop);
+      await driver.invokeMethod<void>('backupClipboard');
+      await c.initialize();
+      try {
+        await tester.pumpWidget(FrulerApp(controller: c));
+        await driver.invokeMethod<void>('raiseRegionFixture');
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await c.startScreenshot();
+        final status = (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!;
+        final views = (status['rulerViews'] as List).cast<Map>();
+        Map? target, view;
+        for (final v in views) {
+          for (final region in v['regions'] as List) {
+            if ((region as Map)['title'] == 'fruler-region-fixture') {
+              target = region;
+              view = v;
+              break;
+            }
+          }
+          if (target != null) break;
+        }
+        expect(
+          target,
+          isNotNull,
+          reason:
+              'Must detect an actual window from the separate AppKit fixture',
+        );
+        final id = (view!['displayId'] as num).toInt();
+        final x = (target!['x'] as num).toDouble(),
+            y = (target['y'] as num).toDouble();
+        final w = (target['width'] as num).toDouble(),
+            h = (target['height'] as num).toDouble();
+        final frame = desktop.lastCapture!.displays
+            .firstWhere((d) => d.id == id)
+            .frame;
+        final tl = frame.logicalToBoundary(x, y),
+            br = frame.logicalToBoundary(x + w, y + h);
+        for (final phase in ['move', 'down', 'up']) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': id,
+            'x': x + w / 2,
+            'y': y + h / 2,
+            'phase': phase,
+            'warp': true,
+          });
+          await tester.pump();
+        }
+        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        expect(c.screenshotSelection!.toJson(), {
+          'left': tl.x,
+          'top': tl.y,
+          'right': br.x,
+          'bottom': br.y,
+        });
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))!['mainVisible'],
+          false,
+        );
+      } finally {
+        await c.cancelScreenshot();
+        c.dispose();
+        await driver.invokeMethod<void>('restoreClipboard');
+      }
+    },
+  );
+
+  testWidgets(
+    'screenshot shares capture with color picker and ruler, Cocoa C/M copy and return',
+    (tester) async {
+      final d = NativeDesktop();
+      final c = AppController(d);
+      await driver.invokeMethod<void>('backupClipboard');
+      await c.initialize();
+      try {
+        await tester.pumpWidget(FrulerApp(controller: c));
+        await c.startScreenshot();
+        final display = d.lastCapture!.displays.first;
+        final id = display.id;
+        final initial = (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!;
+        expect(
+          await driver.invokeMethod<bool>('clickRulerControl', {
+            'name': 'rectangle',
+          }),
+          true,
+        );
+        await waitFor(tester, () => d.overlay?['tool'] == 'rectangle');
+        expect(
+          await driver.invokeMethod<bool>('clickRulerControl', {
+            'name': 'screenshot',
+          }),
+          true,
+        );
+        await waitFor(tester, () => d.overlay?['tool'] == 'screenshot');
+        expect(d.captureCount, 1);
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))!['windowNumber'],
+          initial['windowNumber'],
+        );
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': id,
+          'x': 60.0,
+          'y': 180.0,
+          'phase': 'move',
+          'warp': true,
+        });
+        await tester.pumpAndSettle();
+        final p = display.frame.logicalToPixel(60, 180);
+        final expected = c.formatColor(display.frame.pixelAt(p.x, p.y));
+        await driver.invokeMethod<void>('key', {'keyCode': 8});
+        await waitFor(tester, () => !c.busy);
+        expect(await driver.invokeMethod<String>('clipboardText'), expected);
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))!['mainVisible'],
+          false,
+        );
+        await c.startScreenshot();
+        final second = d.lastCapture!.displays.first;
+        await tester.pumpAndSettle();
+        for (final phase in ['down', 'drag']) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': second.id,
+            'x': phase == 'down' ? 40.0 : 240.0,
+            'y': phase == 'down' ? 180.0 : 280.0,
+            'phase': phase,
+            'warp': true,
+          });
+          await tester.pumpAndSettle();
+        }
+        await waitFor(
+          tester,
+          () =>
+              d.overlay?['anchored'] == true &&
+              (d.overlay?['rect'] as Map?)?['right'] ==
+                  second.frame.logicalToBoundary(240, 280).x,
+        );
+        await driver.invokeMethod<void>('key', {'keyCode': 46});
+        await waitFor(tester, () => !c.busy);
+        expect(c.measurements.first.measurement.logicalWidth, 200);
+        expect(c.measurements.first.measurement.logicalHeight, 100);
+        expect(
+          await driver.invokeMethod<String>('clipboardText'),
+          c.measurements.first.label,
+        );
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))!['mainVisible'],
+          false,
+        );
+      } finally {
+        await c.cancelScreenshot();
+        c.dispose();
+        await driver.invokeMethod<void>('restoreClipboard');
+      }
+    },
+  );
+
+  testWidgets('Cocoa Delete in text input preserves annotations', (
+    tester,
+  ) async {
+    final d = NativeDesktop();
+    final c = AppController(d);
+    await driver.invokeMethod<void>('backupClipboard');
+    await c.initialize();
+    try {
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await c.startScreenshot();
+      final id = d.lastCapture!.displays.first.id;
+      for (final phase in ['down', 'drag', 'up']) {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': id,
+          'x': phase == 'down' ? 40.0 : 500.0,
+          'y': phase == 'down' ? 180.0 : 450.0,
+          'phase': phase,
+          'warp': true,
+        });
+        await tester.pump();
+      }
+      await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+      await tester.pumpAndSettle();
+      await click(tester, find.byKey(const ValueKey('annotation-tool-text')));
+      await click(tester, find.byKey(const ValueKey('annotation-canvas')));
+      await driver.invokeMethod<void>('insertText', {'text': 'probe!'});
+      await waitFor(
+        tester,
+        () =>
+            tester
+                .widget<TextField>(
+                  find.byKey(const ValueKey('annotation-text-input')),
+                )
+                .controller!
+                .text ==
+            'probe!',
+      );
+      await driver.invokeMethod<void>('key', {'keyCode': 51});
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 250)),
+      );
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('annotation-text-input')),
+            )
+            .controller!
+            .text,
+        'probe',
+      );
+      expect(c.markup.items, isEmpty);
+    } finally {
+      await c.cancelScreenshot();
+      c.dispose();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
 
   testWidgets('Pigeon native persistence and shortcut errors round trip', (
     tester,
@@ -456,6 +705,18 @@ void main() {
           expect(c.markup.items.last.kind, kind);
           if (kind == AnnotationKind.rectangle) {
             expect(c.markup.items.last.filled, true);
+            // Cocoa Delete / Forward Delete must reach the Flutter editor.
+            await driver.invokeMethod<void>('key', {'keyCode': 51});
+            await waitFor(tester, () => c.markup.items.isEmpty);
+            await click(tester, find.byKey(const ValueKey('annotation-undo')));
+            expect(c.markup.items, hasLength(1));
+            expect(
+              find.byKey(const ValueKey('annotation-delete')),
+              findsOneWidget,
+            );
+            await driver.invokeMethod<void>('key', {'keyCode': 117});
+            await waitFor(tester, () => c.markup.items.isEmpty);
+            await click(tester, find.byKey(const ValueKey('annotation-undo')));
             await click(tester, find.byKey(const ValueKey('annotation-width')));
             expect(c.markup.items.last.filled, false);
             expect(
@@ -604,6 +865,7 @@ void main() {
         await click(tester, canvas);
         expect(find.byType(AlertDialog), findsNothing);
         await driver.invokeMethod<void>('insertText', {'text': '原位标注\n第二行'});
+
         await waitFor(
           tester,
           () => tester
@@ -612,7 +874,29 @@ void main() {
               )
               .controller!
               .text
-              .contains('第二行'),
+              .endsWith('第二行'),
+        );
+        await driver.invokeMethod<void>('insertText', {'text': '!'});
+        await waitFor(
+          tester,
+          () => tester
+              .widget<TextField>(
+                find.byKey(const ValueKey('annotation-text-input')),
+              )
+              .controller!
+              .text
+              .endsWith('!'),
+        );
+        await driver.invokeMethod<void>('key', {'keyCode': 51});
+        await waitFor(
+          tester,
+          () => tester
+              .widget<TextField>(
+                find.byKey(const ValueKey('annotation-text-input')),
+              )
+              .controller!
+              .text
+              .endsWith('第二行'),
         );
         await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);

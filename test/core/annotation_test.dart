@@ -5,6 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('等值样式和移回原点不占历史、不清除重做', () {
+    final a = Annotation(
+      kind: AnnotationKind.rectangle,
+      points: [const Offset(10, 10), const Offset(50, 50)],
+    );
+    final h = AnnotationHistory();
+    h.commit([a]);
+    h.commit([a.move(const Offset(10, 0), const Size(100, 100))]);
+    h.undo();
+    h.commit([a.copyWith()]);
+    expect(h.canRedo, true);
+    h.redo();
+    expect(h.items.single.bounds.left, 20);
+  });
+
   test('橡皮擦序列化保存模式和路径，不作为可选中标注', () {
     for (final brush in [false, true]) {
       final a = Annotation(

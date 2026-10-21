@@ -89,4 +89,12 @@ Map<Object?, Object?> eventFromWire(wire.NativeEvent e) => {
   'resize': e.resize,
   'steps': e.steps,
   'save': e.save,
+  'suggestedRect': e.suggestedRect == null
+      ? null
+      : {
+          'left': e.suggestedRect!.left,
+          'top': e.suggestedRect!.top,
+          'right': e.suggestedRect!.right,
+          'bottom': e.suggestedRect!.bottom,
+        },
 };

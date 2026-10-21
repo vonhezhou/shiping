@@ -47,6 +47,8 @@ extension EventKind {
     case .confirm: return "confirm"
     case .clearPins: return "clearPins"
     case .pointer: return "pointer"
+    case .sampleColor: return "sampleColor"
+    case .copyCaptureSize: return "copyCaptureSize"
     }
   }
   init?(name: String) {
@@ -70,6 +72,8 @@ extension EventKind {
     case "confirm": self = .confirm
     case "clearPins": self = .clearPins
     case "pointer": self = .pointer
+    case "sampleColor": self = .sampleColor
+    case "copyCaptureSize": self = .copyCaptureSize
     default: return nil
     }
   }
@@ -208,5 +212,9 @@ func nativeEvent(_ d: [String: Any]) -> NativeEvent {
   e.resize = d["resize"] as? Bool
   e.steps = (d["steps"] as? NSNumber)?.int64Value
   e.save = d["save"] as? Bool
+  if let r = d["suggestedRect"] as? [String: Int] {
+    e.suggestedRect = PixelBounds(left: Int64(r["left"]!), top: Int64(r["top"]!),
+      right: Int64(r["right"]!), bottom: Int64(r["bottom"]!))
+  }
   return e
 }

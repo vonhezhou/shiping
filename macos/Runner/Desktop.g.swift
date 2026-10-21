@@ -207,6 +207,8 @@ enum EventKind: Int {
   case confirm = 16
   case clearPins = 17
   case pointer = 18
+  case sampleColor = 19
+  case copyCaptureSize = 20
 }
 
 enum InputPhase: Int {
@@ -736,6 +738,7 @@ struct NativeEvent: Hashable {
   var resize: Bool? = nil
   var steps: Int64? = nil
   var save: Bool? = nil
+  var suggestedRect: PixelBounds? = nil
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -760,6 +763,7 @@ struct NativeEvent: Hashable {
     let resize: Bool? = nilOrValue(pigeonVar_list[17])
     let steps: Int64? = nilOrValue(pigeonVar_list[18])
     let save: Bool? = nilOrValue(pigeonVar_list[19])
+    let suggestedRect: PixelBounds? = nilOrValue(pigeonVar_list[20])
 
     return NativeEvent(
       kind: kind,
@@ -781,7 +785,8 @@ struct NativeEvent: Hashable {
       dy: dy,
       resize: resize,
       steps: steps,
-      save: save
+      save: save,
+      suggestedRect: suggestedRect
     )
   }
   func toList() -> [Any?] {
@@ -806,13 +811,14 @@ struct NativeEvent: Hashable {
       resize,
       steps,
       save,
+      suggestedRect,
     ]
   }
   static func == (lhs: NativeEvent, rhs: NativeEvent) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.kind, rhs.kind) && deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.permission, rhs.permission) && deepEqualsDesktop(lhs.chord, rhs.chord) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.phase, rhs.phase) && deepEqualsDesktop(lhs.button, rhs.button) && deepEqualsDesktop(lhs.keep, rhs.keep) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.enabled, rhs.enabled) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.handle, rhs.handle) && deepEqualsDesktop(lhs.dx, rhs.dx) && deepEqualsDesktop(lhs.dy, rhs.dy) && deepEqualsDesktop(lhs.resize, rhs.resize) && deepEqualsDesktop(lhs.steps, rhs.steps) && deepEqualsDesktop(lhs.save, rhs.save)
+    return deepEqualsDesktop(lhs.kind, rhs.kind) && deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.permission, rhs.permission) && deepEqualsDesktop(lhs.chord, rhs.chord) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.phase, rhs.phase) && deepEqualsDesktop(lhs.button, rhs.button) && deepEqualsDesktop(lhs.keep, rhs.keep) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.enabled, rhs.enabled) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.handle, rhs.handle) && deepEqualsDesktop(lhs.dx, rhs.dx) && deepEqualsDesktop(lhs.dy, rhs.dy) && deepEqualsDesktop(lhs.resize, rhs.resize) && deepEqualsDesktop(lhs.steps, rhs.steps) && deepEqualsDesktop(lhs.save, rhs.save) && deepEqualsDesktop(lhs.suggestedRect, rhs.suggestedRect)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -837,6 +843,7 @@ struct NativeEvent: Hashable {
     deepHashDesktop(value: resize, hasher: &hasher)
     deepHashDesktop(value: steps, hasher: &hasher)
     deepHashDesktop(value: save, hasher: &hasher)
+    deepHashDesktop(value: suggestedRect, hasher: &hasher)
   }
 }
 

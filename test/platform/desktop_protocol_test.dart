@@ -99,6 +99,12 @@ void main() {
             y: 40,
             phase: wire.InputPhase.drag,
             button: wire.MouseButton.secondary,
+            suggestedRect: wire.PixelBounds(
+              left: 1,
+              top: 2,
+              right: 20,
+              bottom: 50,
+            ),
           ),
           wire.NativeEvent(
             kind: wire.EventKind.nudge,
@@ -125,6 +131,12 @@ void main() {
         expect(received[0]['phase'], 'drag');
         expect(received[0]['button'], 'secondary');
         expect(received[0]['displayId'], 9);
+        expect(received[0]['suggestedRect'], {
+          'left': 1,
+          'top': 2,
+          'right': 20,
+          'bottom': 50,
+        });
         expect(received[1]['dx'], isA<int>());
         expect(received[1]['dx'], -1);
         expect(received[2]['type'], 'cancelled');

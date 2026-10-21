@@ -101,6 +101,37 @@ class Annotation {
     effectStrength: effectStrength ?? this.effectStrength,
   );
 
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Annotation &&
+          kind == other.kind &&
+          listEquals(points, other.points) &&
+          color == other.color &&
+          width == other.width &&
+          fontSize == other.fontSize &&
+          text == other.text &&
+          filled == other.filled &&
+          bold == other.bold &&
+          italic == other.italic &&
+          effectBrush == other.effectBrush &&
+          effectStrength == other.effectStrength;
+
+  @override
+  int get hashCode => Object.hash(
+    kind,
+    Object.hashAll(points),
+    color,
+    width,
+    fontSize,
+    text,
+    filled,
+    bold,
+    italic,
+    effectBrush,
+    effectStrength,
+  );
+
   Annotation move(Offset delta, Size size) {
     final b = bounds;
     final d = Offset(

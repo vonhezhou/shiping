@@ -1,6 +1,35 @@
 import 'pixel_frame.dart';
+import 'ruler.dart';
 
 class CaptureControls {
+  static PixelRect? suggestedRect(
+    PixelFrame frame,
+    Object? value,
+    double x,
+    double y,
+  ) {
+    if (value is! Map) return null;
+    final l = value['left'],
+        t = value['top'],
+        r = value['right'],
+        b = value['bottom'];
+    if (l is! int ||
+        t is! int ||
+        r is! int ||
+        b is! int ||
+        l < 0 ||
+        t < 0 ||
+        r > frame.width ||
+        b > frame.height ||
+        r <= l ||
+        b <= t) {
+      return null;
+    }
+    final p = frame.logicalToPixel(x, y);
+    if (p.x < l || p.x >= r || p.y < t || p.y >= b) return null;
+    return PixelRect(left: l, top: t, right: r, bottom: b);
+  }
+
   static const zoomLevels = [4, 8, 12, 16, 24, 32];
   static const defaultZoom = 12;
 

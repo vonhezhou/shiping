@@ -4,6 +4,16 @@ import XCTest
 @testable import fruler
 
 class RunnerTests: XCTestCase {
+  func testWindowSelectionClipsAcrossNegativeDisplayOriginsAndRetina() {
+    let local=CaptureRegionGeometry.localRect(CGRect(x:-1100,y:50,width:400,height:300),
+      display:CGRect(x:-1000,y:0,width:1000,height:800))!
+    XCTAssertEqual(local,CGRect(x:0,y:50,width:300,height:300))
+    XCTAssertEqual(CaptureRegionGeometry.pixels(local,size:CGSize(width:1000,height:800),width:2000,height:1600),
+      ["left":0,"top":100,"right":600,"bottom":700])
+    XCTAssertNil(CaptureRegionGeometry.localRect(CGRect(x:10,y:10,width:20,height:20),
+      display:CGRect(x:-1000,y:0,width:1000,height:800)))
+  }
+
   func testNativeCaptureCommandContractIncludesScreenshot() {
     XCTAssertNotNil(CaptureTool(name: "screenshot"))
     let tools = ["picker", "rectangle", "horizontal", "vertical", "cross", "screenshot"]
