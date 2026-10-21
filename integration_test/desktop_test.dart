@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop_service.dart';
+import 'package:fruler/platform/annotation_renderer.dart';
 import 'package:fruler/platform/desktop.g.dart' as wire;
 import 'package:fruler/platform/native_pixel_buffer.dart';
 import 'package:fruler/ui/fruler_app.dart';
@@ -189,6 +190,35 @@ void pixelReaderIsolate(List<Object> args) async {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('native system font families render distinct exported text', (
+    tester,
+  ) async {
+    final families = await MacDesktopService().availableFontFamilies();
+    expect(families, isNotEmpty);
+    expect(families.toSet().length, families.length);
+    expect(families, containsAll(['Menlo', 'Helvetica']));
+    final frame = PixelFrame(
+      width: 300,
+      height: 100,
+      logicalWidth: 300,
+      logicalHeight: 100,
+      rgba: Uint8List(300 * 100 * 4),
+    );
+    Future<Uint8List> render(String family) =>
+        AnnotationRenderer.export(frame, [
+          Annotation(
+            kind: AnnotationKind.text,
+            points: [const Offset(0, 0), const Offset(300, 100)],
+            text: 'Comic Wi 123',
+            fontFamily: family,
+            fontSize: 36,
+          ),
+        ]);
+    final mono = await render('Menlo');
+    final sans = await render('Helvetica');
+    expect(mono, isNot(orderedEquals(sans)), reason: '真实系统字体应改变导出 PNG 的字形');
+  });
+
   testWidgets('launch stays in menu bar without opening main window', (
     tester,
   ) async {
@@ -1044,6 +1074,35 @@ void main() {
         expect(c.markup.items.length, 11);
         expect(c.markup.items.last.text, '原位标注\n第二行');
         expect(c.markup.items.last.fontSize / c.screenshotScaleY, 24);
+        final families = await desktop.availableFontFamilies();
+        final family = families.lastWhere(
+          (value) => value != Annotation.defaultFontFamily,
+        );
+        await click(
+          tester,
+          find.byKey(const ValueKey('annotation-font-family')),
+        );
+        final search = find.byKey(const ValueKey('annotation-font-search'));
+        await click(tester, search);
+        await driver.invokeMethod<void>('insertText', {'text': family});
+        await waitFor(
+          tester,
+          () => find
+              .byKey(ValueKey('annotation-font-option-$family'))
+              .evaluate()
+              .isNotEmpty,
+        );
+        final familyItem = find.byKey(
+          ValueKey('annotation-font-option-$family'),
+        );
+        await click(tester, familyItem);
+        expect(
+          find.byKey(const ValueKey('annotation-font-search')),
+          findsNothing,
+        );
+        expect(c.markup.items.last.fontFamily, family);
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        expect(c.markup.items.last.fontFamily, Annotation.defaultFontFamily);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items.length, 10);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));

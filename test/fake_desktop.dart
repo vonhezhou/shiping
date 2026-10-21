@@ -5,6 +5,12 @@ import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
+  @override
+  Future<List<String>> availableFontFamilies() async => [
+    'Comic Sans MS',
+    'Menlo',
+    'PingFang SC',
+  ];
   final input = StreamController<Map<Object?, Object?>>.broadcast(sync: true);
   ShortcutBindings bindings = ShortcutBindings.defaults;
   bool recording = false;

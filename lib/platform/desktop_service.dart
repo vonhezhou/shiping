@@ -44,6 +44,7 @@ abstract class DesktopService {
       : UnsupportedDesktopService();
 
   Stream<Map<Object?, Object?>> get events;
+  Future<List<String>> availableFontFamilies() async => [];
   Future<DesktopStatus> initialize();
   Future<bool> requestPermission();
   Future<void> openPrivacySettings();
@@ -77,6 +78,8 @@ class MacDesktopService implements DesktopService {
   }
   final PixelFrame Function(wire.DisplayFrame) _readFrame;
   final _api = wire.DesktopHostApi();
+  @override
+  Future<List<String>> availableFontFamilies() => _api.availableFontFamilies();
   final _events = StreamController<Map<Object?, Object?>>.broadcast();
   @override
   Stream<Map<Object?, Object?>> get events => _events.stream;

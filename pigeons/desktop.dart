@@ -228,6 +228,8 @@ class NativeEvent {
 @HostApi()
 abstract class DesktopHostApi {
   @async
+  List<String> availableFontFamilies();
+  @async
   NativeStatus initialize();
   @async
   bool requestPermission();

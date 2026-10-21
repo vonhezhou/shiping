@@ -186,14 +186,120 @@ void main() {
         final input = find.byKey(const ValueKey('annotation-text-input'));
         expect(tester.widget<TextField>(input).style!.fontSize, 24);
         await tester.enterText(input, 'pt text');
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font-family')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('annotation-font-search')),
+          'no matching font',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('没有匹配的字体'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('annotation-font-search')),
+          findsNothing,
+        );
+        expect(tester.widget<TextField>(input).controller!.text, 'pt text');
+        expect(
+          tester.widget<TextField>(input).style!.fontFamily,
+          Annotation.defaultFontFamily,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font-family')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('annotation-font-search')),
+          'comic',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font-option-Comic Sans MS')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<TextField>(input).style!.fontFamily,
+          'Comic Sans MS',
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('36 pt'));
+        await tester.tap(find.text('36 pt'), kind: ui.PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(input).style!.fontSize, 36);
+
         await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
         await tester.pumpAndSettle();
-        expect(c.markup.items.last.fontSize, 24 * ratio);
+        expect(c.markup.items.last.fontSize, 36 * ratio);
+        expect(c.markup.items.last.fontFamily, 'Comic Sans MS');
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font-family')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        final beforeSearch = List<Annotation>.of(c.markup.items);
+        final search = find.byKey(const ValueKey('annotation-font-search'));
+        await tester.enterText(search, 'comic 12');
+        for (final key in [
+          LogicalKeyboardKey.keyC,
+          LogicalKeyboardKey.keyM,
+          LogicalKeyboardKey.space,
+          LogicalKeyboardKey.digit1,
+          LogicalKeyboardKey.digit2,
+        ]) {
+          await tester.sendKeyEvent(key);
+        }
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+        await tester.pumpAndSettle();
+        expect(c.screenshotEditing, true);
+        expect(c.markup.items, beforeSearch);
+        await tester.enterText(search, 'menlo');
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font-option-Menlo')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.fontFamily, 'Menlo');
+        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.fontFamily, 'Comic Sans MS');
+        await tester.tap(find.byKey(const ValueKey('annotation-redo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.fontFamily, 'Menlo');
+        await tester.tap(
+          find.byKey(const ValueKey('annotation-font')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('48 pt'));
+        await tester.tap(find.text('48 pt'), kind: ui.PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.fontSize, 48 * ratio);
+        expect(
+          c.markup.items.last.bounds.height,
+          greaterThanOrEqualTo(48 * ratio),
+        );
+        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+        await tester.pumpAndSettle();
+        expect(c.markup.items.last.fontSize, 36 * ratio);
         await tester.tap(find.byKey(const ValueKey('annotation-edit-text')));
         await tester.pumpAndSettle();
-        expect(tester.widget<TextField>(input).style!.fontSize, 24);
+        expect(tester.widget<TextField>(input).style!.fontSize, 36);
+        expect(tester.widget<TextField>(input).style!.fontFamily, 'Menlo');
         expect(tester.takeException(), isNull);
       });
     }
@@ -638,6 +744,27 @@ void main() {
         (Offset.zero & size).contains(tester.getRect(properties).bottomRight),
         true,
       );
+      await tester.tap(
+        find.byKey(const ValueKey('annotation-font-family')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      final picker = tester.getRect(
+        find.byKey(const ValueKey('annotation-font-picker')),
+      );
+      expect((Offset.zero & size).contains(picker.topLeft), true);
+      expect((Offset.zero & size).contains(picker.bottomRight), true);
+      await tester.tapAt(
+        const Offset(10, 10),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('annotation-font-search')),
+        findsNothing,
+      );
+      expect(c.screenshotEditing, true);
+      expect(c.markup.items, isEmpty);
       expect(tester.takeException(), isNull);
     });
   }

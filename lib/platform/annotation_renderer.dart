@@ -10,7 +10,6 @@ import 'pixel_frame_image.dart';
 
 /// One renderer for both the editable preview and flattened PNG output.
 class AnnotationRenderer {
-  static const fontFamily = 'PingFang SC';
   static void paint(
     ui.Canvas canvas,
     ui.Image image,
@@ -95,7 +94,7 @@ class AnnotationRenderer {
               style: TextStyle(
                 color: ui.Color(a.color),
                 fontSize: a.fontSize,
-                fontFamily: fontFamily,
+                fontFamily: a.fontFamily,
                 fontWeight: a.bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: a.italic ? FontStyle.italic : FontStyle.normal,
                 height: 1.2,

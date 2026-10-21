@@ -32,6 +32,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           int color,
           double width,
           double fontSize,
+          String fontFamily,
           bool filled,
           bool bold,
           bool italic,
@@ -42,6 +43,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   int color = 0xFFFF0000;
   // Toolbar values are logical points; annotations use bitmap pixels.
   double width = 3, fontSize = 24;
+  String fontFamily = Annotation.defaultFontFamily;
+  List<String> fontFamilies = [];
+  final fontMenuController = MenuController();
+  String? fontError;
   double get pixelWidth => width * c.screenshotScaleX;
   double get pixelFontSize => fontSize * c.screenshotScaleY;
   int? selected, pointerId;
@@ -87,6 +92,16 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     super.initState();
     screenPointer = c.screenshotPointer;
     load();
+    loadFonts();
+  }
+
+  Future<void> loadFonts() async {
+    try {
+      final families = await c.desktop.availableFontFamilies();
+      if (mounted) setState(() => fontFamilies = families);
+    } catch (_) {
+      if (mounted) setState(() => fontError = '系统字体读取失败，请重新框选后重试');
+    }
   }
 
   Future<void> load() async {
@@ -163,6 +178,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     color: color,
     width: pixelWidth,
     fontSize: pixelFontSize,
+    fontFamily: fontFamily,
     text: text,
     filled: filled,
     bold: bold,
@@ -186,6 +202,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       color: color,
       width: width,
       fontSize: fontSize,
+      fontFamily: fontFamily,
       filled: filled,
       bold: bold,
       italic: italic,
@@ -206,6 +223,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               ? 24
               : 3);
       fontSize = next?.fontSize ?? 24;
+      fontFamily = next?.fontFamily ?? Annotation.defaultFontFamily;
       filled = next?.filled ?? false;
       bold = next?.bold ?? false;
       italic = next?.italic ?? false;
@@ -264,6 +282,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     int? nextColor,
     double? nextWidth,
     double? nextFont,
+    String? nextFontFamily,
     bool? nextFilled,
     bool? nextBold,
     bool? nextItalic,
@@ -273,6 +292,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       color = nextColor ?? color;
       width = nextWidth ?? width;
       fontSize = nextFont ?? fontSize;
+      fontFamily = nextFontFamily ?? fontFamily;
       filled = nextFilled ?? filled;
       bold = nextBold ?? bold;
       italic = nextItalic ?? italic;
@@ -282,6 +302,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       final next = List<Annotation>.of(items);
       next[selected!] = next[selected!].copyWith(
         color: nextColor,
+        fontFamily: nextFontFamily,
         width: nextWidth == null ? null : nextWidth * c.screenshotScaleX,
         fontSize: nextFont == null ? null : nextFont * c.screenshotScaleY,
         filled: nextFilled,
@@ -289,6 +310,46 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         italic: nextItalic,
         effectStrength: nextEffectStrength,
       );
+      final annotation = next[selected!];
+      if (annotation != items[selected!] &&
+          annotation.kind == AnnotationKind.text &&
+          (nextFont != null ||
+              nextFontFamily != null ||
+              nextBold != null ||
+              nextItalic != null)) {
+        final bounds = annotation.bounds;
+        final textWidth = math.min(
+          imageSize.width - bounds.left,
+          bounds.width * annotation.fontSize / items[selected!].fontSize,
+        );
+        final painter = TextPainter(
+          text: TextSpan(
+            text: annotation.text,
+            style: TextStyle(
+              fontSize: annotation.fontSize,
+              fontFamily: annotation.fontFamily,
+              fontWeight: annotation.bold ? FontWeight.bold : FontWeight.normal,
+              fontStyle: annotation.italic
+                  ? FontStyle.italic
+                  : FontStyle.normal,
+              height: 1.2,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: textWidth);
+        // 字形或字号变化后重新计算高度，避免导出时按旧文本框裁掉文字。
+        final height = math.min(
+          imageSize.height - bounds.top,
+          math.max(
+            annotation.fontSize * 1.3,
+            painter.height + 2 * c.screenshotScaleY,
+          ),
+        );
+        painter.dispose();
+        next[selected!] = annotation.copyWith(
+          points: [bounds.topLeft, bounds.topLeft + Offset(textWidth, height)],
+        );
+      }
       commit(next);
     }
     textEditing ? textFocus.requestFocus() : focus.requestFocus();
@@ -331,6 +392,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       color = old.color;
       width = old.width / c.screenshotScaleX;
       fontSize = old.fontSize / c.screenshotScaleY;
+      fontFamily = old.fontFamily;
       filled = old.filled;
       bold = old.bold;
       italic = old.italic;
@@ -346,7 +408,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           text: value,
           style: TextStyle(
             fontSize: pixelFontSize,
-            fontFamily: AnnotationRenderer.fontFamily,
+            fontFamily: fontFamily,
             height: 1.2,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
             fontStyle: italic ? FontStyle.italic : FontStyle.normal,
@@ -401,6 +463,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     color = a.color;
     width = a.width / c.screenshotScaleX;
     fontSize = a.fontSize / c.screenshotScaleY;
+    fontFamily = a.fontFamily;
     bold = a.bold;
     italic = a.italic;
     beginText(a.bounds, index: selected);
@@ -648,6 +711,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         color = original!.color;
         width = original!.width / c.screenshotScaleX;
         fontSize = original!.fontSize / c.screenshotScaleY;
+        fontFamily = original!.fontFamily;
         filled = original!.filled;
         bold = original!.bold;
         italic = original!.italic;
@@ -785,6 +849,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent || !editable) {
       return KeyEventResult.ignored;
     }
+    if (fontMenuController.isOpen) return KeyEventResult.ignored;
     final k = event.logicalKey;
     final meta =
         HardwareKeyboard.instance.isMetaPressed ||
@@ -950,6 +1015,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         color = a.color;
         width = a.width / c.screenshotScaleX;
         fontSize = a.fontSize / c.screenshotScaleY;
+        fontFamily = a.fontFamily;
         filled = a.filled;
         bold = a.bold;
         italic = a.italic;
@@ -1104,6 +1170,55 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ),
   );
 
+  Widget fontFamilyMenu() => MenuAnchor(
+    controller: fontMenuController,
+    consumeOutsideTap: true,
+    style: const MenuStyle(
+      backgroundColor: WidgetStatePropertyAll(toolbarSurface),
+      padding: WidgetStatePropertyAll(EdgeInsets.zero),
+    ),
+    onClose: () =>
+        textEditing ? textFocus.requestFocus() : focus.requestFocus(),
+    menuChildren: [
+      FontFamilyPicker(
+        key: const ValueKey('annotation-font-picker'),
+        families: fontFamilies,
+        selected: fontFamily,
+        onSelected: (value) {
+          fontMenuController.close();
+          style(nextFontFamily: value);
+        },
+      ),
+    ],
+    builder: (context, controller, child) => Tooltip(
+      message:
+          fontError ?? (fontFamilies.isEmpty ? '暂无可用系统字体' : '字体：$fontFamily'),
+      child: InkWell(
+        key: const ValueKey('annotation-font-family'),
+        onTap: fontFamilies.isEmpty
+            ? null
+            : () => controller.isOpen ? controller.close() : controller.open(),
+        child: SizedBox(
+          width: 140,
+          height: 28,
+          child: Row(
+            children: [
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  fontFamily,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+              const Icon(Icons.arrow_drop_down, size: 14, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
   Widget fontMenu() => Tooltip(
     message: '字号',
     child: PopupMenuButton<double>(
@@ -1115,18 +1230,39 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       constraints: const BoxConstraints(minWidth: 100, maxWidth: 160),
       onSelected: (v) => style(nextFont: v),
-      itemBuilder: (_) => <double>{12, 18, 24, 36, 48, 72, fontSize}
-          .map(
-            (v) => PopupMenuItem(
-              value: v,
-              height: 28,
-              child: Text(
-                '${v.toStringAsFixed(0)} pt',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-          )
-          .toList(),
+      itemBuilder: (_) =>
+          (<double>{
+                8,
+                10,
+                12,
+                14,
+                16,
+                18,
+                20,
+                24,
+                28,
+                32,
+                36,
+                48,
+                60,
+                72,
+                96,
+                120,
+                144,
+                200,
+                fontSize,
+              }.toList()..sort())
+              .map(
+                (v) => PopupMenuItem(
+                  value: v,
+                  height: 28,
+                  child: Text(
+                    '${v.toStringAsFixed(0)} pt',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              )
+              .toList(),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: SizedBox(
@@ -1509,6 +1645,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 () => style(nextItalic: !italic),
                 active: italic,
               ),
+              fontFamilyMenu(),
               fontMenu(),
               if (selected != null && !textEditing)
                 propertyButton(
@@ -1693,7 +1830,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           style: TextStyle(
             color: Color(color),
             fontSize: fontSize,
-            fontFamily: AnnotationRenderer.fontFamily,
+            fontFamily: fontFamily,
             height: 1.2,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
             fontStyle: italic ? FontStyle.italic : FontStyle.normal,

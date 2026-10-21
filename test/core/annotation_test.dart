@@ -5,6 +5,51 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('字体随序列化、变换和历史保留，旧数据沿用默认字体', () {
+    final a = Annotation(
+      kind: AnnotationKind.text,
+      points: [const Offset(10, 10), const Offset(90, 50)],
+      text: 'Comic',
+      fontFamily: 'Comic Sans MS',
+    );
+    final decoded = Annotation.decodeList(
+      jsonDecode(jsonEncode([a.toJson()])),
+      100,
+      100,
+    ).single;
+    expect(decoded, a);
+    expect(
+      a.move(const Offset(1, 1), const Size(100, 100)).fontFamily,
+      a.fontFamily,
+    );
+    expect(
+      a.resize(const Rect.fromLTWH(10, 10, 80, 40)).fontFamily,
+      a.fontFamily,
+    );
+    final h = AnnotationHistory()..reset([a]);
+    h.commit([a.copyWith(fontFamily: 'Menlo', fontSize: 36)]);
+    h.undo();
+    expect(h.items.single, a);
+    h.redo();
+    expect(h.items.single.fontFamily, 'Menlo');
+    expect(h.items.single.fontSize, 36);
+    final legacy = a.toJson()..remove('fontFamily');
+    expect(
+      Annotation.decodeList([legacy], 100, 100).single.fontFamily,
+      Annotation.defaultFontFamily,
+    );
+    for (final family in ['', 42, 'x' * 257]) {
+      expect(
+        () => Annotation.decodeList(
+          [a.toJson()..['fontFamily'] = family],
+          100,
+          100,
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('等值样式和移回原点不占历史、不清除重做', () {
     final a = Annotation(
       kind: AnnotationKind.rectangle,

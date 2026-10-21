@@ -68,6 +68,12 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private var toolMenuItems: [String: NSMenuItem] = [:]
   private let stateKey = "fruler.state.v1"
 
+  func availableFontFamilies(completion: @escaping (Result<[String], Error>) -> Void) {
+    completion(.success(NSFontManager.shared.availableFontFamilies.sorted {
+      $0.localizedStandardCompare($1) == .orderedAscending
+    }))
+  }
+
   init(window: NSWindow, messenger: FlutterBinaryMessenger) {
     mainWindow = window
     flutterController = window.contentViewController as? FlutterViewController

@@ -977,6 +977,7 @@ class DesktopPigeonCodec: FlutterStandardMessageCodec, @unchecked Sendable {
 
 /// Generated protocol from Pigeon that represents a handler of messages from Flutter.
 protocol DesktopHostApi {
+  func availableFontFamilies(completion: @escaping (Result<[String], Error>) -> Void)
   func initialize(completion: @escaping (Result<NativeStatus, Error>) -> Void)
   func requestPermission(completion: @escaping (Result<Bool, Error>) -> Void)
   func openPrivacySettings(completion: @escaping (Result<Void, Error>) -> Void)
@@ -1003,6 +1004,21 @@ class DesktopHostApiSetup {
   /// Sets up an instance of `DesktopHostApi` to handle messages through the `binaryMessenger`.
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: DesktopHostApi?, messageChannelSuffix: String = "") {
     let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    let availableFontFamiliesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.availableFontFamilies\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      availableFontFamiliesChannel.setMessageHandler { _, reply in
+        api.availableFontFamilies { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      availableFontFamiliesChannel.setMessageHandler(nil)
+    }
     let initializeChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.initialize\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       initializeChannel.setMessageHandler { _, reply in

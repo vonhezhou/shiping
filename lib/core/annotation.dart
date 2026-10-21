@@ -37,6 +37,7 @@ class Annotation {
     this.color = 0xFFFF5252,
     this.width = 3,
     this.fontSize = 24,
+    this.fontFamily = defaultFontFamily,
     this.text = '',
     this.filled = false,
     this.bold = false,
@@ -48,7 +49,8 @@ class Annotation {
   final List<Offset> points;
   final int color;
   final double width, fontSize;
-  final String text;
+  static const defaultFontFamily = 'PingFang SC';
+  final String text, fontFamily;
   final bool filled, bold, italic;
   final bool effectBrush;
 
@@ -82,6 +84,7 @@ class Annotation {
     double? width,
     double? fontSize,
     String? text,
+    String? fontFamily,
     bool? filled,
     bool? bold,
     bool? italic,
@@ -94,6 +97,7 @@ class Annotation {
     width: width ?? this.width,
     fontSize: fontSize ?? this.fontSize,
     text: text ?? this.text,
+    fontFamily: fontFamily ?? this.fontFamily,
     filled: filled ?? this.filled,
     bold: bold ?? this.bold,
     italic: italic ?? this.italic,
@@ -111,6 +115,7 @@ class Annotation {
           width == other.width &&
           fontSize == other.fontSize &&
           text == other.text &&
+          fontFamily == other.fontFamily &&
           filled == other.filled &&
           bold == other.bold &&
           italic == other.italic &&
@@ -124,6 +129,7 @@ class Annotation {
     color,
     width,
     fontSize,
+    fontFamily,
     text,
     filled,
     bold,
@@ -255,6 +261,7 @@ class Annotation {
     'color': color,
     'width': width,
     'fontSize': fontSize,
+    'fontFamily': fontFamily,
     'text': text,
     'filled': filled,
     'bold': bold,
@@ -276,6 +283,7 @@ class Annotation {
           .firstOrNull;
       final raw = v['points'], color = v['color'], stroke = v['width'];
       final font = v['fontSize'], text = v['text'];
+      final family = v['fontFamily'] ?? defaultFontFamily;
       final effectBrush = v['effectBrush'] ?? false;
       final strength = v['effectStrength'] ?? 3;
       final filled = v['filled'] ?? false,
@@ -303,6 +311,9 @@ class Annotation {
           !font.isFinite ||
           font < 8 ||
           font > 200 ||
+          family is! String ||
+          family.trim().isEmpty ||
+          family.length > 256 ||
           text is! String ||
           text.length > 4096 ||
           (kind == AnnotationKind.text && text.trim().isEmpty)) {
@@ -342,6 +353,7 @@ class Annotation {
         width: stroke.toDouble(),
         fontSize: font.toDouble(),
         text: text,
+        fontFamily: family,
         filled: filled,
         bold: bold,
         italic: italic,

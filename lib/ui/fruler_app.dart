@@ -11,6 +11,8 @@ import '../core/core.dart';
 import '../platform/annotation_renderer.dart';
 import '../platform/pixel_frame_image.dart';
 
+import 'font_family_picker.dart';
+
 part 'annotation_widgets.dart';
 part 'history_widgets.dart';
 
