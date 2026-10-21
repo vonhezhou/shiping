@@ -94,6 +94,31 @@ class AppController extends ChangeNotifier {
   final DesktopService desktop;
   final ImageDocumentCodec imageCodec;
   final markup = AnnotationHistory();
+  static const _annotationColorTools = {
+    'rectangle',
+    'ellipse',
+    'line',
+    'arrow',
+    'pencil',
+    'marker',
+    'text',
+  };
+  final _annotationColors = <String, int>{};
+
+  int annotationColor(String tool) => _annotationColors[tool] ?? 0xFFFF0000;
+
+  void setAnnotationColor(String tool, int color) {
+    if (!_annotationColorTools.contains(tool) ||
+        color < 0 ||
+        color > 0xFFFFFFFF ||
+        annotationColor(tool) == color) {
+      return;
+    }
+    _annotationColors[tool] = color;
+    _persist();
+    _notify();
+  }
+
   ImageDocument? imageDocument;
   PixelRect? screenshotSelection;
   int? screenshotDisplayId;
@@ -1810,6 +1835,7 @@ class AppController extends ChangeNotifier {
   void _persist() {
     final json = jsonEncode({
       'version': 1,
+      'annotationColors': _annotationColors,
       'format': format.name,
       'colorOutputs': _colorOutputs.map((e) => e.toJson()).toList(),
       'selectedOutputId': selectedOutputId,
@@ -1836,6 +1862,15 @@ class AppController extends ChangeNotifier {
   void _restore(String saved) {
     try {
       final data = jsonDecode(saved) as Map<String, dynamic>;
+      final annotationColors = data['annotationColors'];
+      if (annotationColors is Map) {
+        for (final tool in _annotationColorTools) {
+          final color = annotationColors[tool];
+          if (color is int && color >= 0 && color <= 0xFFFFFFFF) {
+            _annotationColors[tool] = color;
+          }
+        }
+      }
       format =
           ColorFormat.values
               .where((v) => v.name == data['format'])

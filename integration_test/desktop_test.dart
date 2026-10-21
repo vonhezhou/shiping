@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:ui' as ui;
 
@@ -574,6 +575,28 @@ void main() {
     try {
       await desktop.saveState('{"protocolTest":"中文 ∆"}');
       expect(await desktop.loadState(), '{"protocolTest":"中文 ∆"}');
+      final colors = AppController(NativeDesktop());
+      await colors.initialize();
+      try {
+        colors.setAnnotationColor('pencil', 0x8012AB34);
+        colors.setAnnotationColor('marker', 0xFF234567);
+        final stored = jsonDecode((await desktop.loadState())!) as Map;
+        expect(stored['annotationColors'], {
+          'pencil': 0x8012AB34,
+          'marker': 0xFF234567,
+        });
+        final restored = AppController(NativeDesktop());
+        await restored.initialize();
+        try {
+          expect(restored.annotationColor('pencil'), 0x8012AB34);
+          expect(restored.annotationColor('marker'), 0xFF234567);
+          expect(restored.annotationColor('text'), 0xFFFF0000);
+        } finally {
+          restored.dispose();
+        }
+      } finally {
+        colors.dispose();
+      }
       const duplicate = ShortcutChord(key: 'C', meta: true, shift: true);
       await expectLater(
         desktop.configureShortcuts(

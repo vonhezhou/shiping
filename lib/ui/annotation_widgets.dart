@@ -29,7 +29,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       <
         String,
         ({
-          int color,
           double width,
           double fontSize,
           String fontFamily,
@@ -200,7 +199,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     finishText();
     finishLine();
     styles[styleKey(propertyKind)] = (
-      color: color,
       width: width,
       fontSize: fontSize,
       fontFamily: fontFamily,
@@ -215,7 +213,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     setState(() {
       tool = value;
       selected = null;
-      color = next?.color ?? 0xFFFF0000;
+      color = c.annotationColor(value);
       width =
           next?.width ??
           (value == 'marker'
@@ -289,6 +287,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     bool? nextItalic,
     int? nextEffectStrength,
   }) {
+    if (nextColor != null) c.setAnnotationColor(propertyKind, nextColor);
     setState(() {
       color = nextColor ?? color;
       width = nextWidth ?? width;
