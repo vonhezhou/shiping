@@ -12,3 +12,6 @@ PRODUCT_BUNDLE_IDENTIFIER = dev.fruler.app
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 dev.fruler. All rights reserved.
+
+// C ABI entry points must survive release dead stripping for Dart FFI.
+OTHER_LDFLAGS = $(inherited) -Wl,-u,_fruler_frame_acquire -Wl,-u,_fruler_frame_data -Wl,-u,_fruler_frame_length -Wl,-u,_fruler_frame_release

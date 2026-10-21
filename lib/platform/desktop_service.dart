@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../core/core.dart';
 import 'desktop.g.dart' as wire;
 import 'desktop_protocol.dart';
+import 'native_pixel_buffer.dart';
 
 class DesktopStatus {
   const DesktopStatus({
@@ -70,9 +71,11 @@ abstract class DesktopService {
 }
 
 class MacDesktopService implements DesktopService {
-  MacDesktopService() {
+  MacDesktopService({PixelFrame Function(wire.DisplayFrame)? readFrame})
+    : _readFrame = readFrame ?? NativePixelBuffers.read {
     wire.DesktopFlutterApi.setUp(_NativeCallbacks(_events));
   }
+  final PixelFrame Function(wire.DisplayFrame) _readFrame;
   final _api = wire.DesktopHostApi();
   final _events = StreamController<Map<Object?, Object?>>.broadcast();
   @override
@@ -101,27 +104,23 @@ class MacDesktopService implements DesktopService {
       throw PlatformException(code: 'invalid_tool', message: '未知工具');
     }
     final reply = await _api.begin(nativeTool);
-    if (reply.displays.isEmpty) {
-      throw const FormatException('No displays available');
+    try {
+      if (reply.displays.isEmpty) {
+        throw const FormatException('No displays available');
+      }
+      return CaptureSession(reply.sessionId, [
+        for (final d in reply.displays)
+          CapturedDisplay(id: d.id, name: d.name, frame: _readFrame(d)),
+      ]);
+    } catch (_) {
+      // Don't strand native overlays if decoding/acquiring any display fails.
+      try {
+        await _api.finish(reply.sessionId);
+      } catch (_) {
+        /* Keep original error. */
+      }
+      rethrow;
     }
-    return CaptureSession(
-      reply.sessionId,
-      reply.displays
-          .map(
-            (d) => CapturedDisplay(
-              id: d.id,
-              name: d.name,
-              frame: PixelFrame(
-                width: d.width,
-                height: d.height,
-                rgba: d.rgba,
-                logicalWidth: d.logicalWidth,
-                logicalHeight: d.logicalHeight,
-              ),
-            ),
-          )
-          .toList(),
-    );
   }
 
   @override

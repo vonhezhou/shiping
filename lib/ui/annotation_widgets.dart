@@ -85,6 +85,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   @override
   void initState() {
     super.initState();
+    screenPointer = c.screenshotPointer;
     load();
   }
 
@@ -92,8 +93,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ui.Image? decoded;
     Map<int, ui.Image> pixels = {};
     try {
-      decoded = await pixelFrameToImage(c.imageDocument!.frame);
-      pixels = await AnnotationRenderer.prepareMosaics(decoded);
+      final frame = c.imageDocument!.frame;
+      decoded = await c.imageCodec.sourceImage(frame);
+      pixels = await AnnotationRenderer.prepareMosaics(
+        decoded,
+        sourceRect: pixelFrameSourceRect(frame),
+      );
       if (!mounted) {
         decoded.dispose();
         for (final image in pixels.values) {
@@ -1526,13 +1531,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     Row(
       children: [
         toolbarButton(
-          'annotation-tool-picker',
-          '取色 C · 点击像素复制并结束',
-          Icons.colorize,
-          () => selectTool(tool == 'picker' ? 'select' : 'picker'),
-          active: tool == 'picker',
-        ),
-        toolbarButton(
           'copy-screenshot-size',
           '复制选区尺寸 M',
           Icons.straighten,
@@ -1724,37 +1722,71 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     );
   }
 
+  // 未选择标注工具时，取色信息始终跟随鼠标，选区仍可拖动和缩放。
+  bool get sampling => tool == 'select' && c.canAdjustScreenshotSelection;
+
   Widget pickerFeedback(BoxConstraints constraints) {
     final p = screenPointer!;
     final sample = c.screenshotColorAt(p.dx, p.dy);
+    final source = c.imageDocument!.frame.source;
+    final pixel = source.logicalToPixel(p.dx, p.dy);
+    final selection = selectionPreview ?? c.screenshotSelection!;
+    const panelWidth = 264.0, panelHeight = 206.0;
+    final x = p.dx + 24 + panelWidth > constraints.maxWidth
+        ? p.dx - panelWidth - 24
+        : p.dx + 24;
+    final y = p.dy + 24 + panelHeight > constraints.maxHeight
+        ? p.dy - panelHeight - 24
+        : p.dy + 24;
     return Positioned(
-      left: (p.dx + 20).clamp(8.0, math.max(8.0, constraints.maxWidth - 200)),
-      top: (p.dy + 20).clamp(8.0, math.max(8.0, constraints.maxHeight - 80)),
+      left: x.clamp(8.0, math.max(8.0, constraints.maxWidth - panelWidth - 8)),
+      top: y.clamp(8.0, math.max(8.0, constraints.maxHeight - panelHeight - 8)),
       child: IgnorePointer(
         child: Container(
+          key: const ValueKey('screenshot-picker-feedback'),
+          width: panelWidth,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: toolbarSurface,
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 24,
-                height: 24,
-                color: Color.fromARGB(
-                  255,
-                  sample?.r ?? 0,
-                  sample?.g ?? 0,
-                  sample?.b ?? 0,
-                ),
+              Row(
+                children: [
+                  SizedBox(
+                    key: const ValueKey('screenshot-magnifier'),
+                    width: 99,
+                    height: 99,
+                    child: CustomPaint(
+                      painter: _CaptureLoupePainter(
+                        image,
+                        Offset(pixel.x.toDouble(), pixel.y.toDouble()),
+                        c.zoom.toDouble() / c.screenshotScaleX,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      height: 99,
+                      color: Color.fromARGB(
+                        255,
+                        sample?.r ?? 0,
+                        sample?.g ?? 0,
+                        sample?.b ?? 0,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${sample?.hex ?? ''}\n点击复制 · 右键返回',
-                style: const TextStyle(fontSize: 11),
-              ),
+              const SizedBox(height: 8),
+              Text('${sample?.hex ?? ''} · ${sample?.rgb ?? ''}'),
+              Text('X: ${pixel.x}  Y: ${pixel.y}'),
+              Text('区域: ${selection.width} × ${selection.height} px'),
+              const Text('C 复制颜色 · M 复制尺寸', style: TextStyle(fontSize: 11)),
             ],
           ),
         ),
@@ -1805,180 +1837,212 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 );
           return MouseRegion(
             onHover: (event) {
-              if (tool == 'picker') {
+              if (sampling) {
                 setState(() => screenPointer = event.localPosition);
               } else {
                 screenPointer = event.localPosition;
               }
             },
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerSignal: widthScroll,
+            child: Listener(
+              onPointerMove: (event) {
+                if (sampling) {
+                  setState(() => screenPointer = event.localPosition);
+                }
+              },
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerSignal: widthScroll,
+                    ),
                   ),
-                ),
-                Positioned.fromRect(
-                  rect: rect,
-                  child: ClipRect(
-                    child: OverflowBox(
-                      alignment: Alignment.topLeft,
-                      minWidth: 0,
-                      minHeight: 0,
-                      maxWidth: double.infinity,
-                      maxHeight: double.infinity,
-                      child: Transform(
+                  Positioned.fromRect(
+                    rect: rect,
+                    child: ClipRect(
+                      child: OverflowBox(
                         alignment: Alignment.topLeft,
-                        transform: Matrix4.diagonal3Values(
-                          1 / c.screenshotScaleX,
-                          1 / c.screenshotScaleY,
-                          1,
-                        ),
-                        child: Listener(
-                          key: const ValueKey('annotation-canvas'),
-                          onPointerDown: down,
-                          onPointerMove: move,
-                          onPointerUp: up,
-                          onPointerCancel: (_) => cancelGesture(),
-                          onPointerSignal: (event) {
-                            if (event is PointerScrollEvent &&
-                                event.scrollDelta.dy != 0 &&
-                                editable &&
-                                !textEditing) {
-                              GestureBinding.instance.pointerSignalResolver
-                                  .register(
-                                    event,
-                                    (_) => adjustWidth(
-                                      event.scrollDelta.dy < 0 ? 1 : -1,
-                                    ),
-                                  );
-                            }
-                          },
-                          child: MouseRegion(
-                            cursor: canvasCursor,
-                            onEnter: (event) => hover(event.localPosition),
-                            onHover: (event) => hover(event.localPosition),
-                            onExit: (_) => hover(null),
-                            child: SizedBox(
-                              width: imageSize.width,
-                              height: imageSize.height,
-                              child: image == null
-                                  ? const SizedBox.shrink()
-                                  : RepaintBoundary(
-                                      key: const ValueKey('annotation-content'),
-                                      child: CustomPaint(
-                                        painter: _AnnotationPainter(
-                                          image!,
-                                          mosaics,
-                                          visibleItems,
-                                          textEditing ? null : selected,
-                                          scale,
-                                          !eraserBrush &&
-                                                  start != null &&
-                                                  eraserEnd != null
-                                              ? Rect.fromPoints(
-                                                  start!,
-                                                  eraserEnd!,
-                                                )
-                                              : null,
+                        minWidth: 0,
+                        minHeight: 0,
+                        maxWidth: double.infinity,
+                        maxHeight: double.infinity,
+                        child: Transform(
+                          alignment: Alignment.topLeft,
+                          transform: Matrix4.diagonal3Values(
+                            1 / c.screenshotScaleX,
+                            1 / c.screenshotScaleY,
+                            1,
+                          ),
+                          child: Listener(
+                            key: const ValueKey('annotation-canvas'),
+                            onPointerDown: down,
+                            onPointerMove: move,
+                            onPointerUp: up,
+                            onPointerCancel: (_) => cancelGesture(),
+                            onPointerSignal: (event) {
+                              if (event is PointerScrollEvent &&
+                                  event.scrollDelta.dy != 0 &&
+                                  editable &&
+                                  !textEditing) {
+                                GestureBinding.instance.pointerSignalResolver
+                                    .register(
+                                      event,
+                                      (_) => adjustWidth(
+                                        event.scrollDelta.dy < 0 ? 1 : -1,
+                                      ),
+                                    );
+                              }
+                            },
+                            child: MouseRegion(
+                              cursor: canvasCursor,
+                              onEnter: (event) => hover(event.localPosition),
+                              onHover: (event) => hover(event.localPosition),
+                              onExit: (_) => hover(null),
+                              child: SizedBox(
+                                width: imageSize.width,
+                                height: imageSize.height,
+                                child: image == null
+                                    ? const SizedBox.shrink()
+                                    : RepaintBoundary(
+                                        key: const ValueKey(
+                                          'annotation-content',
+                                        ),
+                                        child: CustomPaint(
+                                          painter: _AnnotationPainter(
+                                            image!,
+                                            pixelFrameSourceRect(
+                                              c.imageDocument!.frame,
+                                            ),
+                                            mosaics,
+                                            visibleItems,
+                                            textEditing ? null : selected,
+                                            scale,
+                                            !eraserBrush &&
+                                                    start != null &&
+                                                    eraserEnd != null
+                                                ? Rect.fromPoints(
+                                                    start!,
+                                                    eraserEnd!,
+                                                  )
+                                                : null,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _SelectionShadePainter(activeRect),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _SelectionShadePainter(activeRect),
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  left: activeRect.left.clamp(4.0, constraints.maxWidth - 160),
-                  top: math.max(4.0, activeRect.top - 24),
-                  child: IgnorePointer(
-                    child: Container(
-                      key: const ValueKey('screenshot-size-label'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        '${activeSelection.width} × ${activeSelection.height} px',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontFamily: 'monospace',
+                  Positioned(
+                    left: activeRect.left.clamp(
+                      4.0,
+                      constraints.maxWidth - 160,
+                    ),
+                    top: math.max(4.0, activeRect.top - 24),
+                    child: IgnorePointer(
+                      child: Container(
+                        key: const ValueKey('screenshot-size-label'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black87,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Text(
+                          '${activeSelection.width} × ${activeSelection.height} px',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white,
+                            fontFamily: 'monospace',
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                if (canAdjustSelection) ...[
-                  selectionHandle('nw', activeRect.topLeft),
-                  selectionHandle('n', activeRect.topCenter),
-                  selectionHandle('ne', activeRect.topRight),
-                  selectionHandle('e', activeRect.centerRight),
-                  selectionHandle('se', activeRect.bottomRight),
-                  selectionHandle('s', activeRect.bottomCenter),
-                  selectionHandle('sw', activeRect.bottomLeft),
-                  selectionHandle('w', activeRect.centerLeft),
-                ],
-                if (showBrushCursor) brushCursor(rect),
-                if (textEditing) inlineText(rect),
-                if (tool == 'picker')
-                  Positioned.fill(
-                    child: Listener(
-                      key: const ValueKey('screenshot-picker-surface'),
-                      behavior: HitTestBehavior.opaque,
-                      onPointerDown: (event) {
-                        if (event.buttons == kSecondaryMouseButton) {
-                          selectTool('select');
-                          return;
-                        }
-                        if (event.buttons == kPrimaryMouseButton) {
-                          c.sampleCaptureColor(
-                            c.screenshotDisplayId!,
-                            event.localPosition.dx,
-                            event.localPosition.dy,
-                          );
-                        }
-                      },
+                  if (canAdjustSelection) ...[
+                    selectionHandle('nw', activeRect.topLeft),
+                    selectionHandle('n', activeRect.topCenter),
+                    selectionHandle('ne', activeRect.topRight),
+                    selectionHandle('e', activeRect.centerRight),
+                    selectionHandle('se', activeRect.bottomRight),
+                    selectionHandle('s', activeRect.bottomCenter),
+                    selectionHandle('sw', activeRect.bottomLeft),
+                    selectionHandle('w', activeRect.centerLeft),
+                  ],
+                  if (showBrushCursor) brushCursor(rect),
+                  if (textEditing) inlineText(rect),
+                  if (sampling && screenPointer != null)
+                    pickerFeedback(constraints),
+                  if (toolbarVisible && selectionDrag == null)
+                    Positioned(
+                      left: left.toDouble(),
+                      top: top.toDouble(),
+                      width: toolbarWidth,
                       child: MouseRegion(
-                        cursor: SystemMouseCursors.precise,
-                        child: const SizedBox.expand(),
+                        cursor: SystemMouseCursors.basic,
+                        child: toolbar(above: above),
                       ),
                     ),
-                  ),
-                if (tool == 'picker' && screenPointer != null)
-                  pickerFeedback(constraints),
-                if (toolbarVisible && selectionDrag == null)
-                  Positioned(
-                    left: left.toDouble(),
-                    top: top.toDouble(),
-                    width: toolbarWidth,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.basic,
-                      child: toolbar(above: above),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
           );
         },
       ),
     );
   }
+}
+
+class _CaptureLoupePainter extends CustomPainter {
+  const _CaptureLoupePainter(this.image, this.pixel, this.cell);
+  final ui.Image? image;
+  final Offset pixel;
+  final double cell;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.drawColor(Colors.black, BlendMode.src);
+    final center = size.center(Offset.zero);
+    if (image != null) {
+      canvas.save();
+      canvas.translate(
+        center.dx - (pixel.dx + .5) * cell,
+        center.dy - (pixel.dy + .5) * cell,
+      );
+      canvas.scale(cell);
+      canvas.drawImage(
+        image!,
+        Offset.zero,
+        Paint()..filterQuality = FilterQuality.none,
+      );
+      canvas.restore();
+    }
+    canvas.drawRect(
+      Rect.fromCenter(center: center, width: cell, height: cell),
+      Paint()
+        ..color = const Color(0xFFD7FA6B)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _CaptureLoupePainter old) =>
+      old.image != image || old.pixel != pixel || old.cell != cell;
 }
 
 class _SelectionShadePainter extends CustomPainter {
@@ -2012,6 +2076,7 @@ class _SelectionShadePainter extends CustomPainter {
 class _AnnotationPainter extends CustomPainter {
   _AnnotationPainter(
     this.image,
+    this.sourceRect,
     this.mosaics,
     this.items,
     this.selected,
@@ -2019,6 +2084,7 @@ class _AnnotationPainter extends CustomPainter {
     this.eraserRegion,
   );
   final ui.Image image;
+  final Rect sourceRect;
   final Map<int, ui.Image> mosaics;
   final List<Annotation> items;
   final int? selected;
@@ -2026,7 +2092,13 @@ class _AnnotationPainter extends CustomPainter {
   final Rect? eraserRegion;
   @override
   void paint(Canvas canvas, Size size) {
-    AnnotationRenderer.paint(canvas, image, mosaics, items);
+    AnnotationRenderer.paint(
+      canvas,
+      image,
+      mosaics,
+      items,
+      sourceRect: sourceRect,
+    );
     if (eraserRegion != null) {
       canvas.drawRect(
         eraserRegion!,
@@ -2059,6 +2131,7 @@ class _AnnotationPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _AnnotationPainter old) =>
       old.image != image ||
+      old.sourceRect != sourceRect ||
       old.mosaics != mosaics ||
       old.selected != selected ||
       old.scale != scale ||

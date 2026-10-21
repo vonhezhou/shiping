@@ -51,7 +51,9 @@ class DisplayFrame {
     required this.height,
     required this.logicalWidth,
     required this.logicalHeight,
-    required this.rgba,
+    required this.bufferId,
+    required this.byteLength,
+    required this.rowBytes,
   });
   int id;
   String name;
@@ -59,7 +61,9 @@ class DisplayFrame {
   int height;
   double logicalWidth;
   double logicalHeight;
-  Uint8List rgba;
+  int bufferId;
+  int byteLength;
+  int rowBytes;
 }
 
 class CaptureReply {

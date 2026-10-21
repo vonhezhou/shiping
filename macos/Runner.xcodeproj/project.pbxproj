@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		F20000000000000000000002 /* NativePixelBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
 		F20000000000000000000001 /* DesktopProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
 		F20000000000000000000000 /* Desktop.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000000; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
@@ -63,6 +64,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F10000000000000000000002 /* NativePixelBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePixelBuffer.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* DesktopProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProtocol.swift; sourceTree = "<group>"; };
 		F10000000000000000000000 /* Desktop.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Desktop.g.swift; sourceTree = "<group>"; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -172,6 +174,7 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				F10000000000000000000002 /* NativePixelBuffer.swift */,
 				F10000000000000000000001 /* DesktopProtocol.swift */,
 				F10000000000000000000000 /* Desktop.g.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
@@ -361,6 +364,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
+				F20000000000000000000002 /* NativePixelBuffer.swift in Sources */,
 				F20000000000000000000001 /* DesktopProtocol.swift in Sources */,
 				F20000000000000000000000 /* Desktop.g.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,

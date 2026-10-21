@@ -209,7 +209,9 @@ class DisplayFrame {
     required this.height,
     required this.logicalWidth,
     required this.logicalHeight,
-    required this.rgba,
+    required this.bufferId,
+    required this.byteLength,
+    required this.rowBytes,
   });
 
   int id;
@@ -224,7 +226,11 @@ class DisplayFrame {
 
   double logicalHeight;
 
-  Uint8List rgba;
+  int bufferId;
+
+  int byteLength;
+
+  int rowBytes;
 
   List<Object?> _toList() {
     return <Object?>[
@@ -234,7 +240,9 @@ class DisplayFrame {
       height,
       logicalWidth,
       logicalHeight,
-      rgba,
+      bufferId,
+      byteLength,
+      rowBytes,
     ];
   }
 
@@ -250,7 +258,9 @@ class DisplayFrame {
       height: result[3]! as int,
       logicalWidth: result[4]! as double,
       logicalHeight: result[5]! as double,
-      rgba: result[6]! as Uint8List,
+      bufferId: result[6]! as int,
+      byteLength: result[7]! as int,
+      rowBytes: result[8]! as int,
     );
   }
 
@@ -263,7 +273,7 @@ class DisplayFrame {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(id, other.id) && _deepEquals(name, other.name) && _deepEquals(width, other.width) && _deepEquals(height, other.height) && _deepEquals(logicalWidth, other.logicalWidth) && _deepEquals(logicalHeight, other.logicalHeight) && _deepEquals(rgba, other.rgba);
+    return _deepEquals(id, other.id) && _deepEquals(name, other.name) && _deepEquals(width, other.width) && _deepEquals(height, other.height) && _deepEquals(logicalWidth, other.logicalWidth) && _deepEquals(logicalHeight, other.logicalHeight) && _deepEquals(bufferId, other.bufferId) && _deepEquals(byteLength, other.byteLength) && _deepEquals(rowBytes, other.rowBytes);
   }
 
   @override

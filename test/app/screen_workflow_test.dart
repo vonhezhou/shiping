@@ -33,6 +33,33 @@ class PausedCaptureCodec extends ImageDocumentCodec {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('销毁控制器主动解除会话和图片引用，不等待控制器自身被回收', () async {
+    final d = FakeDesktop();
+    final c = AppController(d);
+    var disposed = false;
+    await c.initialize();
+    try {
+      await c.startScreenshot();
+      d.pointer(x: 1, y: 1, phase: 'down');
+      d.pointer(x: 3, y: 2.5, phase: 'up');
+      for (var i = 0; i < 100 && c.imageLoading; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(c.screenshotEditing, true);
+      c.dispose();
+      disposed = true;
+      expect(c.imageDocument, isNull);
+      expect(c.screenshotSelection, isNull);
+      expect(c.screenshotDisplayId, isNull);
+      expect(c.screenshotSourceSize, isNull);
+      expect(c.busy, false);
+      await Future<void>.delayed(Duration.zero);
+      expect(d.finishCalls, 1);
+    } finally {
+      if (!disposed) c.dispose();
+      await d.input.close();
+    }
+  });
   test('首次选区和调整选区无需 PNG 解码即可进入标注', () async {
     final d = FakeDesktop();
     final codec = RejectPngCaptureCodec();

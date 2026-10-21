@@ -60,6 +60,19 @@ void main() {
           await tester.pumpAndSettle();
         }
 
+        expect(byKey('annotation-tool-picker'), findsNothing);
+        final mouse = await tester.createGesture(
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await mouse.addPointer(location: const Offset(30, 30));
+        await mouse.moveTo(const Offset(40, 40));
+        await tester.pump();
+        expect(byKey('screenshot-picker-feedback'), findsOneWidget);
+        expect(byKey('screenshot-magnifier'), findsOneWidget);
+        expect(find.textContaining('X: 40'), findsOneWidget);
+        expect(find.textContaining('400 × 250 px'), findsWidgets);
+        await click('annotation-group-shape');
+        expect(byKey('screenshot-picker-feedback'), findsNothing);
         final rectangle = Annotation(
           kind: AnnotationKind.rectangle,
           points: [const Offset(20, 20), const Offset(80, 80)],
@@ -67,16 +80,9 @@ void main() {
         c.markup.commit([rectangle]);
         await tester.pump();
         if (utility == 'picker') {
-          await click('annotation-tool-picker');
-          expect(c.markup.items, [rectangle]);
-          expect(c.markup.canUndo, true);
-          await click('annotation-tool-picker');
-          expect(c.markup.items, [rectangle]);
-          await click('annotation-tool-picker');
-          await tester.tapAt(
-            const Offset(20, 20),
-            kind: ui.PointerDeviceKind.mouse,
-          );
+          await mouse.moveTo(const Offset(20, 20));
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
           await tester.pumpAndSettle();
           expect(desktop.clipboard, '#C8C8C8');
         } else {

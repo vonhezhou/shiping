@@ -9,7 +9,7 @@ import 'package:fruler/platform/pixel_frame_image.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  test('原始截图裁剪保留尺寸方向颜色且不修改冻结快照', () async {
+  test('截图选区共享冻结快照，保留尺寸方向和颜色', () async {
     final bytes = Uint8List.fromList([
       for (var y = 0; y < 3; y++)
         for (var x = 0; x < 4; x++) ...[x * 40, y * 60, 30, 255],
@@ -39,10 +39,11 @@ void main() {
     } finally {
       image.dispose();
     }
-    doc.frame.rgba[0] = 0;
+    expect(doc.frame.rgba, same(source.rgba));
+    expect(doc.frame.source, same(source));
     expect(source.rgba, orderedEquals(before));
   });
-  test('截图裁剪延续透明像素铺白底并在分配前检查边界和尺寸限制', () async {
+  test('截图视图保留源像素并检查边界和尺寸限制', () async {
     final codec = ImageDocumentCodec();
     final source = PixelFrame(
       width: 16385,
@@ -56,7 +57,8 @@ void main() {
       source,
       const PixelRect(left: 0, top: 0, right: 2, bottom: 1),
     );
-    expect(doc.frame.rgba, [191, 127, 127, 255, 255, 255, 255, 255]);
+    expect(doc.frame.rgba, same(source.rgba));
+    expect(doc.frame.rgba.sublist(0, 8), [64, 0, 0, 128, 0, 0, 0, 0]);
     for (final rect in [
       const PixelRect(left: -1, top: 0, right: 1, bottom: 1),
       const PixelRect(left: 0, top: 0, right: 16386, bottom: 1),

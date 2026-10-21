@@ -168,6 +168,7 @@ class AppController extends ChangeNotifier {
       final png = await AnnotationRenderer.export(
         doc.frame,
         List.of(markup.items),
+        loadImage: imageCodec.sourceImage,
       );
       if (_disposed || _session?.id != sessionId) return;
       if (!await desktop.exportImage(png, save: save)) return;
@@ -633,6 +634,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> startScreenshot() => _begin('screenshot');
+
+  Offset? get screenshotPointer {
+    final p = _lastPointer;
+    return p != null && p.displayId == screenshotDisplayId
+        ? Offset(p.x, p.y)
+        : null;
+  }
 
   RgbColor? screenshotColorAt(double x, double y) {
     final display = _session?.displays
@@ -1103,9 +1111,9 @@ class AppController extends ChangeNotifier {
     }
     if (_tool == 'screenshot') _captureMeasurement = measurement;
     final label = _tool == 'picker'
-        ? '${color.hex}  ·  ${color.rgb}'
+        ? '${color.hex}  ·  ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y}'
         : _tool == 'screenshot'
-        ? '${measurement?.label ?? '拖动框选截图'}\n${color.hex} · ${color.rgb}'
+        ? '${color.hex} · ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y} · ${measurement?.label ?? '拖动框选截图'}'
         : measurement?.label ?? '按住并拖拽，测量矩形区域';
     _updateOverlay({
       ..._overlayOptions,
@@ -1453,6 +1461,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _resetSession() {
+    imageCodec.clearCaptureImages();
     _session = null;
     imageDocument = null;
     screenshotSelection = null;
@@ -1968,6 +1977,7 @@ class AppController extends ChangeNotifier {
     _disposed = true;
     _subscription?.cancel();
     final id = _session?.id;
+    _resetSession();
     if (id != null) {
       unawaited(desktop.finish(id).catchError((Object _) {}));
     }

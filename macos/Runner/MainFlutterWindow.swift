@@ -126,6 +126,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   deinit {
+    for panel in overlays.values { panel.overlay.snapshot.pixels.unpublish() }
     captureTask?.cancel()
     hotkeys.forEach { UnregisterEventHotKey($0) }
     if let handler = hotkeyHandler { RemoveEventHandler(handler) }
@@ -147,6 +148,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private var cancelNextSave = false
   private var clipboardBackup: [[NSPasteboard.PasteboardType: Data]]?
   private var pointerBackup: CGPoint?
+  private var integrationPixelFixture: NativePixelBuffer?
   func installIntegrationDriver(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: "dev.fruler/integration", binaryMessenger: messenger)
     integrationDriver = channel
@@ -154,6 +156,26 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard let self = self else { return }
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
+      case "pixelBufferCount": result(NativePixelBuffer.liveCount)
+      case "createPixelFixture":
+        self.integrationPixelFixture?.unpublish()
+        guard let pixels = NativePixelBuffer(byteCount: 32) else { result(nil); return }
+        let bytes = pixels.data.assumingMemoryBound(to: UInt8.self)
+        for y in 0..<2 {
+          for x in 0..<3 {
+            let index = y * 16 + x * 4
+            bytes[index] = UInt8(20 + x * 30)
+            bytes[index + 1] = UInt8(40 + y * 50)
+            bytes[index + 2] = 60
+            bytes[index + 3] = 255
+          }
+        }
+        self.integrationPixelFixture = pixels
+        result(["bufferId": pixels.id, "byteLength": pixels.byteCount, "rowBytes": 16])
+      case "releasePixelFixture":
+        self.integrationPixelFixture?.unpublish()
+        self.integrationPixelFixture = nil
+        result(nil)
       case "raiseRegionFixture":
         DistributedNotificationCenter.default().postNotificationName(
           Notification.Name("dev.fruler.integration.raiseRegionFixture"),object:nil,userInfo:nil,deliverImmediately:true)
@@ -585,7 +607,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     session = nil
     preparing = false
     restoreScreenshotView()
-    for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil); panel.close() }
+    for panel in overlays.values {
+      panel.overlay.snapshot.pixels.unpublish()
+      panel.overlay.releaseCursor(); panel.orderOut(nil); panel.close()
+    }
     overlays.removeAll()
     if let previous = previousApplication, !previous.isTerminated,
        previous.processIdentifier != ProcessInfo.processInfo.processIdentifier {
@@ -797,7 +822,7 @@ private struct DisplaySnapshot {
   let name: String
   let width: Int
   let height: Int
-  let rgba: Data
+  let pixels: NativePixelBuffer
   let image: CGImage
 
   init(screen: NSScreen, displayID: UInt32, image: CGImage) throws {
@@ -809,25 +834,29 @@ private struct DisplaySnapshot {
     width = pixelWidth
     height = pixelHeight
     guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { throw CaptureFailure.unavailable }
-    var bytes = Data(count: pixelWidth * pixelHeight * 4)
-    let normalized: CGImage? = bytes.withUnsafeMutableBytes { buffer in
-      guard let context = CGContext(data: buffer.baseAddress, width: pixelWidth, height: pixelHeight,
+    guard let pixels = NativePixelBuffer(byteCount: pixelWidth * pixelHeight * 4) else {
+      throw CaptureFailure.unavailable
+    }
+    self.pixels = pixels
+    let normalized: CGImage? = {
+      guard let context = CGContext(data: pixels.data, width: pixelWidth, height: pixelHeight,
         bitsPerComponent: 8, bytesPerRow: pixelWidth * 4, space: space,
         bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
       context.interpolationQuality = .none
+      context.setFillColor(CGColor(gray: 1, alpha: 1))
+      context.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
       context.draw(image, in: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
       return context.makeImage()
-    }
+    }()
     guard let normalized = normalized else { throw CaptureFailure.unavailable }
     self.image = normalized
-    rgba = bytes
   }
 
   var channelData: DisplayFrame {
     DisplayFrame(id: Int64(displayID), name: name, width: Int64(width), height: Int64(height),
       logicalWidth: Double(frame.width), logicalHeight: Double(frame.height),
-      rgba: FlutterStandardTypedData(bytes: rgba))
+      bufferId: pixels.id, byteLength: Int64(pixels.byteCount), rowBytes: Int64(width * 4))
   }
 }
 
@@ -917,6 +946,7 @@ private final class CaptureOverlayView: NSView {
     self.tool = tool
     super.init(frame: NSRect(origin: .zero, size: snapshot.frame.size))
     setupToolbar()
+    toolbar.isHidden = tool == "screenshot"
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
   override var isFlipped: Bool { true }
@@ -1034,7 +1064,7 @@ private final class CaptureOverlayView: NSView {
     releaseCursor()
     applyCursor(at: location)
     if pinDrag == nil {
-      guard !toolbar.frame.contains(location), (editbar.isHidden || !editbar.frame.contains(location)) else { return }
+      guard (toolbar.isHidden || !toolbar.frame.contains(location)), (editbar.isHidden || !editbar.frame.contains(location)) else { return }
     }
     if (editingPins || (tool == "rectangle" && !pins.isEmpty)) && tool != "picker" {
       releaseCursor()
@@ -1163,6 +1193,7 @@ private final class CaptureOverlayView: NSView {
 
   func updateOptions(_ data: [String: Any]) {
     if let value = data["tool"] as? String { tool = value }
+    toolbar.isHidden = screenshotEditing || tool == "screenshot"
     capturePurpose = data["capturePurpose"] as? String ?? ""
     pickerActions = data["pickerActions"] as? String ?? pickerActions
     if let value = data["tolerance"] as? Int { tolerance = value }
@@ -1339,7 +1370,7 @@ private final class CaptureOverlayView: NSView {
   func setScreenshotEditing(_ editing: Bool) {
     screenshotEditing = editing
     window?.invalidateCursorRects(for: self)
-    toolbar.isHidden = editing
+    toolbar.isHidden = editing || tool == "screenshot"
     editbar.isHidden = editing || tool == "screenshot" || tool == "picker"
     isPointerActive = false
     needsDisplay = true

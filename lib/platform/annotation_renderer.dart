@@ -15,17 +15,17 @@ class AnnotationRenderer {
     ui.Canvas canvas,
     ui.Image image,
     Map<int, ui.Image> mosaics,
-    List<Annotation> items,
-  ) {
-    final full = ui.Rect.fromLTWH(
-      0,
-      0,
-      image.width.toDouble(),
-      image.height.toDouble(),
-    );
+    List<Annotation> items, {
+    ui.Rect? sourceRect,
+  }) {
+    final source =
+        sourceRect ??
+        ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    final full = ui.Rect.fromLTWH(0, 0, source.width, source.height);
     canvas.save();
     canvas.clipRect(full);
-    canvas.drawImage(image, ui.Offset.zero, ui.Paint());
+    canvas.drawColor(const ui.Color(0xFFFFFFFF), ui.BlendMode.src);
+    canvas.drawImageRect(image, source, full, ui.Paint());
     // Clear only annotation pixels; the captured image lives below this layer.
     final hasErasures = items.any((a) => a.kind == AnnotationKind.eraser);
     if (hasErasures) canvas.saveLayer(full, ui.Paint());
@@ -139,7 +139,8 @@ class AnnotationRenderer {
                   sigmaY: sigma,
                 ),
             );
-            canvas.drawImage(image, ui.Offset.zero, ui.Paint());
+            canvas.drawColor(const ui.Color(0xFFFFFFFF), ui.BlendMode.src);
+            canvas.drawImageRect(image, source, full, ui.Paint());
             canvas.restore();
           }
           canvas.restore();
@@ -169,13 +170,17 @@ class AnnotationRenderer {
     return path;
   }
 
-  static Future<Map<int, ui.Image>> prepareMosaics(ui.Image image) async {
+  static Future<Map<int, ui.Image>> prepareMosaics(
+    ui.Image image, {
+    ui.Rect? sourceRect,
+  }) async {
     final result = <int, ui.Image>{};
     try {
       for (var strength = 1; strength <= 5; strength++) {
         result[strength] = await pixelate(
           image,
           blockSize: mosaicBlockSize[strength - 1],
+          sourceRect: sourceRect,
         );
       }
       return result;
@@ -190,13 +195,19 @@ class AnnotationRenderer {
   static Future<ui.Image> pixelate(
     ui.Image image, {
     double blockSize = 12,
+    ui.Rect? sourceRect,
   }) async {
-    final w = math.max(1, (image.width / blockSize).ceil()),
-        h = math.max(1, (image.height / blockSize).ceil());
+    final source =
+        sourceRect ??
+        ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    final w = math.max(1, (source.width / blockSize).ceil()),
+        h = math.max(1, (source.height / blockSize).ceil());
     final recorder = ui.PictureRecorder();
-    ui.Canvas(recorder).drawImageRect(
+    final canvas = ui.Canvas(recorder);
+    canvas.drawColor(const ui.Color(0xFFFFFFFF), ui.BlendMode.src);
+    canvas.drawImageRect(
       image,
-      ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      source,
       ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
       ui.Paint()..filterQuality = ui.FilterQuality.low,
     );
@@ -210,18 +221,20 @@ class AnnotationRenderer {
 
   static Future<Uint8List> export(
     PixelFrame frame,
-    List<Annotation> items,
-  ) async {
-    final image = await pixelFrameToImage(frame);
+    List<Annotation> items, {
+    Future<ui.Image> Function(PixelFrame)? loadImage,
+  }) async {
+    final image = await (loadImage ?? pixelFrameToImage)(frame);
+    final sourceRect = pixelFrameSourceRect(frame);
     Map<int, ui.Image>? mosaics;
     try {
-      mosaics = await prepareMosaics(image);
+      mosaics = await prepareMosaics(image, sourceRect: sourceRect);
       final recorder = ui.PictureRecorder();
-      paint(ui.Canvas(recorder), image, mosaics, items);
+      paint(ui.Canvas(recorder), image, mosaics, items, sourceRect: sourceRect);
       final picture = recorder.endRecording();
       ui.Image output;
       try {
-        output = await picture.toImage(image.width, image.height);
+        output = await picture.toImage(frame.width, frame.height);
       } finally {
         picture.dispose();
       }

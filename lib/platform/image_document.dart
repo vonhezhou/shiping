@@ -21,10 +21,13 @@ class ImageDocument {
 
 /// Flutter decoding keeps image tools available to future desktop adapters.
 class ImageDocumentCodec {
+  final _images = PixelImageCache();
+  Future<ui.Image> sourceImage(PixelFrame frame) => _images.load(frame);
+  void clearCaptureImages() => _images.clear();
   Future<ImageDocument> decode(ImageFileData file) =>
       _decode(file, 32 * 1024 * 1024);
 
-  /// Copy the frozen selection directly; PNG is only needed at export time.
+  /// A selection retains its frozen source without copying any pixels.
   Future<ImageDocument> cropCapture(PixelFrame source, PixelRect rect) async {
     if (rect.left < 0 ||
         rect.top < 0 ||
@@ -35,33 +38,13 @@ class ImageDocumentCodec {
       throw ArgumentError('Invalid capture rectangle');
     }
     _validateSize(rect.width, rect.height);
-    final bytes = Uint8List(rect.width * rect.height * 4);
-    for (var y = 0; y < rect.height; y++) {
-      final start = ((rect.top + y) * source.width + rect.left) * 4;
-      bytes.setRange(
-        y * rect.width * 4,
-        (y + 1) * rect.width * 4,
-        source.rgba,
-        start,
-      );
-    }
-    // Native capture uses premultiplied RGBA. Keep the previous white backing.
-    for (var i = 0; i < bytes.length; i += 4) {
-      final white = 255 - bytes[i + 3];
-      if (white == 0) continue;
-      for (var c = 0; c < 3; c++) {
-        bytes[i + c] = (bytes[i + c] + white).clamp(0, 255);
-      }
-      bytes[i + 3] = 255;
-    }
     return ImageDocument(
       '截图.png',
-      PixelFrame(
+      source.view(
+        left: rect.left,
+        top: rect.top,
         width: rect.width,
         height: rect.height,
-        logicalWidth: rect.width.toDouble(),
-        logicalHeight: rect.height.toDouble(),
-        rgba: bytes,
       ),
     );
   }
@@ -143,8 +126,8 @@ class ImageDocumentCodec {
     final bounds = ui.Rect.fromLTWH(
       0,
       0,
-      image.width.toDouble(),
-      image.height.toDouble(),
+      document.frame.width.toDouble(),
+      document.frame.height.toDouble(),
     );
     final rects = <ui.Rect>[];
     final labels = <({ui.Rect rect, TextPainter painter})>[];
@@ -196,7 +179,12 @@ class ImageDocumentCodec {
     final canvas = ui.Canvas(recorder);
     canvas.drawColor(const ui.Color(0xFF111315), ui.BlendMode.src);
     canvas.translate(-crop.left.floorToDouble(), -crop.top.floorToDouble());
-    canvas.drawImage(image, ui.Offset.zero, ui.Paint());
+    canvas.drawImageRect(
+      image,
+      pixelFrameSourceRect(document.frame),
+      bounds,
+      ui.Paint(),
+    );
     for (var i = 0; i < rects.length; i++) {
       canvas.drawRect(
         rects[i],

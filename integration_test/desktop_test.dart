@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:isolate';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -7,6 +9,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop_service.dart';
+import 'package:fruler/platform/desktop.g.dart' as wire;
+import 'package:fruler/platform/native_pixel_buffer.dart';
 import 'package:fruler/ui/fruler_app.dart';
 
 const driver = MethodChannel('dev.fruler/integration');
@@ -158,6 +162,31 @@ Future<void> chooseAnnotationTool(
   await click(tester, button);
 }
 
+// A separate isolate makes external-data finalization deterministic at shutdown.
+void pixelReaderIsolate(List<Object> args) async {
+  final parent = args[0] as SendPort;
+  final messages = ReceivePort();
+  final frame = NativePixelBuffers.read(
+    wire.DisplayFrame(
+      id: 1,
+      name: 'worker',
+      width: 3,
+      height: 2,
+      logicalWidth: 3,
+      logicalHeight: 2,
+      bufferId: args[1] as int,
+      byteLength: 32,
+      rowBytes: 16,
+    ),
+  );
+  final view = frame.view(left: 1, top: 0, width: 2, height: 2);
+  parent.send(messages.sendPort);
+  await messages.first;
+  final color = view.pixelAt(1, 1);
+  parent.send([color.r, color.g, color.b]);
+  messages.close();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('launch stays in menu bar without opening main window', (
@@ -167,6 +196,112 @@ void main() {
     expect(status['mainVisible'], false);
     expect(status['statusItemCount'], 1);
     expect(status['accessory'], true);
+  });
+
+  testWidgets(
+    'real external-data finalizer releases the last FFI reader (30 rounds)',
+    (tester) async {
+      final baseline = await driver.invokeMethod<int>('pixelBufferCount');
+      for (var iteration = 0; iteration < 30; iteration++) {
+        final info = (await driver.invokeMapMethod<String, Object?>(
+          'createPixelFixture',
+        ))!;
+        final received = ReceivePort();
+        final messages = StreamIterator<Object?>(received);
+        final exited = ReceivePort();
+        Isolate? worker;
+        try {
+          worker = await Isolate.spawn(pixelReaderIsolate, <Object>[
+            received.sendPort,
+            info['bufferId'] as int,
+          ], onExit: exited.sendPort);
+          expect(
+            await messages.moveNext().timeout(const Duration(seconds: 10)),
+            true,
+          );
+          final gate = messages.current as SendPort;
+          await driver.invokeMethod<void>('releasePixelFixture');
+          expect(
+            await driver.invokeMethod<int>('pixelBufferCount'),
+            baseline! + 1,
+          );
+          gate.send(null);
+          expect(
+            await messages.moveNext().timeout(const Duration(seconds: 10)),
+            true,
+          );
+          expect(messages.current, [80, 90, 60]);
+          await exited.first.timeout(const Duration(seconds: 10));
+          var count = await driver.invokeMethod<int>('pixelBufferCount');
+          final deadline = DateTime.now().add(const Duration(seconds: 10));
+          while (count != baseline && DateTime.now().isBefore(deadline)) {
+            await tester.pump(const Duration(milliseconds: 50));
+            count = await driver.invokeMethod<int>('pixelBufferCount');
+          }
+          expect(
+            count,
+            baseline,
+            reason: 'External typed-data finalizer must release native ARC reference',
+          );
+        } finally {
+          worker?.kill(priority: Isolate.immediate);
+          await messages.cancel();
+          received.close();
+          exited.close();
+          await driver.invokeMethod<void>('releasePixelFixture');
+        }
+      }
+    },
+  );
+
+  testWidgets('real FFI pixels retain native storage after session release', (
+    tester,
+  ) async {
+    final info = (await driver.invokeMapMethod<String, Object?>(
+      'createPixelFixture',
+    ))!;
+    final metadata = wire.DisplayFrame(
+      id: 1,
+      name: 'FFI fixture',
+      width: 3,
+      height: 2,
+      logicalWidth: 1.5,
+      logicalHeight: 1,
+      bufferId: info['bufferId'] as int,
+      byteLength: 32,
+      rowBytes: 16,
+    );
+    try {
+      final frame = NativePixelBuffers.read(metadata);
+      expect(frame.pixelAt(2, 1), const RgbColor(80, 90, 60));
+      expect(() => frame.rgba[0] = 0, throwsUnsupportedError);
+      final view = frame.view(left: 1, top: 0, width: 2, height: 2);
+      expect(view.rgba, same(frame.rgba));
+      expect(view.pixelAt(1, 1), const RgbColor(80, 90, 60));
+      final wrongLength = wire.DisplayFrame(
+        id: 1,
+        name: 'bad length',
+        width: 1,
+        height: 2,
+        logicalWidth: 1,
+        logicalHeight: 2,
+        bufferId: metadata.bufferId,
+        byteLength: 16,
+        rowBytes: 8,
+      );
+      expect(() => NativePixelBuffers.read(wrongLength), throwsFormatException);
+      await driver.invokeMethod<void>('releasePixelFixture');
+      expect(() => NativePixelBuffers.read(metadata), throwsFormatException);
+      // Several replacements must not reuse or invalidate the Dart-owned memory.
+      for (var i = 0; i < 5; i++) {
+        await driver.invokeMethod<void>('createPixelFixture');
+        await driver.invokeMethod<void>('releasePixelFixture');
+        expect(view.pixelAt(0, 1), const RgbColor(50, 90, 60));
+      }
+      expect(frame.pixelAt(0, 0), const RgbColor(20, 40, 60));
+    } finally {
+      await driver.invokeMethod<void>('releasePixelFixture');
+    }
   });
 
   testWidgets(
@@ -463,6 +598,8 @@ void main() {
                 display.frame.width * display.frame.height * 4,
               );
             }
+            final retainedFrame = session.displays.first.frame;
+            final retainedColor = retainedFrame.pixelAt(0, 0);
             final beforeKey = events.length;
             await driver.invokeMethod<void>('key', {
               'keyCode': 125,
@@ -488,6 +625,7 @@ void main() {
               ))?['panels'],
               0,
             );
+            expect(retainedFrame.pixelAt(0, 0), retainedColor);
           } finally {
             await desktop.finish(session.id);
           }
@@ -553,6 +691,7 @@ void main() {
         // The editor receives the frozen selection's raw pixels directly.
         final rawSelection = c.screenshotSelection!;
         final rawDocument = c.imageDocument!.frame;
+        expect(rawDocument.rgba, same(display.frame.rgba));
         expect(
           (rawDocument.width, rawDocument.height),
           (rawSelection.width, rawSelection.height),
@@ -1150,6 +1289,76 @@ void main() {
         expect(c.colors, isNotEmpty);
       } finally {
         await driver.invokeMethod<void>('restoreClipboard');
+        c.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+  testWidgets(
+    'screenshot defaults to sampling before annotation and C copies frozen color',
+    (tester) async {
+      final desktop = NativeDesktop();
+      final c = AppController(desktop);
+      await c.initialize();
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await tester.pumpAndSettle();
+      await driver.invokeMethod<void>('backupClipboard');
+      try {
+        expect(
+          c.permissionGranted,
+          true,
+          reason: 'Real screen-recording permission is required',
+        );
+        // 未开始标注的截图选区默认提供取色信息，C 直接输出真实快照颜色。
+        await c.startScreenshot();
+        final colorDisplay = desktop.lastCapture!.displays.first;
+        for (final event in [
+          {'phase': 'down', 'x': 40.0, 'y': 180.0},
+          {'phase': 'drag', 'x': 240.0, 'y': 340.0},
+          {'phase': 'up', 'x': 240.0, 'y': 340.0},
+        ]) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': colorDisplay.id,
+            ...event,
+          });
+          await tester.pump();
+        }
+        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('annotation-tool-picker')),
+          findsNothing,
+        );
+        final samplingMouse = mouse(tester);
+        await samplingMouse.addPointer(location: const Offset(100, 220));
+        await samplingMouse.moveTo(const Offset(101, 221));
+        await tester.pump();
+        expect(
+          find.byKey(const ValueKey('screenshot-magnifier')),
+          findsOneWidget,
+        );
+        expect(find.textContaining('X:'), findsOneWidget);
+        final expectedColor = c.screenshotColorAt(101, 221)!;
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+        await waitFor(tester, () => !c.busy);
+        expect(
+          await tester.runAsync(
+            () => driver.invokeMethod<String>('clipboardText'),
+          ),
+          c.formatColor(expectedColor),
+        );
+        await samplingMouse.removePointer();
+        expect(
+          (await tester.runAsync(
+            () => driver.invokeMapMethod<String, Object?>('status'),
+          ))?['mainVisible'],
+          false,
+        );
+      } finally {
+        if (c.busy) await driver.invokeMethod<void>('key', {'keyCode': 53});
+        await tester.runAsync(
+          () => driver.invokeMethod<void>('restoreClipboard'),
+        );
         c.dispose();
         await tester.pumpWidget(const SizedBox.shrink());
       }

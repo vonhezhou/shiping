@@ -41,4 +41,41 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(nudge.resize, true)
   }
 
+  func testFFIReferencesSurviveSessionReleaseAndFreeAfterLastReader() {
+    XCTAssertNil(NativePixelBuffer(byteCount: 0))
+    XCTAssertNil(frulerFrameAcquire(-1))
+    var owner = NativePixelBuffer(byteCount: 32)
+    weak var observed = owner
+    let id = owner!.id
+    owner!.data.storeBytes(of: UInt32(0xFF030201), as: UInt32.self)
+    let first = frulerFrameAcquire(id)!
+    let second = frulerFrameAcquire(id)!
+    XCTAssertEqual(frulerFrameLength(first), 32)
+    owner!.unpublish()
+    owner = nil
+    XCTAssertNil(frulerFrameAcquire(id))
+    XCTAssertNotNil(observed)
+    XCTAssertEqual(frulerFrameData(first)!.load(as: UInt32.self), 0xFF030201)
+    frulerFrameRelease(first)
+    XCTAssertNotNil(observed)
+    frulerFrameRelease(second)
+    XCTAssertNil(observed)
+  }
+
+  func testFFIAcquireReleaseAcrossThreads() {
+    var owner = NativePixelBuffer(byteCount: 16)
+    weak var observed = owner
+    let id = owner!.id
+    owner!.data.storeBytes(of: UInt8(91), as: UInt8.self)
+    DispatchQueue.concurrentPerform(iterations: 200) { _ in
+      let token = frulerFrameAcquire(id)!
+      XCTAssertEqual(frulerFrameData(token)!.load(as: UInt8.self), 91)
+      frulerFrameRelease(token)
+    }
+    owner!.unpublish()
+    owner = nil
+    XCTAssertNil(observed)
+    XCTAssertNil(frulerFrameAcquire(id))
+  }
+
 }

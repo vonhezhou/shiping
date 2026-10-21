@@ -271,7 +271,9 @@ struct DisplayFrame: Hashable {
   var height: Int64
   var logicalWidth: Double
   var logicalHeight: Double
-  var rgba: FlutterStandardTypedData
+  var bufferId: Int64
+  var byteLength: Int64
+  var rowBytes: Int64
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -282,7 +284,9 @@ struct DisplayFrame: Hashable {
     let height = pigeonVar_list[3] as! Int64
     let logicalWidth = pigeonVar_list[4] as! Double
     let logicalHeight = pigeonVar_list[5] as! Double
-    let rgba = pigeonVar_list[6] as! FlutterStandardTypedData
+    let bufferId = pigeonVar_list[6] as! Int64
+    let byteLength = pigeonVar_list[7] as! Int64
+    let rowBytes = pigeonVar_list[8] as! Int64
 
     return DisplayFrame(
       id: id,
@@ -291,7 +295,9 @@ struct DisplayFrame: Hashable {
       height: height,
       logicalWidth: logicalWidth,
       logicalHeight: logicalHeight,
-      rgba: rgba
+      bufferId: bufferId,
+      byteLength: byteLength,
+      rowBytes: rowBytes
     )
   }
   func toList() -> [Any?] {
@@ -302,14 +308,16 @@ struct DisplayFrame: Hashable {
       height,
       logicalWidth,
       logicalHeight,
-      rgba,
+      bufferId,
+      byteLength,
+      rowBytes,
     ]
   }
   static func == (lhs: DisplayFrame, rhs: DisplayFrame) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.name, rhs.name) && deepEqualsDesktop(lhs.width, rhs.width) && deepEqualsDesktop(lhs.height, rhs.height) && deepEqualsDesktop(lhs.logicalWidth, rhs.logicalWidth) && deepEqualsDesktop(lhs.logicalHeight, rhs.logicalHeight) && deepEqualsDesktop(lhs.rgba, rhs.rgba)
+    return deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.name, rhs.name) && deepEqualsDesktop(lhs.width, rhs.width) && deepEqualsDesktop(lhs.height, rhs.height) && deepEqualsDesktop(lhs.logicalWidth, rhs.logicalWidth) && deepEqualsDesktop(lhs.logicalHeight, rhs.logicalHeight) && deepEqualsDesktop(lhs.bufferId, rhs.bufferId) && deepEqualsDesktop(lhs.byteLength, rhs.byteLength) && deepEqualsDesktop(lhs.rowBytes, rhs.rowBytes)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -320,7 +328,9 @@ struct DisplayFrame: Hashable {
     deepHashDesktop(value: height, hasher: &hasher)
     deepHashDesktop(value: logicalWidth, hasher: &hasher)
     deepHashDesktop(value: logicalHeight, hasher: &hasher)
-    deepHashDesktop(value: rgba, hasher: &hasher)
+    deepHashDesktop(value: bufferId, hasher: &hasher)
+    deepHashDesktop(value: byteLength, hasher: &hasher)
+    deepHashDesktop(value: rowBytes, hasher: &hasher)
   }
 }
 

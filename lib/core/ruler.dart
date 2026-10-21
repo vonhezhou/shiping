@@ -84,7 +84,7 @@ class EdgeDetector {
     }
     final seed = frame.pixelAt(x, y);
     bool matches(int px, int py) {
-      final i = (py * frame.width + px) * 4;
+      final i = frame.byteIndex(px, py);
       return (frame.rgba[i] - seed.r).abs() <= tolerance &&
           (frame.rgba[i + 1] - seed.g).abs() <= tolerance &&
           (frame.rgba[i + 2] - seed.b).abs() <= tolerance;
