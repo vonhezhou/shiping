@@ -191,6 +191,102 @@ void pixelReaderIsolate(List<Object> args) async {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  const samplePhase = String.fromEnvironment('FRULER_SAMPLE_PHASE');
+  if (samplePhase.isNotEmpty) {
+    testWidgets('native color samples $samplePhase', (tester) async {
+      final desktop = NativeDesktop();
+      final c = AppController(desktop);
+      await c.initialize();
+      await driver.invokeMethod<void>('backupClipboard');
+      try {
+        await tester.pumpWidget(FrulerApp(controller: c));
+        await c.startScreenshot();
+        final id = desktop.lastCapture!.displays.first.id;
+        for (final phase in ['down', 'drag', 'up']) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': id,
+            'x': phase == 'down' ? 40.0 : 500.0,
+            'y': phase == 'down' ? 180.0 : 450.0,
+            'phase': phase,
+            'warp': true,
+          });
+          await tester.pump();
+        }
+        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        await tester.pumpAndSettle();
+        await click(
+          tester,
+          find.byKey(const ValueKey('annotation-tool-pencil')),
+        );
+        Future<void> open() =>
+            click(tester, find.byKey(const ValueKey('annotation-color')));
+        Future<void> close() async {
+          await driver.invokeMethod<void>('colorPanelAction', {
+            'action': 'cancel',
+          });
+          await tester.pumpAndSettle();
+        }
+
+        Future<int?> selected() async =>
+            (await driver.invokeMapMethod<String, Object?>(
+                  'colorPanelState',
+                ))?['color']
+                as int?;
+        await open();
+        final expected = samplePhase == 'store'
+            ? 0xFF000000 | (DateTime.now().microsecondsSinceEpoch & 0xFFFFFF)
+            : (await driver.invokeMethod<int>('colorSampleExpected'))!;
+        if (samplePhase == 'restore') {
+          expect(
+            c.annotationColor('pencil'),
+            expected,
+            reason: '新应用进程必须恢复画笔确认过的当前颜色',
+          );
+        }
+        if (samplePhase == 'store') {
+          await driver.invokeMethod<void>('colorPanelSelect', {
+            'color': expected,
+          });
+          await driver.invokeMethod<void>('colorSampleInput', {
+            'action': 'drag',
+          });
+        }
+        await driver.invokeMethod<void>('colorPanelSelect', {
+          'color': 0xFF000000,
+        });
+        await driver.invokeMethod<void>('colorSampleInput', {
+          'action': 'click',
+        });
+        expect(await selected(), expected, reason: '点击真实样本网格必须恢复拖入的颜色');
+        await close();
+        await open();
+        await driver.invokeMethod<void>('colorPanelSelect', {
+          'color': 0xFFFFFFFF,
+        });
+        await driver.invokeMethod<void>('colorSampleInput', {
+          'action': 'click',
+        });
+        expect(await selected(), expected, reason: '重新创建调色盘仍须保留自定义色块');
+        await driver.invokeMethod<void>('colorPanelAction', {
+          'action': 'confirm',
+        });
+        await tester.pumpAndSettle();
+        expect(c.annotationColor('pencil'), expected);
+        expect(
+          jsonDecode(
+            (await desktop.loadState())!,
+          )['annotationColors']['pencil'],
+          expected,
+        );
+      } finally {
+        await c.cancelScreenshot();
+        c.dispose();
+        await driver.invokeMethod<void>('restoreClipboard');
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    });
+    return;
+  }
   testWidgets('native system font families render distinct exported text', (
     tester,
   ) async {
@@ -1124,14 +1220,21 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.markup.items, beforeColor);
         expect(await driver.invokeMethod<Object?>('colorPanelState'), isNull);
+        // 持久化颜色可能与固定测试色一致，确保确认动作实际产生一次颜色修改。
+        final confirmedColor = beforeColor.last.color == 0x8012AB34
+            ? 0x80AB1234
+            : 0x8012AB34;
         await click(tester, find.byKey(const ValueKey('annotation-color')));
         await driver.invokeMethod<void>('colorPanelSelect', {
-          'color': 0x8012AB34,
+          'color': confirmedColor,
         });
         await driver.invokeMethod<void>('colorPanelAction', {
           'action': 'confirm',
         });
-        await waitFor(tester, () => c.markup.items.last.color == 0x8012AB34);
+        await waitFor(
+          tester,
+          () => c.markup.items.last.color == confirmedColor,
+        );
         expect(
           (await driver.invokeMapMethod<String, Object?>(
             'status',
@@ -1141,7 +1244,7 @@ void main() {
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items, beforeColor);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));
-        expect(c.markup.items.last.color, 0x8012AB34);
+        expect(c.markup.items.last.color, confirmedColor);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         await click(tester, find.byKey(const ValueKey('annotation-color')));
         await driver.invokeMethod<void>('colorPanelAction', {

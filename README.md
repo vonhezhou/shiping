@@ -95,6 +95,7 @@ python3 tool/check.py
 flutter --no-version-check test --no-pub
 python3 tool/test_macos_native.py
 python3 tool/test_macos_integration.py
+python3 tool/test_color_samples.py
 ```
 
 集成测试使用独立的 `dev.fruler.integration` 标识和沙盒，需要本机允许录屏。它实际调用 ScreenCaptureKit，向原生 NSPanel 发送 Cocoa 鼠标 / 键盘事件，检查：
@@ -103,6 +104,8 @@ python3 tool/test_macos_integration.py
 - 选区前后窗口编号不变，主窗口始终隐藏；重新框选仍在本次会话中。
 - 九种标注工具、文字、撤销 / 重做，以及真实系统 PNG 剪贴板。
 - 取消保存面板继续标注；复制完成、Esc 取消、取色和测量结束后不重新打开主窗口。
+
+颜色样本回归通过真实系统鼠标拖放保存色块、点击恢复，并启动第二个应用进程验证自定义色块及画笔当前颜色仍在；夹具需要辅助功能权限，测试前后备份和恢复系统颜色样本文件。
 
 测试会备份和恢复剪贴板。没有录屏权限时，真实采集用例明确失败，不以跳过替代通过。输入驱动仅在 `FRULER_INTEGRATION_TEST` 条件下编译，普通 Debug / Release 不包含它。运行集成测试后，正常 `flutter run -d macos` 会重新构建普通应用。
 

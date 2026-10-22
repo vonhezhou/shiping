@@ -210,6 +210,60 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
         dialog.panel.color = AnnotationColorDialog.nsColor(color)
         result(nil)
+      case "colorSampleExpected":
+        result(UserDefaults.standard.object(forKey: "fruler.integration.expectedSample"))
+      case "colorSampleInput":
+        guard let dialog = self.colorDialog, let root = dialog.panel.contentView else {
+          result(FlutterError(code:"test_no_color_panel",message:"No native color panel",details:nil));return
+        }
+        func findView(_ root: NSView, _ name: String) -> NSView? {
+          if String(describing: type(of: root)) == name { return root }
+          for child in root.subviews { if let found = findView(child, name) { return found } }
+          return nil
+        }
+        guard let well = findView(root, "NSColorPanelColorWell"),
+              let samples = findView(root, "NSColorPanelFavoritesList") else {
+          result(FlutterError(code:"test_no_samples",message:"Native color sample views unavailable",details:nil));return
+        }
+        dialog.panel.makeKeyAndOrderFront(nil)
+        root.layoutSubtreeIfNeeded()
+        let source = well.convert(NSPoint(x: well.bounds.midX, y: well.bounds.midY), to: nil)
+        let target = samples.convert(NSPoint(x: samples.bounds.minX + 8.5,
+          y: samples.isFlipped ? samples.bounds.minY + 8.5 : samples.bounds.maxY - 8.5), to: nil)
+        let drag = args["action"] as? String == "drag"
+        if drag { UserDefaults.standard.set(AnnotationColorDialog.argb(dialog.panel.color), forKey: "fruler.integration.expectedSample") }
+        let start = drag ? source : target
+        func cursor(_ point: NSPoint) -> [Double] {
+          let screen = dialog.panel.convertPoint(toScreen: point)
+          return [screen.x, (NSScreen.screens.first?.frame.maxY ?? 0) - screen.y]
+        }
+        let token = UUID().uuidString
+        let center = DistributedNotificationCenter.default()
+        let replyName = Notification.Name("dev.fruler.integration.colorSampleReply.\(token)")
+        final class InputReply {
+          var observer: NSObjectProtocol?
+          var completed = false
+        }
+        let pending = InputReply()
+        pending.observer = center.addObserver(forName: replyName, object: nil, queue: .main) { note in
+          guard !pending.completed else { return }
+          pending.completed = true
+          if let observer = pending.observer { center.removeObserver(observer) }
+          pending.observer = nil
+          if note.object as? String == "ok" { result(nil) }
+          else { result(FlutterError(code:"test_sample_input_failed",message:note.object as? String,details:nil)) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+          guard !pending.completed else { return }
+          pending.completed = true
+          if let observer = pending.observer { center.removeObserver(observer) }
+          pending.observer = nil
+          result(FlutterError(code:"test_sample_fixture_timeout",message:"Native input fixture did not reply",details:nil))
+        }
+        let payload: [String: Any] = ["start": cursor(start), "target": cursor(target), "drag": drag, "token": token]
+        let bytes = try! JSONSerialization.data(withJSONObject: payload)
+        center.postNotificationName(Notification.Name("dev.fruler.integration.colorSampleInput"),
+          object: String(data: bytes, encoding: .utf8), userInfo: nil, deliverImmediately: true)
       case "colorPanelAction":
         guard let dialog = self.colorDialog else {
           result(FlutterError(code:"test_no_color_panel",message:"No native color panel",details:nil));return
@@ -1642,6 +1696,8 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
   let confirmButton: NSButton
   let cancelButton: NSButton
   private var completion: ((Int64?) -> Void)?
+  private weak var owner: NSWindow?
+  private var ownerLevel: NSWindow.Level?
 
   init(initialColor: Int64, completion: @escaping (Int64?) -> Void) {
     panel = NSColorPanel(contentRect: NSRect(x: 0, y: 0, width: 266, height: 390),
@@ -1660,7 +1716,7 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
     panel.color = Self.nsColor(initialColor)
     panel.setTarget(nil)
     panel.setAction(nil)
-    panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+    panel.level = .popUpMenu
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     panel.hidesOnDeactivate = false
     let footer = NSView(frame: NSRect(x: 0, y: 0, width: 266, height: 44))
@@ -1710,6 +1766,10 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
   }
 
   func present(relativeTo owner: NSWindow) {
+    self.owner = owner
+    ownerLevel = owner.level
+    // 系统拖放窗口低于屏保层；选色期间保持浮层高于菜单栏，并让颜色拖放可命中面板。
+    owner.level = .statusBar
     if let screen = owner.screen {
       let frame = screen.visibleFrame
       panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2,
@@ -1732,6 +1792,7 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
     panel.delegate = nil
     panel.orderOut(nil)
     panel.close()
+    if let owner, let ownerLevel { owner.level = ownerLevel }
     reply(color)
   }
 }

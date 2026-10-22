@@ -21,7 +21,7 @@ command = [env.get('FRULER_FLUTTER', 'flutter'), '--no-version-check', 'test',
 # window rectangles or synthetic screen images enter the production capture path.
 with tempfile.TemporaryDirectory(prefix='fruler-region-fixture-') as directory:
     fixture = pathlib.Path(directory) / 'region-fixture'
-    subprocess.run(['xcrun', 'swiftc', str(root / 'test/macos/region_fixture.swift'),
+    subprocess.run(['xcrun', 'swiftc', '-D', 'FRULER_INTEGRATION_TEST', str(root / 'test/macos/region_fixture.swift'),
                     '-o', str(fixture)], check=True)
     process = subprocess.Popen([str(fixture)], stdout=subprocess.PIPE, text=True)
     try:
