@@ -9,8 +9,6 @@ import '../platform/desktop_service.dart';
 import '../platform/image_document.dart';
 import '../platform/annotation_renderer.dart';
 
-part 'capture_measurement.dart';
-
 enum AppSection { picker, ruler, image, settings }
 
 class MeasurementRecord {
@@ -120,13 +118,6 @@ class AppController extends ChangeNotifier {
     _persist();
     _notify();
   }
-
-  bool _captureSession = false;
-  RulerMode? captureRulerMode;
-  RulerMeasurement? _captureRulerPreview;
-  int? _captureRulerDisplay;
-  PixelPoint? _captureRulerSeed;
-  bool captureMeasurementsVisible = true;
 
   ImageDocument? imageDocument;
   PixelRect? screenshotSelection;
@@ -255,10 +246,6 @@ class AppController extends ChangeNotifier {
     _selectionPress = null;
     _pressedCandidate = null;
     _captureMeasurement = null;
-    captureRulerMode = null;
-    _captureRulerPreview = null;
-    _selectedPin = null;
-    _tool = 'screenshot';
     _redraw();
     _notify();
   }
@@ -729,10 +716,6 @@ class AppController extends ChangeNotifier {
     CapturedDisplay display,
   ) async {
     final id = _session!.id;
-    captureRulerMode = null;
-    _captureRulerPreview = null;
-    _selectedPin = null;
-    _tool = 'screenshot';
     _committing = true;
     imageLoading = true;
     try {
@@ -786,9 +769,6 @@ class AppController extends ChangeNotifier {
     busy = true;
     if (tool == 'screenshot') screenshotPermissionRequired = false;
     _tool = tool;
-    _captureSession = tool == 'screenshot';
-    captureRulerMode = null;
-    captureMeasurementsVisible = true;
     _committing = false;
     _anchor = null;
     _anchorDisplay = null;
@@ -859,6 +839,8 @@ class AppController extends ChangeNotifier {
         final tool = event['tool'];
         if (tool == 'picker') {
           unawaited(pickColor());
+        } else if (tool == 'rectangle') {
+          unawaited(startRuler());
         } else if (tool == 'screenshot') {
           unawaited(startScreenshot());
         } else {
@@ -867,6 +849,12 @@ class AppController extends ChangeNotifier {
               .firstOrNull;
           if (value != null) unawaited(startRuler(value));
         }
+        return;
+      case 'showSettings':
+        selectSection(AppSection.settings);
+        return;
+      case 'showHistory':
+        if (section == AppSection.settings) selectSection(AppSection.picker);
         return;
       case 'permissionChanged':
         permissionGranted = event['permission'] == true;
@@ -890,29 +878,13 @@ class AppController extends ChangeNotifier {
     }
     if (_committing || screenshotEditing) return;
     switch (event['type']) {
-      case 'toggleCaptureRuler':
-        toggleCaptureRuler();
-        return;
-      case 'cancelCaptureInteraction':
-        cancelCaptureInteraction();
-        return;
-      case 'useMeasurementSelection':
-        unawaited(useMeasurementSelection());
-        return;
-      case 'copyAllMeasurements':
-        unawaited(copyCaptureMeasurements(all: true));
-        return;
       case 'sampleColor':
         final p = _lastPointer;
-        if ((_tool == 'screenshot' || _captureSession) && p != null) {
+        if (_tool == 'screenshot' && p != null) {
           unawaited(sampleCaptureColor(p.displayId, p.x, p.y));
         }
         return;
       case 'copyCaptureSize':
-        if (_captureSession && captureRulerMode != null) {
-          unawaited(copyCaptureMeasurements());
-          return;
-        }
         final p = _lastPointer;
         if (_tool == 'screenshot' && p != null && _captureMeasurement != null) {
           unawaited(copyCaptureSize(p.displayId, _captureMeasurement!.rect));
@@ -925,10 +897,6 @@ class AppController extends ChangeNotifier {
         _dragPin(event);
         return;
       case 'copyMeasurement':
-        if (_captureSession) {
-          unawaited(copyCaptureMeasurements());
-          return;
-        }
         unawaited(_copySelectedMeasurement());
         return;
       case 'editPins':
@@ -971,32 +939,15 @@ class AppController extends ChangeNotifier {
         );
         return;
       case 'modeChanged':
-        if (event['tool'] == 'screenshot' && !_captureSession) {
-          _captureSession = true;
-          setCaptureRulerMode(null);
-          return;
-        }
-        if (_captureSession && event['tool'] != 'picker') {
-          final name = event['tool'] as String?;
-          setCaptureRulerMode(
-            RulerMode.values.where((m) => m.name == name).firstOrNull,
-          );
-          return;
-        }
-        // 取色仍属于原截图会话，复用快照并保留测量结果。
         final next = RulerMode.values
             .where((m) => m.name == event['tool'])
             .firstOrNull;
-        final requested = event['tool'] as String?;
+        // 工具会话相互独立，只有尺子内部可以切换测量模式。
         if (_contrastTarget == null &&
-            requested != null &&
-            [
-              'picker',
-              'screenshot',
-              ...RulerMode.values.map((m) => m.name),
-            ].contains(requested)) {
-          _tool = requested;
-          if (next != null) mode = next;
+            next != null &&
+            RulerMode.values.any((m) => m.name == _tool)) {
+          mode = next;
+          _tool = next.name;
           _pressedCandidate = null;
           _selectionPress = null;
           _captureMeasurement = null;
@@ -1007,6 +958,13 @@ class AppController extends ChangeNotifier {
           _persist();
           _redraw();
           _notify();
+        }
+        return;
+      case 'toleranceChanged':
+        if (['horizontal', 'vertical', 'cross'].contains(_tool) &&
+            event['tolerance'] is int) {
+          setTolerance(event['tolerance'] as int);
+          _redraw();
         }
         return;
       case 'scroll':
@@ -1051,7 +1009,6 @@ class AppController extends ChangeNotifier {
         });
         return;
       case 'confirm':
-        if (_captureSession && captureRulerMode != null) return;
         if (_tool == 'rectangle' && _selectedPin != null && _anchor == null) {
           unawaited(_copySelectedMeasurement(finish: true));
           return;
@@ -1085,9 +1042,9 @@ class AppController extends ChangeNotifier {
   Map<String, Object?> get _overlayOptions => {
     'sessionId': _session!.id,
     'tool': _tool,
-    'captureSession': _captureSession,
     'tolerance': tolerance,
     'zoom': zoom,
+    'colorOutputName': activeColorOutput.name,
     'continuous': _contrastTarget == null && continuousPicker,
     'pickerActions': _contrastTarget == null
         ? '左键：${pickerBehavior.primary.label} · 中键：${pickerBehavior.middle.label} · 右键：${pickerBehavior.secondary.label}'
@@ -1135,16 +1092,6 @@ class AppController extends ChangeNotifier {
     final x = (event['x'] as num).toDouble();
     final y = (event['y'] as num).toDouble();
     if (!x.isFinite || !y.isFinite) return;
-    final previousPointer = _lastPointer;
-    if (_captureSession &&
-        captureRulerMode != null &&
-        captureRulerMode != RulerMode.rectangle &&
-        event['phase'] == 'move' &&
-        (previousPointer?.displayId != display.id ||
-            previousPointer?.x != x ||
-            previousPointer?.y != y)) {
-      _selectedPin = null;
-    }
     _lastPointer = (displayId: display.id, x: x, y: y);
     _keyboardCursor = event['keyboard'] == true;
     final phase = event['phase'] as String;
@@ -1202,11 +1149,6 @@ class AppController extends ChangeNotifier {
       );
     }
     if (_tool == 'screenshot') _captureMeasurement = measurement;
-    if (_captureSession && captureRulerMode != null) {
-      _captureRulerPreview = measurement;
-      _captureRulerDisplay = display.id;
-      _captureRulerSeed = pixel;
-    }
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y}'
         : _tool == 'screenshot'
@@ -1235,10 +1177,6 @@ class AppController extends ChangeNotifier {
     } else if (measurement != null &&
         measurement.rect.width > 0 &&
         measurement.rect.height > 0) {
-      if (_captureSession && captureRulerMode != null) {
-        _fixCaptureMeasurement(measurement, display.id);
-        return;
-      }
       if (_tool == 'screenshot') {
         unawaited(_commitScreenshot(measurement, display));
         return;
@@ -1369,7 +1307,7 @@ class AppController extends ChangeNotifier {
     final result = RulerMeasurement.fromRect(
       frame,
       _pinRect(pin),
-      RulerMode.values.byName(pin['mode'] as String? ?? 'rectangle'),
+      RulerMode.rectangle,
     );
     _committing = true;
     if (finish) {
@@ -1409,7 +1347,7 @@ class AppController extends ChangeNotifier {
             .firstWhere((d) => d.id == _pins[index]['displayId'])
             .frame,
         rect,
-        RulerMode.values.byName(_pins[index]['mode'] as String? ?? 'rectangle'),
+        RulerMode.rectangle,
       ).label,
     };
   }
@@ -1419,11 +1357,7 @@ class AppController extends ChangeNotifier {
     final index = _pins.indexWhere(
       (p) => p['id'] == event['id'] && p['displayId'] == event['displayId'],
     );
-    if (index < 0 ||
-        (_captureSession &&
-            (_pins[index]['mode'] ?? 'rectangle') != 'rectangle')) {
-      return;
-    }
+    if (index < 0) return;
     if (event['phase'] == 'start') {
       _selectedPin = event['id'] as int;
       _pinDrag = (
@@ -1461,11 +1395,7 @@ class AppController extends ChangeNotifier {
 
   void _nudgePin(int dx, int dy, bool resize) {
     final index = _pins.indexWhere((p) => p['id'] == _selectedPin);
-    if (index < 0 ||
-        (_captureSession &&
-            (_pins[index]['mode'] ?? 'rectangle') != 'rectangle')) {
-      return;
-    }
+    if (index < 0) return;
     final frame = _session!.displays
         .firstWhere((d) => d.id == _pins[index]['displayId'])
         .frame;
@@ -1578,11 +1508,6 @@ class AppController extends ChangeNotifier {
     imageLoading = false;
     markup.reset();
     _tool = null;
-    _captureSession = false;
-    captureRulerMode = null;
-    _captureRulerPreview = null;
-    _captureRulerDisplay = null;
-    _captureRulerSeed = null;
     _contrastTarget = null;
     _contrastPair = false;
     _pinDrag = null;

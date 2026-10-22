@@ -8,6 +8,8 @@ class MainFlutterWindow: NSWindow {
   private var desktopBridge: FrulerDesktopBridge?
   private var historyRequested = false
   override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    // 隐藏后收回显示许可，避免搬移 Flutter 视图时 AppKit 自动带出历史窗口。
+    if place == .out { historyRequested = false }
     if place != .out && !historyRequested { return }
     super.order(place, relativeTo: otherWin)
   }
@@ -187,10 +189,23 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         DistributedNotificationCenter.default().postNotificationName(
           Notification.Name("dev.fruler.integration.raiseRegionFixture"),object:nil,userInfo:nil,deliverImmediately:true)
         result(nil)
+      case "clickMenu":
+        let name = args["name"] as? String ?? ""
+        guard let menu = self.statusItem?.menu,
+              let index = menu.items.firstIndex(where: {
+                ($0.representedObject as? String) == name || $0.identifier?.rawValue == name
+              }) else { result(false); return }
+        menu.performActionForItem(at: index)
+        result(true)
       case "status":
         result(["panels":self.overlays.count,"active":self.session != nil,
           "permission":CGPreflightScreenCaptureAccess(),"bundleId":Bundle.main.bundleIdentifier ?? "",
           "mainVisible":self.mainWindow?.isVisible == true,"editing":self.screenshotHost != nil,
+          "menu": self.statusItem?.menu?.items.map { entry -> [String: Any] in
+            ["title": entry.title, "separator": entry.isSeparatorItem,
+             "tool": entry.representedObject as? String ?? "", "key": entry.keyEquivalent,
+             "hasImage": entry.image != nil]
+          } ?? [],
           "statusItemCount":self.statusItem == nil ? 0 : 1,"accessory":NSApp.activationPolicy() == .accessory,
           "rulerViews":self.overlays.values.map { $0.overlay.integrationState },
           "windowNumber":self.screenshotHost?.windowNumber ?? self.overlays.values.first?.windowNumber ?? -1])
@@ -275,6 +290,9 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         default: result(FlutterError(code:"test_invalid_action",message:"Unknown color action",details:nil));return
         }
         result(nil)
+      case "setRulerTolerance":
+        guard let panel = self.overlays.values.first(where: { $0.isKeyWindow }) else { result(false); return }
+        result(panel.overlay.integrationSetTolerance(args["value"] as? String ?? ""))
       case "clickRulerControl":
         guard let panel = self.overlays.values.first(where: { $0.isKeyWindow }) else {
           result(false);return
@@ -292,6 +310,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           let type=["down":NSEvent.EventType.leftMouseDown,"drag":.leftMouseDragged,"up":.leftMouseUp,"move":.mouseMoved][phase] else {
           result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
         }
+        // 测试驱动接管浮层鼠标，避免 CGWarpMouseCursorPosition 随后生成的
+        // 系统悬停事件覆盖已投递的定位、框选或拖动事件。
+        for overlay in self.overlays.values { overlay.overlay.integrationDriving = true }
+        panel.makeKeyAndOrderFront(nil)
         panel.layoutIfNeeded()
         let point=panel.overlay.convert(NSPoint(x:x,y:y),to:nil)
         if args["warp"] as? Bool == true {
@@ -301,7 +323,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
         guard let event=NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],
           timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
-          context:nil,eventNumber:1,clickCount:1,pressure:1) else {result(nil);return}
+          context:nil,eventNumber:CaptureOverlayView.integrationEventNumber,clickCount:1,pressure:1) else {result(nil);return}
         panel.sendEvent(event);result(nil)
       case "scroll":
         guard let host=self.screenshotHost, let view=self.flutterController?.view,
@@ -730,20 +752,29 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.image = NSImage(systemSymbolName: "ruler", accessibilityDescription: "fruler")
     let menu = NSMenu()
-    menu.addItem(withTitle: "fruler · 屏幕上的像素工具", action: nil, keyEquivalent: "")
-    menu.addItem(.separator())
-    for (title, tool, key) in [("截图并标注", "screenshot", "X"), ("取色器", "picker", "C"), ("矩形测量", "rectangle", "R"),
-      ("水平间距", "horizontal", ""), ("垂直间距", "vertical", ""), ("交叉测距", "cross", "")] {
+    // 常用工具独立成组，快捷键靠右；管理入口和退出另起分组。
+    for (title, tool, key, symbol) in [
+      ("截图", "screenshot", "X", "viewfinder"),
+      ("取色器", "picker", "C", "eyedropper"),
+      ("尺子", "rectangle", "R", "ruler")
+    ] {
       let entry = NSMenuItem(title: title, action: #selector(activateTool(_:)), keyEquivalent: key)
       entry.target = self
       entry.representedObject = tool
-      if !key.isEmpty { entry.keyEquivalentModifierMask = [.command, .shift] }
+      entry.keyEquivalentModifierMask = [.command, .shift]
+      entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+      entry.image?.size = NSSize(width: 16, height: 16)
       toolMenuItems[tool] = entry
       menu.addItem(entry)
     }
     menu.addItem(.separator())
-    let show = menu.addItem(withTitle: "打开 fruler", action: #selector(presentMainWindow), keyEquivalent: "")
-    show.target = self
+    let history = menu.addItem(withTitle: "历史记录", action: #selector(openHistory), keyEquivalent: "")
+    history.target = self
+    history.identifier = NSUserInterfaceItemIdentifier("history")
+    let settings = menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
+    settings.target = self
+    settings.identifier = NSUserInterfaceItemIdentifier("settings")
+    menu.addItem(.separator())
     let quit = menu.addItem(withTitle: "退出 fruler", action: #selector(quitApp), keyEquivalent: "q")
     quit.target = self
     item.menu = menu
@@ -769,6 +800,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     if session != nil { cancelSession() }
     NSApp.activate(ignoringOtherApps: true)
     (mainWindow as? MainFlutterWindow)?.presentHistory()
+  }
+  @objc private func openHistory() {
+    presentMainWindow()
+    sink?(["type": "showHistory"])
+  }
+  @objc private func openSettings() {
+    presentMainWindow()
+    sink?(["type": "showSettings"])
   }
   @objc private func quitApp() { NSApp.terminate(nil) }
 
@@ -997,17 +1036,10 @@ private final class CaptureButton: NSButton {
   }
 }
 
-private final class CapturePopUpButton: NSPopUpButton {
-  override func resetCursorRects() {
-    addCursorRect(bounds, cursor: isEnabled ? .pointingHand : .arrow)
-  }
-}
-
-private final class CaptureOverlayView: NSView {
+private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   let snapshot: DisplaySnapshot
   var regionTargets: [CaptureRegionTarget] = []
   private var tool: String
-  private var captureSession = false
   var onEvent: (([String: Any]) -> Void)?
   var onCancel: (() -> Void)?
   var isPointerActive = false {
@@ -1021,10 +1053,11 @@ private final class CaptureOverlayView: NSView {
   private var tracking: NSTrackingArea?
   private var tolerance = 16
   private var zoom = 12
+  private var colorOutputName = "HEX"
   private var anchored = false
   private var cursorHidden = false
   private var scrollRemainder: CGFloat = 0
-  private var pins: [(id: Int, rect: NSRect, label: String, mode: String, seed: NSPoint?)] = []
+  private var pins: [(id: Int, rect: NSRect, label: String)] = []
   private var continuous = false
   private var pickedCount = 0
   private var pickerActions = "左键取色 · 右键取消"
@@ -1035,19 +1068,17 @@ private final class CaptureOverlayView: NSView {
   private let editbar = NSView()
   private let continuousButton = CaptureButton(checkboxWithTitle: "连续取色", target: nil, action: nil)
   private let copySizeButton = CaptureButton(title: "复制尺寸 ⌘C", target: nil, action: nil)
-  private let editButton = CaptureButton(title: "编辑标注", target: nil, action: nil)
   private let redoButton = CaptureButton(title:"重做",target:nil,action:nil)
   private let undoButton = CaptureButton(title: "撤销", target: nil, action: nil)
   private let deleteButton = CaptureButton(title: "删除测量框", target: nil, action: nil)
-  private let copyImageButton = CaptureButton(title: "复制图片", target: nil, action: nil)
-  private let saveImageButton = CaptureButton(title: "导出 PNG", target: nil, action: nil)
-  private let pinSelector = CapturePopUpButton(frame: .zero, pullsDown: false)
   private var modeButtons: [String: NSButton] = [:]
   private let toolbar = NSView()
   private let infoLabel = NSTextField(labelWithString: "")
+  private let toleranceGroup = NSStackView()
+  private let toleranceField = NSTextField(string: "16")
   private let clearButton = CaptureButton(title: "清除标注", target: nil, action: nil)
-  private var toolbarWidth: NSLayoutConstraint?
-  private let accent = NSColor(srgbRed: 215 / 255, green: 250 / 255, blue: 107 / 255, alpha: 1)
+  private let accent = NSColor(srgbRed: 38 / 255, green: 131 / 255, blue: 1, alpha: 1)
+  private let toolbarSurface = NSColor(srgbRed: 41 / 255, green: 41 / 255, blue: 41 / 255, alpha: 1)
 
   init(snapshot: DisplaySnapshot, tool: String) {
     self.snapshot = snapshot
@@ -1057,6 +1088,19 @@ private final class CaptureOverlayView: NSView {
     toolbar.isHidden = tool == "screenshot"
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+  #if FRULER_INTEGRATION_TEST
+  static let integrationEventNumber = 0x4652554C
+  var integrationDriving = false
+  #endif
+
+  private func ignoresIntegrationNoise(_ event: NSEvent) -> Bool {
+    #if FRULER_INTEGRATION_TEST
+    return integrationDriving && event.eventNumber != Self.integrationEventNumber
+    #else
+    return false
+    #endif
+  }
   override var isFlipped: Bool { true }
   override var acceptsFirstResponder: Bool { true }
 
@@ -1075,6 +1119,7 @@ private final class CaptureOverlayView: NSView {
     addCursorRect(bounds, cursor: cursor(at: location))
   }
   override func cursorUpdate(with event: NSEvent) {
+    if ignoresIntegrationNoise(event) { return }
     releaseCursor()
     applyCursor(at: convert(event.locationInWindow, from: nil))
   }
@@ -1097,7 +1142,7 @@ private final class CaptureOverlayView: NSView {
       }
     }
     if tool == "rectangle" || editingPins {
-      if pins.contains(where: { (!captureSession || $0.mode == "rectangle") && $0.rect.insetBy(dx: -5, dy: -5).contains(location) }) {
+      if pins.contains(where: { $0.rect.insetBy(dx: -5, dy: -5).contains(location) }) {
         return .openHand
       }
     }
@@ -1109,28 +1154,26 @@ private final class CaptureOverlayView: NSView {
     hoverLocation = location
     cursor(at: location).set()
   }
-  override func mouseEntered(with event: NSEvent) { window?.makeKey(); send(event, phase: "move") }
+  override func mouseEntered(with event: NSEvent) { if ignoresIntegrationNoise(event) { return }; window?.makeKey(); send(event, phase: "move") }
   override func mouseExited(with event: NSEvent) {
+    if ignoresIntegrationNoise(event) { return }
     isPointerActive = false
     if pinDrag == nil { hoverLocation = nil; NSCursor.arrow.set() }
   }
   override func mouseMoved(with event: NSEvent) { send(event, phase: "move") }
-  override func mouseDown(with event: NSEvent) { window?.makeKey(); send(event, phase: "down") }
+  override func mouseDown(with event: NSEvent) { if ignoresIntegrationNoise(event) { return }; window?.makeKey(); send(event, phase: "down") }
   override func mouseDragged(with event: NSEvent) { send(event, phase: "drag") }
   override func mouseUp(with event: NSEvent) { send(event, phase: "up") }
-  override func rightMouseDown(with event: NSEvent) { if tool == "picker" { send(event,phase:"down") } else if captureSession { pinDrag = nil; emitControl("cancelCaptureInteraction") } else { onCancel?() } }
+  override func rightMouseDown(with event: NSEvent) { if ignoresIntegrationNoise(event) { return }; if tool == "picker" { send(event,phase:"down") } else { onCancel?() } }
   override func rightMouseUp(with event: NSEvent) { if tool == "picker" { send(event,phase:"up") } }
   override func otherMouseDown(with event: NSEvent) { if tool == "picker", event.buttonNumber == 2 { send(event,phase:"down") } }
   override func otherMouseUp(with event: NSEvent) { if tool == "picker", event.buttonNumber == 2 { send(event,phase:"up") } }
   override func keyDown(with event: NSEvent) {
     switch Int(event.keyCode) {
-    case kVK_Escape:
-      if captureSession { pinDrag = nil; emitControl("cancelCaptureInteraction") } else { onCancel?() }
-    case kVK_ANSI_R where captureSession && !event.modifierFlags.contains(.command):
-      emitControl("toggleCaptureRuler")
-    case kVK_ANSI_C where (tool == "screenshot" || captureSession) && !event.modifierFlags.contains(.command):
+    case kVK_Escape: onCancel?()
+    case kVK_ANSI_C where tool == "screenshot" && !event.modifierFlags.contains(.command):
       onEvent?(["type":"sampleColor"])
-    case kVK_ANSI_M where (tool == "screenshot" || captureSession) && !event.modifierFlags.contains(.command):
+    case kVK_ANSI_M where tool == "screenshot" && !event.modifierFlags.contains(.command):
       onEvent?(["type":"copyCaptureSize"])
     case kVK_ANSI_C where tool == "rectangle" && event.modifierFlags.contains(.command):
       onEvent?(["type": "copyMeasurement"])
@@ -1171,6 +1214,7 @@ private final class CaptureOverlayView: NSView {
   }
 
   private func send(_ event: NSEvent, phase: String) {
+    if ignoresIntegrationNoise(event) { return }
     let location = convert(event.locationInWindow, from: nil)
     releaseCursor()
     applyCursor(at: location)
@@ -1185,7 +1229,6 @@ private final class CaptureOverlayView: NSView {
         let pin = selectedHandle != nil ? selected : pins.reversed().first { $0.rect.insetBy(dx: -4, dy: -4).contains(location) }
         onEvent?(["type": "selectPin", "id": pin?.id as Any? ?? NSNull()])
         if let pin = pin {
-          if captureSession && pin.mode != "rectangle" { return }
           let handle = selectedHandle ?? "move"
           pinDrag = (pin.id, location, handle)
           applyCursor(at: location)
@@ -1223,6 +1266,9 @@ private final class CaptureOverlayView: NSView {
     return handles.first { abs($0.1.x - point.x) <= 5 && abs($0.1.y - point.y) <= 5 }?.0
   }
   func sendCurrentPointer() {
+    #if FRULER_INTEGRATION_TEST
+    if integrationDriving { return }
+    #endif
     guard let window = window else { return }
     pointer = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
     isPointerActive = bounds.contains(pointer)
@@ -1259,9 +1305,21 @@ private final class CaptureOverlayView: NSView {
   }
 
   #if FRULER_INTEGRATION_TEST
+  func integrationSetTolerance(_ value: String) -> Bool {
+    guard !toleranceGroup.isHidden else { return false }
+    toleranceField.selectText(nil)
+    if let editor = toleranceField.currentEditor() {
+      editor.selectAll(nil)
+      editor.insertText(value)
+      toleranceField.validateEditing()
+    } else { return false }
+    toleranceField.sendAction(toleranceField.action, to: toleranceField.target)
+    window?.makeFirstResponder(self)
+    return true
+  }
   func integrationClickControl(_ name: String) -> Bool {
-    let control: NSButton? = modeButtons[name] ?? ["delete":deleteButton,"undo":undoButton,"useSelection":copyImageButton,"copyAll":saveImageButton][name]
-    guard let button=control, button.isEnabled else { return false }
+    let control: NSButton? = modeButtons[name] ?? ["delete":deleteButton,"undo":undoButton][name]
+    guard let button=control, button.isEnabled, !button.isHidden, !toolbar.isHidden else { return false }
     button.performClick(nil)
     return true
   }
@@ -1271,7 +1329,7 @@ private final class CaptureOverlayView: NSView {
     view.updateOptions(["tool":tool, "selectedPin":1])
     view.layoutSubtreeIfNeeded()
     return [view.toolbar, view.editbar].allSatisfy { bar in
-      view.bounds.contains(bar.frame) && bar.subviews.allSatisfy { bar.bounds.contains($0.frame) }
+      bar.frame.minY < view.bounds.midY && view.bounds.contains(bar.frame) && bar.subviews.allSatisfy { bar.bounds.contains($0.frame) }
     }
   }
   var integrationState: [String: Any] {
@@ -1286,9 +1344,14 @@ private final class CaptureOverlayView: NSView {
         result[entry.0] = ["x": rect.midX, "y": rect.midY, "enabled": entry.1.isEnabled]
       }
     let modes = modeButtons.mapValues { button -> [String: Any] in
-      ["title": button.title, "hasImage": button.image != nil, "tooltip": button.toolTip ?? ""]
+      ["hasImage": button.image != nil, "title": button.title, "hidden": button.isHidden,
+       "tooltip": button.toolTip ?? "", "selected": button.accessibilityValue() as? String ?? ""]
     }
-    return ["modes": modes, "cursor": cursorName, "controls": controls,"displayId": snapshot.displayID, "tool": tool,
+    return ["toolbarWidth": toolbar.frame.width,
+     "toolbarContentWidth": toolbar.subviews.first?.frame.width ?? 0,
+     "editbarVisible": !editbar.isHidden, "toleranceVisible": !toleranceGroup.isHidden,
+     "tolerance": tolerance, "toolbarTop": toolbar.frame.minY, "editbarTop": editbar.frame.minY,
+     "colorOutputName": colorOutputName, "modes": modes, "cursor": cursorName, "controls": controls,"displayId": snapshot.displayID, "tool": tool,
      "preview":measuredRect.map { CaptureRegionGeometry.pixels($0,size:bounds.size,width:snapshot.width,height:snapshot.height) } as Any? ?? NSNull(),
      "regions":regionTargets.compactMap { target -> [String:Any]? in
        guard let rect=CaptureRegionGeometry.localRect(target.rect,display:CGDisplayBounds(snapshot.displayID)) else { return nil }
@@ -1308,25 +1371,20 @@ private final class CaptureOverlayView: NSView {
 
   func updateOptions(_ data: [String: Any]) {
     if let value = data["tool"] as? String { tool = value }
-    if let value = data["captureSession"] as? Bool { captureSession = value }
-    toolbar.isHidden = screenshotEditing || (tool == "screenshot" && !captureSession)
+    toolbar.isHidden = screenshotEditing || tool == "screenshot"
     capturePurpose = data["capturePurpose"] as? String ?? ""
     pickerActions = data["pickerActions"] as? String ?? pickerActions
     if let value = data["tolerance"] as? Int { tolerance = value }
     if let value = data["zoom"] as? Int { zoom = value }
+    if let value = data["colorOutputName"] as? String { colorOutputName = value }
     if let value = data["continuous"] as? Bool { continuous = value }
     if let value = data["pickedCount"] as? Int { pickedCount = value }
     if let value = data["editingPins"] as? Bool { editingPins = value }
     selectedPin = data["selectedPin"] as? Int
     continuousButton.state = continuous ? .on : .off
     continuousButton.isHidden = tool != "picker" || !capturePurpose.isEmpty
-    editbar.isHidden = tool == "picker" || tool == "screenshot"
-    editButton.title = editingPins ? "添加测量框" : "仅编辑框"
-    copySizeButton.title = captureSession ? "复制尺寸并结束 M" : "复制尺寸 ⌘C"
-    copySizeButton.isHidden = !captureSession && tool != "rectangle"
-    editButton.isHidden = captureSession && tool != "rectangle"
-    copyImageButton.title = captureSession ? "用作截图范围" : "复制图片"
-    saveImageButton.title = captureSession ? "复制全部并结束" : "导出 PNG"
+    editbar.isHidden = tool != "rectangle" || (pins.isEmpty && data["canUndoPins"] as? Bool != true && data["canRedoPins"] as? Bool != true)
+    copySizeButton.isHidden = tool != "rectangle"
     copySizeButton.isEnabled = selectedPin != nil
     undoButton.isEnabled = data["canUndoPins"] as? Bool == true
     redoButton.isEnabled = data["canRedoPins"] as? Bool == true
@@ -1338,137 +1396,154 @@ private final class CaptureOverlayView: NSView {
         let sx = bounds.width / Double(snapshot.width), sy = bounds.height / Double(snapshot.height)
         return (item["id"] as? Int ?? index + 1, NSRect(x: Double(left) * sx, y: Double(top) * sy,
           width: Double(right - left) * sx, height: Double(bottom - top) * sy),
-          "\(item["id"] as? Int ?? index + 1) · \(item["label"] as? String ?? "")", item["mode"] as? String ?? "rectangle",
-          (item["seedX"] as? Int).flatMap { x in (item["seedY"] as? Int).map { y in NSPoint(x: Double(x) * sx, y: Double(y) * sy) } })
+          "\(item["id"] as? Int ?? index + 1) · \(item["label"] as? String ?? "")")
       }
-      clearButton.title = "清除标注 \(values.count)"
+      clearButton.toolTip = "清除全部测量框（\(values.count)）"
       clearButton.isEnabled = !values.isEmpty
-      let titles = ["选择本屏标注"] + pins.map { $0.label }
-      if pinSelector.itemTitles != titles {
-        pinSelector.removeAllItems(); pinSelector.addItems(withTitles: titles)
-      }
-      pinSelector.selectItem(at: pins.firstIndex(where: { $0.id == selectedPin }).map { $0 + 1 } ?? 0)
       deleteButton.isEnabled = pins.contains(where: { $0.id == selectedPin })
-      copyImageButton.isEnabled = captureSession ? pins.contains { $0.id == selectedPin && $0.mode == "rectangle" } : !pins.isEmpty
-      saveImageButton.isEnabled = !pins.isEmpty
+
     }
+    editbar.isHidden = tool != "rectangle" || (pins.isEmpty && !undoButton.isEnabled && !redoButton.isEnabled)
     for (mode, button) in modeButtons {
       let selected = mode == tool
-      button.isHidden = captureSession ? (mode == "picker" || (tool == "screenshot" && !["screenshot", "rectangle"].contains(mode))) :
-        (tool == "picker" || tool == "screenshot") && !["screenshot","picker","rectangle"].contains(mode)
-      if captureSession && mode == "screenshot" { button.title = "返回截图" }
-      if captureSession && mode == "rectangle" { button.toolTip = tool == "screenshot" ? "手动多框测量（R）" : "手动矩形测量（1）" }
-      button.layer?.backgroundColor = (selected ? accent : NSColor.white.withAlphaComponent(0.07)).cgColor
-      button.contentTintColor = selected ? .black : .white
+      button.isHidden = tool == "picker" || tool == "screenshot"
+      button.layer?.backgroundColor = (selected ? accent : NSColor.clear).cgColor
+      button.contentTintColor = .white
       button.setAccessibilityValue(selected ? "已选中" : "")
     }
     clearButton.isHidden = tool == "picker" || tool == "screenshot"
-    infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? "取色" : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
-      tool == "screenshot" ? "拖动截图 · R 多框测量 · C 取色 · M 尺寸" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "空白处新增 · 拖框移动 / 边角缩放 · Enter 完成" : "容差 \(tolerance) · 滚轮调整"
-    toolbarWidth?.constant = min(bounds.width - 24, tool == "picker" ? 470 : 740)
+    infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? colorOutputName : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
+      tool == "screenshot" ? "单击吸附 · 拖动框选 · C 取色 · M 复制尺寸" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "空白处新增 · 拖框移动 / 边角缩放 · Enter 完成" : "容差 \(tolerance) · 滚轮调整"
+    infoLabel.toolTip = tool == "picker" ? "当前复制格式 · 滚轮调整放大倍率 · \(pickerActions)" : "滚轮调整自动测距容差 · 1–4 切换模式"
+    infoLabel.isHidden = tool != "picker"
+    toleranceGroup.isHidden = !["horizontal", "vertical", "cross"].contains(tool)
+    if toleranceField.currentEditor() == nil { toleranceField.stringValue = String(tolerance) }
     needsDisplay = true
     window?.invalidateCursorRects(for: self)
     if let location = hoverLocation { applyCursor(at: location) }
   }
 
+  private func styleButton(_ button: NSButton, symbol: String, tooltip: String) {
+    button.title = ""
+    button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
+    button.imagePosition = .imageOnly
+    button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: symbol == "xmark" ? 12 : 16, weight: .regular)
+    button.contentTintColor = .white
+    button.isBordered = false
+    button.wantsLayer = true
+    button.layer?.cornerRadius = 3
+    button.toolTip = tooltip
+    button.setAccessibilityLabel(tooltip)
+    button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+    button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+  }
+
+  private func styleToolbar(_ bar: NSView) {
+    bar.translatesAutoresizingMaskIntoConstraints = false
+    bar.appearance = NSAppearance(named: .darkAqua)
+    bar.wantsLayer = true
+    bar.layer?.backgroundColor = toolbarSurface.cgColor
+    bar.layer?.cornerRadius = 4
+    bar.shadow = NSShadow()
+    bar.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.3)
+    bar.shadow?.shadowBlurRadius = 4
+    bar.shadow?.shadowOffset = NSSize(width: 0, height: -2)
+  }
+
   private func setupToolbar() {
-    toolbar.translatesAutoresizingMaskIntoConstraints = false
-    toolbar.wantsLayer = true
-    toolbar.layer?.backgroundColor = NSColor(srgbRed: 0.055, green: 0.065, blue: 0.075, alpha: 0.97).cgColor
-    toolbar.layer?.cornerRadius = 12
-    toolbar.layer?.borderColor = NSColor.white.withAlphaComponent(0.17).cgColor
-    toolbar.layer?.borderWidth = 1
+    styleToolbar(toolbar)
     addSubview(toolbar)
     let stack = NSStackView()
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.orientation = .horizontal
-    stack.spacing = 7
+    stack.spacing = 6
     stack.alignment = .centerY
     toolbar.addSubview(stack)
-    for (index, mode) in ["screenshot", "picker", "rectangle", "horizontal", "vertical", "cross"].enumerated() {
-      let names = ["截图", "取色", "矩形", "水平", "垂直", "交叉"]
-      let button = CaptureButton(title: names[index], target: self, action: #selector(changeMode(_:)))
+    for (index, mode) in ["rectangle", "horizontal", "vertical", "cross"].enumerated() {
+      let names = ["手动矩形测量", "水平自动测距", "垂直自动测距", "交叉自动测距"]
+      let symbols = ["rectangle.dashed", "arrow.left.and.right", "arrow.up.and.down", "arrow.up.and.down.and.arrow.left.and.right"]
+      let button = CaptureButton(title: "", target: self, action: #selector(changeMode(_:)))
       button.identifier = NSUserInterfaceItemIdentifier(mode)
-      button.font = .systemFont(ofSize: 11, weight: .medium)
-      button.isBordered = false
-      button.wantsLayer = true
-      button.layer?.cornerRadius = 6
-      if index >= 2 {
-        let symbols = ["rectangle.dashed", "arrow.left.and.right", "arrow.up.and.down", "arrow.up.and.down.and.arrow.left.and.right"]
-        button.title = ""
-        button.image = NSImage(systemSymbolName: symbols[index - 2], accessibilityDescription: names[index] + "测量")
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.setAccessibilityLabel(names[index] + "测量")
-      }
-      button.widthAnchor.constraint(equalToConstant: index >= 2 ? 28 : 67).isActive = true
-      button.heightAnchor.constraint(equalToConstant: 28).isActive = true
-      button.toolTip = index >= 2 ? "切换\(names[index])模式（\(index - 1)）" : "切换\(names[index])，复用当前截图"
+      styleButton(button, symbol: symbols[index], tooltip: "\(names[index])（\(index + 1)）")
       modeButtons[mode] = button
       stack.addArrangedSubview(button)
     }
     infoLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-    infoLabel.textColor = accent
+    infoLabel.textColor = NSColor.white.withAlphaComponent(0.8)
     infoLabel.alignment = .center
-    infoLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    infoLabel.lineBreakMode = .byTruncatingTail
+    infoLabel.setContentHuggingPriority(.required, for: .horizontal)
     infoLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     stack.addArrangedSubview(infoLabel)
+    toleranceGroup.orientation = .horizontal
+    toleranceGroup.spacing = 6
+    toleranceGroup.alignment = .centerY
+    let toleranceLabel = NSTextField(labelWithString: "容差")
+    toleranceLabel.font = .systemFont(ofSize: 11)
+    toleranceLabel.textColor = .white
+    toleranceGroup.addArrangedSubview(toleranceLabel)
+    toleranceField.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+    toleranceField.alignment = .center
+    toleranceField.widthAnchor.constraint(equalToConstant: 42).isActive = true
+    toleranceField.toolTip = "边界颜色容差（0–255），输入后按 Enter 确认"
+    toleranceField.setAccessibilityLabel("边界颜色容差")
+    toleranceField.target = self
+    toleranceField.action = #selector(applyTolerance)
+    toleranceField.delegate = self
+    toleranceGroup.addArrangedSubview(toleranceField)
+    stack.addArrangedSubview(toleranceGroup)
     continuousButton.target = self
     continuousButton.action = #selector(toggleContinuous)
     continuousButton.font = .systemFont(ofSize: 11)
+    continuousButton.contentTintColor = .white
+    continuousButton.toolTip = "连续取色：每次取色立即复制，Esc 结束"
     stack.addArrangedSubview(continuousButton)
     clearButton.target = self
     clearButton.action = #selector(clearPins)
-    clearButton.bezelStyle = .rounded
-    clearButton.font = .systemFont(ofSize: 11)
-    stack.addArrangedSubview(clearButton)
-    let close = CaptureButton(title: "退出 Esc", target: self, action: #selector(cancelCapture))
-    close.bezelStyle = .rounded
-    close.font = .systemFont(ofSize: 11)
+    styleButton(clearButton, symbol: "trash.slash", tooltip: "清除全部测量框")
+    let close = CaptureButton(title: "", target: self, action: #selector(cancelCapture))
+    styleButton(close, symbol: "xmark", tooltip: "取消（Esc）")
     stack.addArrangedSubview(close)
-    let width = toolbar.widthAnchor.constraint(equalToConstant: min(bounds.width - 24, 740))
-    toolbarWidth = width
     NSLayoutConstraint.activate([
-      toolbar.centerXAnchor.constraint(equalTo: centerXAnchor), toolbar.topAnchor.constraint(equalTo: topAnchor, constant: 22),
-      toolbar.heightAnchor.constraint(equalToConstant: 46), width,
-      stack.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 12),
-      stack.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -12),
-      stack.topAnchor.constraint(equalTo: toolbar.topAnchor, constant: 8),
-      stack.bottomAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: -8)
+      toolbar.centerXAnchor.constraint(equalTo: centerXAnchor),
+      toolbar.topAnchor.constraint(equalTo: topAnchor, constant: 22),
+      toolbar.heightAnchor.constraint(equalToConstant: 34),
+      toolbar.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24),
+      stack.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 10),
+      stack.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -10),
+      stack.topAnchor.constraint(equalTo: toolbar.topAnchor, constant: 3),
+      stack.bottomAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: -3)
     ])
     setupEditbar()
     updateOptions(["tool": tool])
   }
 
   private func setupEditbar() {
-    editbar.translatesAutoresizingMaskIntoConstraints = false
-    editbar.wantsLayer = true
-    editbar.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.93).cgColor
-    editbar.layer?.cornerRadius = 10
+    styleToolbar(editbar)
     addSubview(editbar)
     let stack = NSStackView()
     stack.translatesAutoresizingMaskIntoConstraints = false
-    stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
+    stack.orientation = .horizontal; stack.spacing = 6; stack.alignment = .centerY
     editbar.addSubview(stack)
-    let actions: [(NSButton, Selector)] = [(copySizeButton, #selector(copyMeasurement)), (editButton, #selector(togglePinEditing)),
-      (undoButton, #selector(undoPin)), (redoButton,#selector(redoPin)), (deleteButton, #selector(deletePin)),
-      (copyImageButton, #selector(copyAnnotationImage)), (saveImageButton, #selector(saveAnnotationImage))]
-    for (button, action) in actions {
-      button.target = self; button.action = action; button.bezelStyle = .rounded
-      button.font = .systemFont(ofSize: 11); stack.addArrangedSubview(button)
+    let actions: [(NSButton, Selector)] = [(copySizeButton, #selector(copyMeasurement)),
+      (undoButton, #selector(undoPin)), (redoButton, #selector(redoPin)),
+      (deleteButton, #selector(deletePin)), (clearButton, #selector(clearPins))]
+    let symbols = ["doc.on.clipboard", "arrow.uturn.backward", "arrow.uturn.forward", "trash", "trash.slash"]
+    let tooltips = ["复制当前尺寸（⌘C），保留测量框", "撤销（⌘Z）", "重做（⇧⌘Z）", "删除当前测量框（Delete）", "清空测量框"]
+    for (index, entry) in actions.enumerated() {
+      let (button, action) = entry
+      button.target = self; button.action = action
+      styleButton(button, symbol: symbols[index], tooltip: tooltips[index])
+      stack.addArrangedSubview(button)
     }
     deleteButton.toolTip = "删除选中的测量框（Delete / Backspace），⌘Z 撤销"
-    pinSelector.target = self; pinSelector.action = #selector(selectAnnotation)
-    pinSelector.font = .systemFont(ofSize: 11)
-    pinSelector.widthAnchor.constraint(equalToConstant: 180).isActive = true
-    stack.insertArrangedSubview(pinSelector, at: 2)
     NSLayoutConstraint.activate([
       editbar.centerXAnchor.constraint(equalTo: centerXAnchor),
-      editbar.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 8),
-      stack.leadingAnchor.constraint(equalTo: editbar.leadingAnchor, constant: 12),
-      stack.trailingAnchor.constraint(equalTo: editbar.trailingAnchor, constant: -12),
-      stack.topAnchor.constraint(equalTo: editbar.topAnchor, constant: 8),
-      stack.bottomAnchor.constraint(equalTo: editbar.bottomAnchor, constant: -8)
+      editbar.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 4),
+      stack.leadingAnchor.constraint(equalTo: editbar.leadingAnchor, constant: 10),
+      stack.trailingAnchor.constraint(equalTo: editbar.trailingAnchor, constant: -10),
+      stack.topAnchor.constraint(equalTo: editbar.topAnchor, constant: 3),
+      stack.bottomAnchor.constraint(equalTo: editbar.bottomAnchor, constant: -3)
     ])
   }
   private func emitControl(_ type: String, data: [String: Any] = [:]) {
@@ -1477,16 +1552,23 @@ private final class CaptureOverlayView: NSView {
   }
   @objc private func copyMeasurement() { emitControl("copyMeasurement") }
   @objc private func toggleContinuous() { emitControl("continuousChanged", data: ["enabled": continuousButton.state == .on]) }
-  @objc private func togglePinEditing() { emitControl("editPins") }
   @objc private func redoPin() { emitControl("redoPins") }
   @objc private func undoPin() { emitControl("undoPins") }
   @objc private func deletePin() { emitControl("deletePin") }
-  @objc private func selectAnnotation() {
-    let index = pinSelector.indexOfSelectedItem - 1
-    emitControl("selectPin", data: ["id": pins.indices.contains(index) ? pins[index].id as Any : NSNull()])
+  @objc private func applyTolerance() {
+    let raw = toleranceField.stringValue.trimmingCharacters(in: .whitespaces)
+    guard !raw.isEmpty, raw.allSatisfy({ $0.isASCII && $0.isNumber }),
+          let value = Int(raw), (0...255).contains(value) else {
+      toleranceField.stringValue = String(tolerance)
+      return
+    }
+    guard value != tolerance else { return }
+    tolerance = value
+    emitControl("toleranceChanged", data: ["tolerance": value])
   }
-  @objc private func copyAnnotationImage() { emitControl(captureSession ? "useMeasurementSelection" : "exportPins", data: ["save": false]) }
-  @objc private func saveAnnotationImage() { emitControl(captureSession ? "copyAllMeasurements" : "exportPins", data: ["save": true]) }
+  func controlTextDidEndEditing(_ notification: Notification) {
+    if notification.object as? NSTextField === toleranceField { applyTolerance() }
+  }
 
   @objc private func changeMode(_ sender: NSButton) {
     if let mode = sender.identifier?.rawValue { onEvent?(["type": "modeChanged", "tool": mode]) }
@@ -1502,7 +1584,7 @@ private final class CaptureOverlayView: NSView {
   func setScreenshotEditing(_ editing: Bool) {
     screenshotEditing = editing
     window?.invalidateCursorRects(for: self)
-    toolbar.isHidden = editing || (tool == "screenshot" && !captureSession)
+    toolbar.isHidden = editing || tool == "screenshot"
     editbar.isHidden = editing || tool == "screenshot" || tool == "picker"
     isPointerActive = false
     needsDisplay = true
@@ -1517,15 +1599,10 @@ private final class CaptureOverlayView: NSView {
       bounds.fill()
     }
     for pin in pins {
-      if pin.mode == "rectangle" { accent.withAlphaComponent(0.08).setFill(); pin.rect.fill() }
+      accent.withAlphaComponent(0.08).setFill(); pin.rect.fill()
       accent.setStroke()
-      if pin.mode == "rectangle" {
-        let outline = NSBezierPath(rect: pin.rect)
-        outline.lineWidth = pin.id == selectedPin ? 2 : 1
-        if captureSession && tool == "screenshot" { outline.setLineDash([4, 4], count: 2, phase: 0) }
-        outline.stroke()
-      } else { drawMeasurement(pin.rect, mode: pin.mode, seed: pin.seed) }
-      if pin.id == selectedPin && tool == "rectangle" && pin.mode == "rectangle" {
+      let outline = NSBezierPath(rect: pin.rect); outline.lineWidth = pin.id == selectedPin ? 3 : 1.5; outline.stroke()
+      if pin.id == selectedPin {
         for point in [NSPoint(x: pin.rect.minX,y: pin.rect.minY), NSPoint(x: pin.rect.maxX,y: pin.rect.minY),
           NSPoint(x: pin.rect.minX,y: pin.rect.maxY), NSPoint(x: pin.rect.maxX,y: pin.rect.maxY),
           NSPoint(x: pin.rect.midX,y: pin.rect.minY), NSPoint(x: pin.rect.midX,y: pin.rect.maxY),
@@ -1549,9 +1626,7 @@ private final class CaptureOverlayView: NSView {
     drawLoupe()
   }
 
-  private func drawMeasurement(_ rect: NSRect, mode: String? = nil, seed: NSPoint? = nil) {
-    let tool = mode ?? self.tool
-    let center = seed ?? (mode == nil ? pointer : NSPoint(x: rect.midX, y: rect.midY))
+  private func drawMeasurement(_ rect: NSRect) {
     accent.setStroke()
     let path = NSBezierPath()
     path.lineWidth = 1.5
@@ -1561,17 +1636,17 @@ private final class CaptureOverlayView: NSView {
       path.appendRect(rect)
     } else {
       if tool != "vertical" {
-        path.move(to: NSPoint(x: rect.minX, y: center.y))
-        path.line(to: NSPoint(x: rect.maxX, y: center.y))
+        path.move(to: NSPoint(x: rect.minX, y: pointer.y))
+        path.line(to: NSPoint(x: rect.maxX, y: pointer.y))
         for x in [rect.minX, rect.maxX] {
-          path.move(to: NSPoint(x: x, y: center.y - 8)); path.line(to: NSPoint(x: x, y: center.y + 8))
+          path.move(to: NSPoint(x: x, y: pointer.y - 8)); path.line(to: NSPoint(x: x, y: pointer.y + 8))
         }
       }
       if tool != "horizontal" {
-        path.move(to: NSPoint(x: center.x, y: rect.minY))
-        path.line(to: NSPoint(x: center.x, y: rect.maxY))
+        path.move(to: NSPoint(x: pointer.x, y: rect.minY))
+        path.line(to: NSPoint(x: pointer.x, y: rect.maxY))
         for y in [rect.minY, rect.maxY] {
-          path.move(to: NSPoint(x: center.x - 8, y: y)); path.line(to: NSPoint(x: center.x + 8, y: y))
+          path.move(to: NSPoint(x: pointer.x - 8, y: y)); path.line(to: NSPoint(x: pointer.x + 8, y: y))
         }
       }
     }
@@ -1588,16 +1663,16 @@ private final class CaptureOverlayView: NSView {
   }
 
   private func drawLoupe() {
-    let sampling = tool == "picker" || tool == "screenshot" || captureSession
+    let sampling = tool == "picker" || tool == "screenshot"
     let width: CGFloat = sampling ? 220 : 300
-    let height: CGFloat = sampling ? (captureSession ? 284 : tool == "picker" ? 278 : 250) : 64
+    let height: CGFloat = sampling ? (tool == "picker" ? 278 : 250) : 64
     var x = pointer.x + 26
     var y = pointer.y + 26
     if x + width > bounds.width - 12 { x = pointer.x - width - 26 }
     if y + height > bounds.height - 12 { y = pointer.y - height - 26 }
     let box = NSRect(x: max(12, x), y: max(12, y), width: width, height: height)
-    NSColor(srgbRed: 0.065, green: 0.075, blue: 0.085, alpha: 0.97).setFill()
-    NSBezierPath(roundedRect: box, xRadius: 12, yRadius: 12).fill()
+    toolbarSurface.setFill()
+    NSBezierPath(roundedRect: box, xRadius: 4, yRadius: 4).fill()
     if sampling {
       let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
       let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
@@ -1646,10 +1721,7 @@ private final class CaptureOverlayView: NSView {
       if tool == "screenshot", let rect = measuredRect {
         let w = Int((rect.width / bounds.width * Double(snapshot.width)).rounded())
         let h = Int((rect.height / bounds.height * Double(snapshot.height)).rounded())
-        details += "\n区域: \(w) × \(h) px · " + String(format: "\n%g × %g pt", rect.width, rect.height)
-      }
-      if captureSession && tool != "screenshot" {
-        details += "\n" + label.replacingOccurrences(of: " · ", with: "\n")
+        details += "\n区域: \(w) × \(h) px"
       }
       (details as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 18), withAttributes: attrs)
     } else {
@@ -1658,8 +1730,8 @@ private final class CaptureOverlayView: NSView {
     }
     let hint = tool == "rectangle" ? (anchored ? "松手保留 · 方向键微调" : "拖拽新增 · 拖框移动 / 边角缩放 · Enter 复制并结束") :
       (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
-    let actionHint = captureSession && tool != "screenshot" ? "点击固定 · M 复制尺寸并结束\nR 返回截图 · 滚轮调整自动测距容差" : tool == "screenshot" ? "C 复制颜色 · M 复制尺寸\nR 多框测量 · Option 暂停吸附" : tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
-    (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y: sampling ? box.minY + (captureSession ? 230 : 207) : labelY + 21,width:width-28,height:60),withAttributes:[
+    let actionHint = tool == "screenshot" ? "C 复制颜色 · M 复制尺寸\nOption 暂停吸附" : tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
+    (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y: sampling ? box.minY + 207 : labelY + 21,width:width-28,height:60),withAttributes:[
       .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }
 

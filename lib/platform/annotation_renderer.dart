@@ -104,6 +104,28 @@ class AnnotationRenderer {
           )..layout(maxWidth: b.width);
           canvas.save();
           canvas.clipRect(b);
+          if (a.outlined) {
+            final outline = TextPainter(
+              text: TextSpan(
+                text: a.text,
+                style: TextStyle(
+                  foreground: ui.Paint()
+                    ..color = textOutlineColor(a.color)
+                    ..style = ui.PaintingStyle.stroke
+                    ..strokeJoin = ui.StrokeJoin.round
+                    ..strokeWidth = a.fontSize / 12,
+                  fontSize: a.fontSize,
+                  fontFamily: a.fontFamily,
+                  fontWeight: a.bold ? FontWeight.bold : FontWeight.normal,
+                  fontStyle: a.italic ? FontStyle.italic : FontStyle.normal,
+                  height: 1.2,
+                ),
+              ),
+              textDirection: ui.TextDirection.ltr,
+            )..layout(maxWidth: b.width);
+            outline.paint(canvas, b.topLeft);
+            outline.dispose();
+          }
           text.paint(canvas, b.topLeft);
           canvas.restore();
           text.dispose();
@@ -148,6 +170,12 @@ class AnnotationRenderer {
     if (hasErasures) canvas.restore();
     canvas.restore();
   }
+
+  // 根据文字亮度选用黑/白描边，确保在复杂截图上仍可辨认。
+  static ui.Color textOutlineColor(int color) =>
+      ui.Color(color).computeLuminance() > .5
+      ? const ui.Color(0xFF000000)
+      : const ui.Color(0xFFFFFFFF);
 
   static const mosaicBlockSize = [4.0, 8.0, 12.0, 20.0, 32.0];
   static const blurRadius = [2.0, 5.0, 10.0, 16.0, 24.0];

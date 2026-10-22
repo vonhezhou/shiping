@@ -189,7 +189,9 @@ void main() {
           await tester.pumpAndSettle();
           expect(desktop.clipboard, '#C8C8C8');
         } else {
-          await click('copy-screenshot-size');
+          expect(byKey('copy-screenshot-size'), findsNothing);
+          await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+          await tester.pumpAndSettle();
           expect(desktop.clipboard, contains('400'));
           expect(desktop.clipboard, contains('250'));
           expect(c.measurements, isNotEmpty);

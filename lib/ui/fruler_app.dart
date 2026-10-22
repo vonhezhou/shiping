@@ -109,13 +109,13 @@ class _HistoryHome extends StatelessWidget {
                     key: const ValueKey('start-picker'),
                     onPressed: c.busy ? null : c.pickColor,
                     icon: const Icon(Icons.colorize),
-                    label: Text('取色 · ${c.shortcuts.picker.label}'),
+                    label: Text('取色器 · ${c.shortcuts.picker.label}'),
                   ),
                   FilledButton.icon(
                     key: const ValueKey('start-ruler'),
                     onPressed: c.busy ? null : c.startRuler,
                     icon: const Icon(Icons.straighten),
-                    label: Text('测量 · ${c.shortcuts.ruler.label}'),
+                    label: Text('尺子 · ${c.shortcuts.ruler.label}'),
                   ),
                   FilledButton.icon(
                     key: const ValueKey('start-screenshot'),

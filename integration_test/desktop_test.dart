@@ -299,20 +299,28 @@ void main() {
       height: 100,
       logicalWidth: 300,
       logicalHeight: 100,
-      rgba: Uint8List(300 * 100 * 4),
+      rgba: Uint8List.fromList([
+        for (var i = 0; i < 300 * 100; i++) ...[34, 51, 68, 255],
+      ]),
     );
-    Future<Uint8List> render(String family) =>
+    Future<Uint8List> render(String family, {bool outlined = false}) =>
         AnnotationRenderer.export(frame, [
           Annotation(
             kind: AnnotationKind.text,
             points: [const Offset(0, 0), const Offset(300, 100)],
             text: 'Comic Wi 123',
+            outlined: outlined,
             fontFamily: family,
             fontSize: 36,
           ),
         ]);
     final mono = await render('Menlo');
     final sans = await render('Helvetica');
+    expect(
+      await render('Helvetica', outlined: true),
+      isNot(orderedEquals(sans)),
+      reason: '真实系统字形的描边必须写入 PNG',
+    );
     expect(mono, isNot(orderedEquals(sans)), reason: '真实系统字体应改变导出 PNG 的字形');
   });
 
@@ -507,117 +515,233 @@ void main() {
     },
   );
 
-  testWidgets('截图内 Cocoa 多框、自动测距、选区锁定和真实尺寸剪贴板', (tester) async {
+  testWidgets('状态栏三工具分组入口与独立模式，历史和设置直接打开', (tester) async {
     final d = NativeDesktop();
     final c = AppController(d);
     await c.initialize();
-    final historyBefore = List.of(c.measurements);
     await driver.invokeMethod<void>('backupClipboard');
-    final propagate = tester.binding.shouldPropagateDevicePointerEvents;
-    tester.binding.shouldPropagateDevicePointerEvents = true;
+    try {
+      await tester.pumpWidget(FrulerApp(controller: c));
+      final initial = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      final menu = (initial['menu'] as List).cast<Map>();
+      expect(menu.where((i) => i['tool'] != '').map((i) => i['title']), [
+        '截图',
+        '取色器',
+        '尺子',
+      ]);
+      expect(menu.where((i) => i['separator'] == true), hasLength(2));
+      expect(menu.take(3).every((i) => i['hasImage'] == true), true);
+      final nativeShortcutsAvailable = (await d.initialize()).shortcuts;
+      final chords = [
+        c.shortcuts.screenshot,
+        c.shortcuts.picker,
+        c.shortcuts.ruler,
+      ];
+      for (var i = 0; i < chords.length; i++) {
+        expect(
+          menu[i]['key'],
+          nativeShortcutsAvailable ? chords[i].key.toLowerCase() : '',
+          reason: '菜单遵循原生快捷键实际注册状态，冲突时不展示不可用快捷键',
+        );
+      }
+      Future<void> clickMenu(String name) async {
+        expect(
+          await driver.invokeMethod<bool>('clickMenu', {'name': name}),
+          true,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await clickMenu('settings');
+      await waitFor(tester, () => c.section == AppSection.settings);
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        true,
+      );
+      await clickMenu('history');
+      await waitFor(tester, () => c.section != AppSection.settings);
+      for (final tool in ['picker', 'rectangle', 'screenshot']) {
+        final before = d.captureCount;
+        if (tool == 'picker') c.selectColorOutput('rgb');
+        await clickMenu(tool);
+        await waitFor(
+          tester,
+          () => c.busy && d.captureCount == before + 1 && d.overlay != null,
+        );
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))!['mainVisible'],
+          false,
+        );
+        var status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+        var view = (status['rulerViews'] as List).cast<Map>().first;
+        if (tool != 'screenshot') {
+          expect(view['toolbarTop'], 22);
+          expect(
+            (view['toolbarWidth'] as num) -
+                (view['toolbarContentWidth'] as num),
+            closeTo(20, .1),
+          );
+          expect(view['editbarTop'], 60);
+        }
+        if (tool == 'picker') expect(view['colorOutputName'], 'RGB');
+        final modes = view['modes'] as Map;
+        expect(modes.keys.toSet(), {
+          'rectangle',
+          'horizontal',
+          'vertical',
+          'cross',
+        });
+        if (tool == 'rectangle') {
+          for (final mode in ['horizontal', 'vertical', 'cross', 'rectangle']) {
+            expect((modes[mode] as Map)['hasImage'], true);
+            expect((modes[mode] as Map)['title'], isEmpty);
+            expect((modes[mode] as Map)['tooltip'], isNotEmpty);
+            expect(
+              await driver.invokeMethod<bool>('clickRulerControl', {
+                'name': mode,
+              }),
+              true,
+            );
+            await waitFor(tester, () => d.overlay?['tool'] == mode);
+            if (mode != 'rectangle') {
+              for (final value in ['37', '0', '255', '256', '-1', 'abc']) {
+                expect(
+                  await driver.invokeMethod<bool>('setRulerTolerance', {
+                    'value': value,
+                  }),
+                  true,
+                );
+                await tester.pumpAndSettle();
+                final expected = int.tryParse(value);
+                expect(
+                  c.tolerance,
+                  expected != null && expected >= 0 && expected <= 255
+                      ? expected
+                      : 255,
+                );
+              }
+            }
+          }
+        } else {
+          expect(modes.values.every((v) => (v as Map)['hidden'] == true), true);
+          expect(
+            await driver.invokeMethod<bool>('clickRulerControl', {
+              'name': 'rectangle',
+            }),
+            false,
+          );
+        }
+        expect(
+          await driver.invokeMethod<bool>('clickRulerControl', {
+            'name': 'picker',
+          }),
+          false,
+        );
+        expect(
+          await driver.invokeMethod<bool>('clickRulerControl', {
+            'name': 'screenshot',
+          }),
+          false,
+        );
+        for (final size in [const Size(1100, 760), const Size(920, 680)]) {
+          expect(
+            await driver.invokeMethod<bool>('rulerLayout', {
+              'width': size.width,
+              'height': size.height,
+            }),
+            true,
+          );
+        }
+        await c.cancelScreenshot();
+        await tester.pumpAndSettle();
+      }
+    } finally {
+      await c.cancelScreenshot();
+      c.dispose();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
+  testWidgets('截图保留轻量 C/M 复制，不能切入独立取色器或尺子', (tester) async {
+    final d = NativeDesktop();
+    final c = AppController(d);
+    await driver.invokeMethod<void>('backupClipboard');
+    await c.initialize();
     try {
       await tester.pumpWidget(FrulerApp(controller: c));
       await c.startScreenshot();
-      final id = d.lastCapture!.displays.first.id;
-      final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
-      Future<void> key(int code) async {
-        await driver.invokeMethod<void>('key', {'keyCode': code});
-        await tester.pumpAndSettle();
-      }
-
-      Future<void> pointer(String phase, double x, double y) async {
-        await driver.invokeMethod<void>('pointer', {
-          'displayId': id,
-          'x': x,
-          'y': y,
-          'phase': phase,
-          'warp': true,
-        });
-        await tester.pumpAndSettle();
-      }
-
-      await key(15); // R：手动多框。
-      await waitFor(tester, () => c.captureRulerMode == RulerMode.rectangle);
-      final rulerStatus = (await driver.invokeMapMethod<String, Object?>(
+      final display = d.lastCapture!.displays.first;
+      final id = display.id;
+      final initial = (await driver.invokeMapMethod<String, Object?>(
         'status',
       ))!;
-      for (final view in rulerStatus['rulerViews'] as List) {
-        final modes = (view as Map)['modes'] as Map;
-        for (final mode in ['rectangle', 'horizontal', 'vertical', 'cross']) {
-          final button = modes[mode] as Map;
-          expect(button['title'], isEmpty);
-          expect(button['hasImage'], true);
-          expect(button['tooltip'], isNotEmpty);
-        }
+      for (final name in ['picker', 'rectangle', 'screenshot']) {
+        expect(
+          await driver.invokeMethod<bool>('clickRulerControl', {'name': name}),
+          false,
+        );
       }
-      for (final x in [50.0, 200.0]) {
-        await pointer('down', x, 200);
-        await pointer('drag', x + 80, 260);
-        await pointer('up', x + 80, 260);
-      }
-      expect(c.captureMeasurementPins, hasLength(2));
-      expect(c.measurements, historyBefore);
-      // 原生拖动仍然复用测量框编辑能力。
-      final beforeMove = c.captureMeasurementPins.last.measurement.rect.left;
-      await pointer('down', 230, 220);
-      await pointer('drag', 240, 225);
-      await pointer('up', 240, 225);
-      expect(
-        c.captureMeasurementPins.last.measurement.rect.left,
-        greaterThan(beforeMove),
-      );
-      expect(
-        await driver.invokeMethod<bool>('clickRulerControl', {
-          'name': 'useSelection',
-        }),
-        true,
-      );
-      await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
-      final selection = c.screenshotSelection!.toJson();
-      c.markup.commit([
-        Annotation(
-          kind: AnnotationKind.rectangle,
-          points: [const Offset(10, 10), const Offset(50, 50)],
-        ),
-      ]);
-      await tester.pumpAndSettle();
-      await key(15);
-      expect(c.captureRulerMode, RulerMode.cross);
-      expect(
-        tester
-            .widget<IconButton>(
-              find.byKey(const ValueKey('screenshot-manual-measure')),
-            )
-            .onPressed,
-        isNull,
-      );
-      c.setCaptureRulerMode(RulerMode.rectangle);
-      expect(c.captureRulerMode, RulerMode.cross);
-      await pointer('move', 100, 400);
-      await pointer('down', 100, 400);
-      await pointer('up', 100, 400);
-      await waitFor(tester, () => c.captureMeasurementPins.length == 3);
-      expect(c.screenshotSelection!.toJson(), selection);
-      expect(c.markup.items, hasLength(1));
+      expect(d.overlay?['tool'], 'screenshot');
       expect(d.captureCount, 1);
       expect(
         (await driver.invokeMapMethod<String, Object?>(
           'status',
         ))!['windowNumber'],
-        status['windowNumber'],
+        initial['windowNumber'],
       );
-      // 先退出自动测距，再重新进入并复制实时水平结果。
-      await key(53);
-      expect(c.busy, true);
-      expect(c.captureRulerMode, isNull);
-      await key(15);
-      c.setCaptureRulerMode(RulerMode.horizontal);
-      await pointer('move', 120, 400);
-      final expected = c.captureRulerPreview!.label;
-      await key(46); // M，真实系统剪贴板。
+      await driver.invokeMethod<void>('pointer', {
+        'displayId': id,
+        'x': 60.0,
+        'y': 180.0,
+        'phase': 'move',
+        'warp': true,
+      });
+      await tester.pumpAndSettle();
+      final p = display.frame.logicalToPixel(60, 180);
+      final expected = c.formatColor(display.frame.pixelAt(p.x, p.y));
+      await driver.invokeMethod<void>('key', {'keyCode': 8});
       await waitFor(tester, () => !c.busy);
       expect(await driver.invokeMethod<String>('clipboardText'), expected);
-      expect(c.measurements.first.measurement.mode, RulerMode.horizontal);
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        false,
+      );
+      await c.startScreenshot();
+      final second = d.lastCapture!.displays.first;
+      await tester.pumpAndSettle();
+      for (final phase in ['down', 'drag']) {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': second.id,
+          'x': phase == 'down' ? 40.0 : 240.0,
+          'y': phase == 'down' ? 180.0 : 280.0,
+          'phase': phase,
+          'warp': true,
+        });
+        await tester.pumpAndSettle();
+      }
+      await waitFor(
+        tester,
+        () =>
+            d.overlay?['anchored'] == true &&
+            (d.overlay?['rect'] as Map?)?['right'] ==
+                second.frame.logicalToBoundary(240, 280).x,
+      );
+      await driver.invokeMethod<void>('key', {'keyCode': 46});
+      await waitFor(tester, () => !c.busy);
+      expect(c.measurements.first.measurement.logicalWidth, 200);
+      expect(c.measurements.first.measurement.logicalHeight, 100);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        c.measurements.first.label,
+      );
       expect(
         (await driver.invokeMapMethod<String, Object?>(
           'status',
@@ -625,174 +749,11 @@ void main() {
         false,
       );
     } finally {
-      tester.binding.shouldPropagateDevicePointerEvents = propagate;
       await c.cancelScreenshot();
       c.dispose();
       await driver.invokeMethod<void>('restoreClipboard');
     }
   });
-
-  testWidgets('截图测量辅助线不进入真实 PNG 剪贴板', (tester) async {
-    final d = NativeDesktop();
-    final c = AppController(d);
-    await c.initialize();
-    await driver.invokeMethod<void>('backupClipboard');
-    try {
-      await tester.pumpWidget(FrulerApp(controller: c));
-      await c.startScreenshot();
-      final display = d.lastCapture!.displays.first;
-      c.setCaptureRulerMode(RulerMode.rectangle);
-      for (final phase in ['down', 'drag', 'up']) {
-        await driver.invokeMethod<void>('pointer', {
-          'displayId': display.id,
-          'phase': phase,
-          'x': phase == 'down' ? 60.0 : 200.0,
-          'y': phase == 'down' ? 200.0 : 300.0,
-          'warp': true,
-        });
-        await tester.pumpAndSettle();
-      }
-      expect(c.captureMeasurementPins, hasLength(1));
-      await c.useMeasurementSelection();
-      await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
-      c.toggleCaptureRuler();
-      c.updateCaptureRulerPointer(120, 240);
-      c.fixCaptureRulerPreview();
-      await tester.pumpAndSettle();
-      expect(c.captureMeasurementPins, hasLength(2));
-      final frame = c.imageDocument!.frame;
-      // 导出前保留原始像素，验证原生结束会话后也无需落盘截图。
-      final expected = Uint8List(frame.width * frame.height * 4);
-      for (var y = 0; y < frame.height; y++) {
-        final start = frame.byteIndex(0, y);
-        expected.setRange(
-          y * frame.width * 4,
-          (y + 1) * frame.width * 4,
-          frame.rgba,
-          start,
-        );
-      }
-      await c.exportScreenshot(save: false);
-      await waitFor(tester, () => !c.busy);
-      final png = (await driver.invokeMethod<Uint8List>('clipboardPng'))!;
-      final codec = await ui.instantiateImageCodec(png);
-      final image = (await codec.getNextFrame()).image;
-      try {
-        final bytes = (await image.toByteData(
-          format: ui.ImageByteFormat.rawRgba,
-        ))!;
-        expect(
-          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
-          orderedEquals(expected),
-          reason: '测量框、测距线和尺寸标签不能写入截图',
-        );
-      } finally {
-        image.dispose();
-        codec.dispose();
-      }
-    } finally {
-      await c.cancelScreenshot();
-      c.dispose();
-      await driver.invokeMethod<void>('restoreClipboard');
-    }
-  });
-
-  testWidgets(
-    'screenshot shares capture with color picker and ruler, Cocoa C/M copy and return',
-    (tester) async {
-      final d = NativeDesktop();
-      final c = AppController(d);
-      await driver.invokeMethod<void>('backupClipboard');
-      await c.initialize();
-      try {
-        await tester.pumpWidget(FrulerApp(controller: c));
-        await c.startScreenshot();
-        final display = d.lastCapture!.displays.first;
-        final id = display.id;
-        final initial = (await driver.invokeMapMethod<String, Object?>(
-          'status',
-        ))!;
-        expect(
-          await driver.invokeMethod<bool>('clickRulerControl', {
-            'name': 'rectangle',
-          }),
-          true,
-        );
-        await waitFor(tester, () => d.overlay?['tool'] == 'rectangle');
-        expect(
-          await driver.invokeMethod<bool>('clickRulerControl', {
-            'name': 'screenshot',
-          }),
-          true,
-        );
-        await waitFor(tester, () => d.overlay?['tool'] == 'screenshot');
-        expect(d.captureCount, 1);
-        expect(
-          (await driver.invokeMapMethod<String, Object?>(
-            'status',
-          ))!['windowNumber'],
-          initial['windowNumber'],
-        );
-        await driver.invokeMethod<void>('pointer', {
-          'displayId': id,
-          'x': 60.0,
-          'y': 180.0,
-          'phase': 'move',
-          'warp': true,
-        });
-        await tester.pumpAndSettle();
-        final p = display.frame.logicalToPixel(60, 180);
-        final expected = c.formatColor(display.frame.pixelAt(p.x, p.y));
-        await driver.invokeMethod<void>('key', {'keyCode': 8});
-        await waitFor(tester, () => !c.busy);
-        expect(await driver.invokeMethod<String>('clipboardText'), expected);
-        expect(
-          (await driver.invokeMapMethod<String, Object?>(
-            'status',
-          ))!['mainVisible'],
-          false,
-        );
-        await c.startScreenshot();
-        final second = d.lastCapture!.displays.first;
-        await tester.pumpAndSettle();
-        for (final phase in ['down', 'drag']) {
-          await driver.invokeMethod<void>('pointer', {
-            'displayId': second.id,
-            'x': phase == 'down' ? 40.0 : 240.0,
-            'y': phase == 'down' ? 180.0 : 280.0,
-            'phase': phase,
-            'warp': true,
-          });
-          await tester.pumpAndSettle();
-        }
-        await waitFor(
-          tester,
-          () =>
-              d.overlay?['anchored'] == true &&
-              (d.overlay?['rect'] as Map?)?['right'] ==
-                  second.frame.logicalToBoundary(240, 280).x,
-        );
-        await driver.invokeMethod<void>('key', {'keyCode': 46});
-        await waitFor(tester, () => !c.busy);
-        expect(c.measurements.first.measurement.logicalWidth, 200);
-        expect(c.measurements.first.measurement.logicalHeight, 100);
-        expect(
-          await driver.invokeMethod<String>('clipboardText'),
-          c.measurements.first.label,
-        );
-        expect(
-          (await driver.invokeMapMethod<String, Object?>(
-            'status',
-          ))!['mainVisible'],
-          false,
-        );
-      } finally {
-        await c.cancelScreenshot();
-        c.dispose();
-        await driver.invokeMethod<void>('restoreClipboard');
-      }
-    },
-  );
 
   testWidgets('Cocoa Delete in text input preserves annotations', (
     tester,
@@ -802,6 +763,8 @@ void main() {
     await driver.invokeMethod<void>('backupClipboard');
     await c.initialize();
     try {
+      // 虚拟鼠标交互依赖 Flutter 帧调度，先激活宿主；启动截图会立即隐藏它。
+      await d.showMainWindow();
       await tester.pumpWidget(FrulerApp(controller: c));
       await c.startScreenshot();
       final id = d.lastCapture!.displays.first.id;
@@ -1355,6 +1318,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(c.markup.items.length, 11);
         expect(c.markup.items.last.text, '原位标注\n第二行');
+        await click(
+          tester,
+          find.byKey(const ValueKey('annotation-text-outline')),
+        );
+        expect(c.markup.items.last.outlined, true);
         expect(c.markup.items.last.fontSize / c.screenshotScaleY, 24);
         final beforeColor = List<Annotation>.of(c.markup.items);
         Future<Map<String, Object?>> colorPanel() async =>
@@ -1445,10 +1413,15 @@ void main() {
         expect(c.markup.items.last.fontFamily, family);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items.last.fontFamily, Annotation.defaultFontFamily);
+        expect(c.markup.items.last.outlined, true);
+        await click(tester, find.byKey(const ValueKey('annotation-undo')));
+        expect(c.markup.items.last.outlined, false);
         await click(tester, find.byKey(const ValueKey('annotation-undo')));
         expect(c.markup.items.length, 10);
         await click(tester, find.byKey(const ValueKey('annotation-redo')));
         expect(c.markup.items.length, 11);
+        await click(tester, find.byKey(const ValueKey('annotation-redo')));
+        expect(c.markup.items.last.outlined, true);
         // Re-pick and transform a whole old rectangle after a local erasure.
         // Both edits stay in this real native capture panel.
         final beforeObjectEditing = List<Annotation>.of(c.markup.items);
@@ -1662,12 +1635,14 @@ void main() {
           final d = desktop.lastCapture!.displays.first;
           await driver.invokeMethod<void>('pointer', {
             'displayId': d.id,
+            'warp': true,
             'phase': 'down',
             'x': 80.0,
             'y': 180.0,
           });
           await driver.invokeMethod<void>('pointer', {
             'displayId': d.id,
+            'warp': true,
             'phase': 'up',
             'x': 180.0,
             'y': 240.0,
@@ -1703,6 +1678,8 @@ void main() {
       await c.initialize();
       await driver.invokeMethod<void>('backupClipboard');
       try {
+        // 虚拟鼠标交互依赖 Flutter 帧调度，先激活宿主；启动截图会立即隐藏它。
+        await desktop.showMainWindow();
         await tester.pumpWidget(FrulerApp(controller: c));
         expect(
           c.permissionGranted,
@@ -1718,6 +1695,7 @@ void main() {
         ]) {
           await driver.invokeMethod<void>('pointer', {
             'displayId': display.id,
+            'warp': true,
             ...event,
           });
           await tester.pump();
@@ -1735,6 +1713,7 @@ void main() {
         await click(tester, find.byKey(const ValueKey('annotation-fill')));
         await mouseDrag(tester, const Offset(140, 220), const Offset(180, 100));
         await tester.pumpAndSettle();
+        expect(c.markup.items, hasLength(1), reason: '真实选区内的鼠标拖动应提交一个标注');
         final original = c.markup.items.single;
         await mouseDrag(
           tester,
@@ -1828,6 +1807,8 @@ void main() {
       final desktop = NativeDesktop();
       final c = AppController(desktop);
       await c.initialize();
+      // 虚拟鼠标交互依赖 Flutter 帧调度，先激活宿主；启动截图会立即隐藏它。
+      await desktop.showMainWindow();
       await tester.pumpWidget(FrulerApp(controller: c));
       await tester.pumpAndSettle();
       await driver.invokeMethod<void>('backupClipboard');
@@ -1847,6 +1828,7 @@ void main() {
         ]) {
           await driver.invokeMethod<void>('pointer', {
             'displayId': colorDisplay.id,
+            'warp': true,
             ...event,
           });
           await tester.pump();
@@ -1966,6 +1948,7 @@ void main() {
             expect(
               (await state())['cursor'],
               e['phase'] == 'up' ? 'openHand' : 'closedHand',
+              reason: '原生测量框拖动阶段 $e，当前状态 ${await state()}',
             );
           }
         }
@@ -1990,7 +1973,7 @@ void main() {
           true,
           reason: 'Real screen-recording permission is required',
         );
-        await c.startRuler();
+        await c.startRuler(RulerMode.rectangle);
         await tester.pumpAndSettle();
         final before = await driver.invokeMapMethod<String, Object?>('status');
         for (final size in [const Size(1100, 760), const Size(920, 680)]) {

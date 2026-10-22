@@ -15,7 +15,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   String tool = 'select';
   Offset? screenPointer;
   String lastShape = 'rectangle', lastLine = 'arrow', lastEffect = 'mosaic';
-  bool filled = false, bold = false, italic = false, toolbarVisible = true;
+  bool filled = false,
+      bold = false,
+      italic = false,
+      outlined = false,
+      toolbarVisible = true;
   bool effectBrush = false;
   bool eraserBrush = false;
   int effectStrength = 3;
@@ -35,6 +39,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           bool filled,
           bool bold,
           bool italic,
+          bool outlined,
           bool effectBrush,
           int effectStrength,
         })
@@ -183,6 +188,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     filled: filled,
     bold: bold,
     italic: italic,
+    outlined: outlined,
     effectBrush: effectBrush,
     effectStrength: effectStrength,
   );
@@ -196,7 +202,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       : value;
 
   void selectTool(String value) {
-    if (c.captureRulerMode != null) c.setCaptureRulerMode(null);
     finishText();
     finishLine();
     styles[styleKey(propertyKind)] = (
@@ -206,6 +211,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       filled: filled,
       bold: bold,
       italic: italic,
+      outlined: outlined,
       effectBrush: effectBrush,
       effectStrength: effectStrength,
     );
@@ -227,6 +233,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       filled = next?.filled ?? false;
       bold = next?.bold ?? false;
       italic = next?.italic ?? false;
+      outlined = next?.outlined ?? false;
       effectBrush = next?.effectBrush ?? false;
       effectStrength = next?.effectStrength ?? 3;
       if (['rectangle', 'ellipse'].contains(value)) lastShape = value;
@@ -253,10 +260,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }
 
   void endTool() {
-    if (c.captureRulerMode != null) {
-      c.setCaptureRulerMode(null);
-      return;
-    }
     if (textEditing) finishText();
     finishLine();
     if (start != null) cancelGesture();
@@ -288,6 +291,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     bool? nextFilled,
     bool? nextBold,
     bool? nextItalic,
+    bool? nextOutlined,
     int? nextEffectStrength,
   }) {
     if (nextColor != null) c.setAnnotationColor(propertyKind, nextColor);
@@ -299,6 +303,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       filled = nextFilled ?? filled;
       bold = nextBold ?? bold;
       italic = nextItalic ?? italic;
+      outlined = nextOutlined ?? outlined;
       effectStrength = nextEffectStrength ?? effectStrength;
     });
     if (!textEditing && selected != null && selected! < items.length) {
@@ -311,6 +316,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         filled: nextFilled,
         bold: nextBold,
         italic: nextItalic,
+        outlined: nextOutlined,
         effectStrength: nextEffectStrength,
       );
       final annotation = next[selected!];
@@ -399,6 +405,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       filled = old.filled;
       bold = old.bold;
       italic = old.italic;
+      outlined = old.outlined;
     }
     setState(() {
       textEditing = false;
@@ -469,6 +476,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     fontFamily = a.fontFamily;
     bold = a.bold;
     italic = a.italic;
+    outlined = a.outlined;
     beginText(a.bounds, index: selected);
   }
 
@@ -534,10 +542,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }
 
   bool get canAdjustSelection =>
-      c.canAdjustScreenshotSelection &&
-      !textEditing &&
-      editable &&
-      c.captureRulerMode == null;
+      c.canAdjustScreenshotSelection && !textEditing && editable;
 
   void beginSelection(PointerDownEvent event, String handle) {
     if (!canAdjustSelection || event.buttons != kPrimaryMouseButton) return;
@@ -738,6 +743,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         filled = original!.filled;
         bold = original!.bold;
         italic = original!.italic;
+        outlined = original!.outlined;
         effectBrush = original!.effectBrush;
         effectStrength = original!.effectStrength;
       }
@@ -898,16 +904,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       c.sampleCaptureColor(c.screenshotDisplayId!, p.dx, p.dy);
       return KeyEventResult.handled;
     }
-    if (!meta && k == LogicalKeyboardKey.keyR) {
-      toggleRuler();
-      return KeyEventResult.handled;
-    }
     if (!meta && k == LogicalKeyboardKey.keyM) {
-      if (c.captureRulerMode != null) {
-        c.copyCaptureMeasurements();
-      } else {
-        c.copyCaptureSize(c.screenshotDisplayId!, c.screenshotSelection!);
-      }
+      c.copyCaptureSize(c.screenshotDisplayId!, c.screenshotSelection!);
       return KeyEventResult.handled;
     }
     if (!meta && k == LogicalKeyboardKey.space) {
@@ -919,41 +917,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         ['line', 'arrow'].contains(tool)) {
       selectTool(tool == 'line' ? 'arrow' : 'line');
       return KeyEventResult.handled;
-    }
-    if (c.captureRulerMode != null) {
-      if (k == LogicalKeyboardKey.escape) {
-        c.setCaptureRulerMode(null);
-        return KeyEventResult.handled;
-      }
-      if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
-        c.deleteCaptureMeasurement();
-        return KeyEventResult.handled;
-      }
-      if (meta &&
-          (k == LogicalKeyboardKey.keyZ || k == LogicalKeyboardKey.keyY)) {
-        c.captureMeasurementHistory(shift || k == LogicalKeyboardKey.keyY);
-        return KeyEventResult.handled;
-      }
-      final mode = {
-        LogicalKeyboardKey.digit2: RulerMode.horizontal,
-        LogicalKeyboardKey.digit3: RulerMode.vertical,
-        LogicalKeyboardKey.digit4: RulerMode.cross,
-      }[k];
-      if (!meta && mode != null) {
-        c.setCaptureRulerMode(mode);
-        return KeyEventResult.handled;
-      }
-      if (k == LogicalKeyboardKey.digit1 ||
-          [
-            LogicalKeyboardKey.arrowLeft,
-            LogicalKeyboardKey.arrowRight,
-            LogicalKeyboardKey.arrowUp,
-            LogicalKeyboardKey.arrowDown,
-            LogicalKeyboardKey.bracketLeft,
-            LogicalKeyboardKey.bracketRight,
-          ].contains(k)) {
-        return KeyEventResult.handled;
-      }
     }
     if (!meta &&
         [
@@ -1093,6 +1056,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         filled = a.filled;
         bold = a.bold;
         italic = a.italic;
+        outlined = a.outlined;
         effectBrush = a.effectBrush;
         effectStrength = a.effectStrength;
       }
@@ -1201,9 +1165,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       : selected != null && selected! < items.length
       ? items[selected!].kind.name
       : tool;
-  bool get hasProperties =>
-      c.captureRulerMode != null ||
-      !['select', 'picker'].contains(propertyKind);
+  bool get hasProperties => !['select', 'picker'].contains(propertyKind);
 
   Widget widthButton({String? modeKey}) => Listener(
     key: modeKey == null ? null : ValueKey(modeKey),
@@ -1583,7 +1545,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }) => toolbarButton(id, label, icon, action, active: active, compact: true);
 
   bool get showBrushCursor =>
-      c.captureRulerMode == null &&
       hoverPosition != null &&
       editable &&
       canvasCursor == SystemMouseCursors.precise &&
@@ -1729,6 +1690,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 () => style(nextItalic: !italic),
                 active: italic,
               ),
+              propertyButton(
+                'annotation-text-outline',
+                '文字描边（自动黑白对比色）',
+                Icons.format_color_text,
+                () => style(nextOutlined: !outlined),
+                active: outlined,
+              ),
               fontFamilyMenu(),
               fontMenu(),
               if (selected != null && !textEditing)
@@ -1750,26 +1718,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   Widget mainBar() => toolbarPanel(
     key: const ValueKey('annotation-toolbar'),
     Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        toolbarButton(
-          'screenshot-ruler',
-          '自动测距 R',
-          Icons.straighten,
-          toggleRuler,
-          active: c.captureRulerMode != null,
-        ),
-        toolbarButton(
-          'copy-screenshot-size',
-          c.captureRulerMode != null ? '复制测量尺寸并结束 M' : '复制选区尺寸 M',
-          Icons.content_copy,
-          () => c.captureRulerMode != null
-              ? c.copyCaptureMeasurements()
-              : c.copyCaptureSize(
-                  c.screenshotDisplayId!,
-                  c.screenshotSelection!,
-                ),
-        ),
         toolbarButton(
           'annotation-group-shape',
           '形状：矩形 / 椭圆',
@@ -1777,9 +1726,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           () => selectTool(
             ['rectangle', 'ellipse'].contains(tool) ? 'select' : lastShape,
           ),
-          active:
-              c.captureRulerMode == null &&
-              ['rectangle', 'ellipse'].contains(tool),
+          active: ['rectangle', 'ellipse'].contains(tool),
         ),
         toolbarButton(
           'annotation-group-line',
@@ -1788,22 +1735,21 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           () => selectTool(
             ['line', 'arrow'].contains(tool) ? 'select' : lastLine,
           ),
-          active:
-              c.captureRulerMode == null && ['line', 'arrow'].contains(tool),
+          active: ['line', 'arrow'].contains(tool),
         ),
         toolbarButton(
           'annotation-tool-pencil',
           '画笔',
           Icons.edit_outlined,
           () => selectTool(tool == 'pencil' ? 'select' : 'pencil'),
-          active: c.captureRulerMode == null && tool == 'pencil',
+          active: tool == 'pencil',
         ),
         toolbarButton(
           'annotation-tool-marker',
           '荧光笔',
           Icons.border_color_outlined,
           () => selectTool(tool == 'marker' ? 'select' : 'marker'),
-          active: c.captureRulerMode == null && tool == 'marker',
+          active: tool == 'marker',
         ),
         toolbarButton(
           'annotation-group-effect',
@@ -1812,45 +1758,36 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           () => selectTool(
             ['mosaic', 'blur'].contains(tool) ? 'select' : lastEffect,
           ),
-          active:
-              c.captureRulerMode == null && ['mosaic', 'blur'].contains(tool),
+          active: ['mosaic', 'blur'].contains(tool),
         ),
         toolbarButton(
           'annotation-tool-text',
           '文字',
           Icons.title,
           () => selectTool(tool == 'text' ? 'select' : 'text'),
-          active: c.captureRulerMode == null && tool == 'text',
+          active: tool == 'text',
         ),
         toolbarButton(
           'annotation-tool-eraser',
           '橡皮擦 · 框选 / 画笔局部擦除',
           Icons.auto_fix_normal,
           () => selectTool(tool == 'eraser' ? 'select' : 'eraser'),
-          active: c.captureRulerMode == null && tool == 'eraser',
+          active: tool == 'eraser',
         ),
         divider,
         toolbarButton(
           'annotation-undo',
           '撤销 ⌘Z',
           Icons.undo,
-          c.captureRulerMode != null
-              ? (c.canUndoCaptureMeasurements
-                    ? () => c.captureMeasurementHistory(false)
-                    : null)
-              : (c.markup.canUndo ? () => history(false) : null),
+          c.markup.canUndo ? () => history(false) : null,
         ),
         toolbarButton(
           'annotation-redo',
           '重做 ⌘Y / ⇧⌘Z',
           Icons.redo,
-          c.captureRulerMode != null
-              ? (c.canRedoCaptureMeasurements
-                    ? () => c.captureMeasurementHistory(true)
-                    : null)
-              : (c.markup.canRedo ? () => history(true) : null),
+          c.markup.canRedo ? () => history(true) : null,
         ),
-        if (selected != null && c.captureRulerMode == null)
+        if (selected != null)
           toolbarButton(
             'annotation-delete',
             '删除选中 Delete',
@@ -1880,7 +1817,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ),
   );
 
-  Widget toolbar({required bool above}) => TextFieldTapRegion(
+  Widget toolbar({
+    required bool above,
+    required double mainWidth,
+    required double anchorX,
+  }) => TextFieldTapRegion(
     child: Theme(
       data: Theme.of(context).copyWith(
         colorScheme: Theme.of(context).colorScheme.copyWith(
@@ -1893,18 +1834,33 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         absorbing: !editable,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: c.captureRulerMode != null
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (above && hasProperties) ...[
-              c.captureRulerMode != null ? measurementBar() : propertyBar(),
+              SizedBox(
+                height: 32,
+                width: double.infinity,
+                child: CustomSingleChildLayout(
+                  delegate: _PropertyBarLayout(anchorX),
+                  child: propertyBar(),
+                ),
+              ),
               const SizedBox(height: 4),
             ],
-            mainBar(),
+            Padding(
+              padding: EdgeInsets.only(left: anchorX),
+              child: SizedBox(width: mainWidth, child: mainBar()),
+            ),
             if (!above && hasProperties) ...[
               const SizedBox(height: 4),
-              c.captureRulerMode != null ? measurementBar() : propertyBar(),
+              SizedBox(
+                height: 32,
+                width: double.infinity,
+                child: CustomSingleChildLayout(
+                  delegate: _PropertyBarLayout(anchorX),
+                  child: propertyBar(),
+                ),
+              ),
             ],
             if (loadError != null) Text(loadError!),
             if (c.error != null)
@@ -1938,6 +1894,20 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             height: 1.2,
             fontWeight: bold ? FontWeight.bold : FontWeight.normal,
             fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+            shadows: outlined
+                ? [
+                    for (var i = 0; i < 8; i++)
+                      Shadow(
+                        color: AnnotationRenderer.textOutlineColor(color),
+                        offset:
+                            Offset(
+                              math.cos(i * math.pi / 4),
+                              math.sin(i * math.pi / 4),
+                            ) *
+                            (fontSize / 24),
+                      ),
+                  ]
+                : null,
           ),
           decoration: InputDecoration(
             isDense: true,
@@ -1964,135 +1934,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }
 
   // 静止时只在选区内及边界取色；拖动期间持续显示，允许从控制点外半边操作。
-  void toggleRuler() {
-    if (textEditing) finishText();
-    finishLine();
-    cancelGesture();
-    c.toggleCaptureRuler();
-    if (c.captureRulerMode != null && screenPointer != null) {
-      c.updateCaptureRulerPointer(screenPointer!.dx, screenPointer!.dy);
-    }
-    focus.requestFocus();
-  }
-
-  Widget measurementBar() => toolbarPanel(
-    key: const ValueKey('screenshot-measurement-bar'),
-    compact: true,
-    Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        propertyButton(
-          'screenshot-manual-measure',
-          '手动矩形测量：重新框选后可添加测量框',
-          Icons.crop_free,
-          null,
-        ),
-        for (final mode in [
-          RulerMode.horizontal,
-          RulerMode.vertical,
-          RulerMode.cross,
-        ])
-          propertyButton(
-            'screenshot-measure-${mode.name}',
-            '${_modeLabels[mode]}自动测距（${RulerMode.values.indexOf(mode) + 1}）',
-            switch (mode) {
-              RulerMode.horizontal => Icons.swap_horiz,
-              RulerMode.vertical => Icons.swap_vert,
-              _ => Icons.open_with,
-            },
-            () {
-              c.setCaptureRulerMode(mode);
-              focus.requestFocus();
-            },
-            active: c.captureRulerMode == mode,
-          ),
-        propertyButton(
-          'measurement-tolerance-minus',
-          '降低颜色容差',
-          Icons.remove,
-          () {
-            c.adjustCaptureTolerance(-1);
-            focus.requestFocus();
-          },
-        ),
-        Text('容差 ${c.tolerance}', style: const TextStyle(fontSize: 11)),
-        propertyButton('measurement-tolerance-plus', '提高颜色容差', Icons.add, () {
-          c.adjustCaptureTolerance(1);
-          focus.requestFocus();
-        }),
-        if (c.captureMeasurementPins.isNotEmpty)
-          SizedBox(
-            width: 100,
-            child: DropdownButton<int>(
-              key: const ValueKey('screenshot-measurement-selector'),
-              isExpanded: true,
-              isDense: true,
-              value: c.selectedCaptureMeasurement,
-              hint: const Text('固定结果', style: TextStyle(fontSize: 11)),
-              items: c.captureMeasurementPins
-                  .map(
-                    (p) => DropdownMenuItem(
-                      value: p.id,
-                      child: Text(
-                        '#${p.id} ${p.measurement.pixelLabel}',
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (id) {
-                c.selectCaptureMeasurement(id);
-                focus.requestFocus();
-              },
-            ),
-          ),
-        propertyButton(
-          'measurement-delete',
-          '删除选中测量结果',
-          Icons.delete_outline,
-          c.selectedCaptureMeasurement == null
-              ? null
-              : c.deleteCaptureMeasurement,
-        ),
-        propertyButton(
-          'measurement-undo',
-          '撤销测量',
-          Icons.undo,
-          c.canUndoCaptureMeasurements
-              ? () => c.captureMeasurementHistory(false)
-              : null,
-        ),
-        propertyButton(
-          'measurement-redo',
-          '重做测量',
-          Icons.redo,
-          c.canRedoCaptureMeasurements
-              ? () => c.captureMeasurementHistory(true)
-              : null,
-        ),
-        propertyButton(
-          'measurement-copy-all',
-          '复制全部尺寸并结束',
-          Icons.copy_all,
-          c.captureMeasurementPins.isEmpty
-              ? null
-              : () => c.copyCaptureMeasurements(all: true),
-        ),
-        propertyButton(
-          'measurement-visibility',
-          '显示／隐藏测量辅助线',
-          c.captureMeasurementsVisible
-              ? Icons.visibility
-              : Icons.visibility_off,
-          c.toggleCaptureMeasurementsVisibility,
-        ),
-      ],
-    ),
-  );
-
-  bool get sampling =>
-      c.captureRulerMode != null ||
-      (tool == 'select' && c.canAdjustScreenshotSelection);
+  bool get sampling => tool == 'select' && c.canAdjustScreenshotSelection;
 
   Widget pickerFeedback(BoxConstraints constraints) {
     final p = screenPointer!;
@@ -2100,8 +1942,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     final source = c.imageDocument!.frame.source;
     final pixel = source.logicalToPixel(p.dx, p.dy);
     final selection = selectionPreview ?? c.screenshotSelection!;
-    const panelWidth = 220.0;
-    final panelHeight = c.captureRulerMode != null ? 280.0 : 224.0;
+    const panelWidth = 220.0, panelHeight = 224.0;
     final x = p.dx + 24 + panelWidth > constraints.maxWidth
         ? p.dx - panelWidth - 24
         : p.dx + 24;
@@ -2174,16 +2015,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 Text(sample?.rgb ?? ''),
                 Text('X: ${pixel.x}  Y: ${pixel.y}'),
                 Text('区域: ${selection.width} × ${selection.height} px'),
-                if (c.captureRulerMode != null) ...[
-                  Text(c.captureRulerPreview?.label ?? '选择固定结果或移动鼠标测距'),
-                  Text(
-                    c.selectedCaptureMeasurement == null
-                        ? 'M 复制当前测距并结束'
-                        : 'M 复制 #${c.selectedCaptureMeasurement} 尺寸并结束',
-                  ),
-                  const Text('单击固定 · R 返回截图'),
-                ] else
-                  const Text('C 复制颜色 · M 复制尺寸'),
+                const Text('C 复制颜色 · M 复制尺寸'),
               ],
             ),
           ),
@@ -2228,18 +2060,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 13 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
+          // 12 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
           final toolbarWidth = math.min(
-            c.captureRulerMode != null
-                ? 700.0
-                : 14 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
+            12 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
-          final totalHeight = c.captureRulerMode != null
-              ? 74.0
-              : hasProperties
-              ? 72.0
-              : 36.0;
+          final totalHeight = hasProperties ? 72.0 : 36.0;
           final above =
               rect.bottom + totalHeight + 8 > constraints.maxHeight &&
               rect.top > totalHeight + 8;
@@ -2341,10 +2167,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                                             ),
                                             mosaics,
                                             displayedItems,
-                                            textEditing ||
-                                                    c.captureRulerMode != null
-                                                ? null
-                                                : selected,
+                                            textEditing ? null : selected,
                                             scale,
                                             !eraserBrush &&
                                                     start != null &&
@@ -2371,74 +2194,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                       ),
                     ),
                   ),
-                  if (c.captureMeasurementsVisible)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          key: const ValueKey('screenshot-measurements'),
-                          painter: _CaptureMeasurementsPainter(
-                            c.captureMeasurementPins
-                                .where(
-                                  (p) => p.displayId == c.screenshotDisplayId,
-                                )
-                                .toList(),
-                            c.captureRulerMode == null
-                                ? null
-                                : c.captureRulerPreview,
-                            c.selectedCaptureMeasurement,
-                            c.captureRulerSeed,
-                            c.screenshotScaleX,
-                            c.screenshotScaleY,
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (c.captureRulerMode != null)
-                    Positioned.fill(
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.precise,
-                        onHover: (event) => c.updateCaptureRulerPointer(
-                          event.localPosition.dx,
-                          event.localPosition.dy,
-                        ),
-                        child: Listener(
-                          key: const ValueKey('screenshot-measurement-surface'),
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: (event) {
-                            focus.requestFocus();
-                            if (event.buttons == kSecondaryMouseButton) {
-                              c.setCaptureRulerMode(null);
-                            } else if (event.buttons == kPrimaryMouseButton) {
-                              c.updateCaptureRulerPointer(
-                                event.localPosition.dx,
-                                event.localPosition.dy,
-                              );
-                            }
-                          },
-                          onPointerUp: (event) {
-                            if (event.kind == ui.PointerDeviceKind.mouse &&
-                                c.captureRulerMode != null) {
-                              c.fixCaptureRulerPreview();
-                            }
-                          },
-                          onPointerSignal: (event) {
-                            if (event is PointerScrollEvent &&
-                                event.scrollDelta.dy != 0) {
-                              GestureBinding.instance.pointerSignalResolver
-                                  .register(event, (_) {
-                                    c.adjustCaptureTolerance(
-                                      event.scrollDelta.dy < 0 ? 1 : -1,
-                                    );
-                                    c.updateCaptureRulerPointer(
-                                      event.localPosition.dx,
-                                      event.localPosition.dy,
-                                    );
-                                  });
-                            }
-                          },
-                        ),
-                      ),
-                    ),
                   Positioned(
                     left: activeRect.left.clamp(
                       4.0,
@@ -2457,14 +2212,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                           borderRadius: BorderRadius.circular(3),
                         ),
                         child: Text(
-                          RulerMeasurement(
-                            rect: activeSelection,
-                            logicalWidth:
-                                activeSelection.width / c.screenshotScaleX,
-                            logicalHeight:
-                                activeSelection.height / c.screenshotScaleY,
-                            mode: RulerMode.rectangle,
-                          ).label,
+                          '${activeSelection.width} × ${activeSelection.height} px',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.white,
@@ -2488,19 +2236,22 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   if (textEditing) inlineText(rect),
                   if (toolbarVisible && selectionDrag == null)
                     Positioned(
-                      left: left.toDouble(),
+                      left: 12,
                       top: top.toDouble(),
-                      width: toolbarWidth,
+                      width: constraints.maxWidth - 24,
                       child: MouseRegion(
                         cursor: SystemMouseCursors.basic,
-                        child: toolbar(above: above),
+                        child: toolbar(
+                          above: above,
+                          mainWidth: toolbarWidth,
+                          anchorX: left.toDouble() - 12,
+                        ),
                       ),
                     ),
                   // 放在工具条之后绘制；IgnorePointer 保留底下按钮的交互。
                   if (sampling &&
                       screenPointer != null &&
                       (selectionDrag != null ||
-                          c.captureRulerMode != null ||
                           (screenPointer!.dx >= activeRect.left &&
                               screenPointer!.dx <= activeRect.right &&
                               screenPointer!.dy >= activeRect.top &&
@@ -2747,124 +2498,16 @@ class _ToolbarGlyphPainter extends CustomPainter {
       old.kind != kind || old.color != color;
 }
 
-// 只绘制辅助信息；PNG 导出继续只使用原图和标注历史。
-class _CaptureMeasurementsPainter extends CustomPainter {
-  const _CaptureMeasurementsPainter(
-    this.pins,
-    this.preview,
-    this.selected,
-    this.previewSeed,
-    this.scaleX,
-    this.scaleY,
-  );
-  final List<CaptureMeasurementPin> pins;
-  final RulerMeasurement? preview;
-  final int? selected;
-  final PixelPoint? previewSeed;
-  final double scaleX, scaleY;
-
+class _PropertyBarLayout extends SingleChildLayoutDelegate {
+  _PropertyBarLayout(this.anchorX);
+  final double anchorX;
   @override
-  void paint(Canvas canvas, Size size) {
-    void draw(RulerMeasurement measurement, int? id, PixelPoint? seed) {
-      final r = measurement.rect;
-      final rect = Rect.fromLTRB(
-        r.left / scaleX,
-        r.top / scaleY,
-        r.right / scaleX,
-        r.bottom / scaleY,
-      );
-      final center = seed == null
-          ? rect.center
-          : Offset(seed.x / scaleX, seed.y / scaleY);
-      final paint = Paint()
-        ..color = id == null ? const Color(0xFF2683FF) : _accent
-        ..strokeWidth = (id == selected ? 2 : 1)
-        ..style = PaintingStyle.stroke;
-      if (measurement.mode == RulerMode.rectangle) {
-        // 已固定的手动测量用虚线，与截图选区区分。
-        for (var x = rect.left; x < rect.right; x += 8) {
-          canvas.drawLine(
-            Offset(x, rect.top),
-            Offset(math.min(x + 4, rect.right), rect.top),
-            paint,
-          );
-          canvas.drawLine(
-            Offset(x, rect.bottom),
-            Offset(math.min(x + 4, rect.right), rect.bottom),
-            paint,
-          );
-        }
-        for (var y = rect.top; y < rect.bottom; y += 8) {
-          canvas.drawLine(
-            Offset(rect.left, y),
-            Offset(rect.left, math.min(y + 4, rect.bottom)),
-            paint,
-          );
-          canvas.drawLine(
-            Offset(rect.right, y),
-            Offset(rect.right, math.min(y + 4, rect.bottom)),
-            paint,
-          );
-        }
-      } else {
-        if (measurement.mode != RulerMode.vertical) {
-          canvas.drawLine(
-            Offset(rect.left, center.dy),
-            Offset(rect.right, center.dy),
-            paint,
-          );
-          for (final x in [rect.left, rect.right]) {
-            canvas.drawLine(
-              Offset(x, center.dy - 5),
-              Offset(x, center.dy + 5),
-              paint,
-            );
-          }
-        }
-        if (measurement.mode != RulerMode.horizontal) {
-          canvas.drawLine(
-            Offset(center.dx, rect.top),
-            Offset(center.dx, rect.bottom),
-            paint,
-          );
-          for (final y in [rect.top, rect.bottom]) {
-            canvas.drawLine(
-              Offset(center.dx - 5, y),
-              Offset(center.dx + 5, y),
-              paint,
-            );
-          }
-        }
-      }
-      final label = TextPainter(
-        text: TextSpan(
-          text: '${id == null ? '' : '#$id '}${measurement.label}',
-          style: TextStyle(
-            fontSize: 11,
-            color: paint.color,
-            backgroundColor: Colors.black87,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: math.max(1, size.width - 8));
-      label.paint(
-        canvas,
-        Offset(
-          rect.left.clamp(4.0, math.max(4, size.width - label.width - 4)),
-          (rect.top - label.height - 4).clamp(
-            4.0,
-            math.max(4, size.height - label.height - 4),
-          ),
-        ),
-      );
-    }
-
-    for (final pin in pins) {
-      draw(pin.measurement, pin.id, pin.seed);
-    }
-    if (preview != null) draw(preview!, null, previewSeed);
-  }
-
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen();
   @override
-  bool shouldRepaint(_CaptureMeasurementsPainter oldDelegate) => true;
+  Offset getPositionForChild(Size size, Size childSize) =>
+      Offset(math.min(anchorX, size.width - childSize.width), 0);
+  @override
+  bool shouldRelayout(_PropertyBarLayout oldDelegate) =>
+      anchorX != oldDelegate.anchorX;
 }

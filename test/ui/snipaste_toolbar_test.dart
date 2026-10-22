@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:async';
 
@@ -395,7 +396,7 @@ void main() {
       void expectCompactToolbar() {
         final bar = tester.getRect(toolbar);
         final first = tester.getRect(
-          find.byKey(const ValueKey('screenshot-ruler')),
+          find.byKey(const ValueKey('annotation-group-shape')),
         );
         final last = tester.getRect(
           find.byKey(const ValueKey('copy-screenshot')),
@@ -591,15 +592,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(input, findsNothing);
       expect(c.markup.items.last.text, '原位文字\n第二行');
+      await tester.tap(
+        find.byKey(const ValueKey('annotation-text-outline')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(c.markup.items.last.outlined, true);
+      await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+      await tester.pumpAndSettle();
+      expect(c.markup.items.last.outlined, false);
+      await tester.tap(find.byKey(const ValueKey('annotation-redo')));
+      await tester.pumpAndSettle();
+      expect(c.markup.items.last.outlined, true);
       await tester.tap(find.byKey(const ValueKey('annotation-bold')));
       await tester.pumpAndSettle();
       expect(c.markup.items.last.toJson()['bold'], true);
       await tester.tap(find.byKey(const ValueKey('annotation-edit-text')));
       await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(input).style!.shadows, hasLength(8));
       await tester.enterText(input, '取消这次编辑');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(c.markup.items.last.text, '原位文字\n第二行');
+      expect(c.markup.items.last.outlined, true);
       await tester.tap(find.byKey(const ValueKey('annotation-edit-text')));
       await tester.pumpAndSettle();
       await tester.enterText(input, '应被撤销的文字编辑');
@@ -792,6 +807,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('annotation-tool-text')));
       await tester.pumpAndSettle();
       final properties = find.byKey(const ValueKey('annotation-properties'));
+      final barRect = tester.getRect(toolbar);
+      final propRect = tester.getRect(properties);
+      expect(
+        propRect.left,
+        closeTo(math.min(barRect.left, size.width - 12 - propRect.width), .1),
+      );
+
       expect(
         tester.getRect(properties).bottom,
         lessThanOrEqualTo(tester.getRect(toolbar).top - 4),

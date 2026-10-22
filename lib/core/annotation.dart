@@ -42,6 +42,7 @@ class Annotation {
     this.filled = false,
     this.bold = false,
     this.italic = false,
+    this.outlined = false,
     this.effectBrush = false,
     this.effectStrength = 3,
   }) : points = List.unmodifiable(points);
@@ -51,7 +52,7 @@ class Annotation {
   final double width, fontSize;
   static const defaultFontFamily = 'PingFang SC';
   final String text, fontFamily;
-  final bool filled, bold, italic;
+  final bool filled, bold, italic, outlined;
   final bool effectBrush;
 
   /// 1–5: mosaic block size or Gaussian blur radius, independent of brush width.
@@ -88,6 +89,7 @@ class Annotation {
     bool? filled,
     bool? bold,
     bool? italic,
+    bool? outlined,
     bool? effectBrush,
     int? effectStrength,
   }) => Annotation(
@@ -101,6 +103,7 @@ class Annotation {
     filled: filled ?? this.filled,
     bold: bold ?? this.bold,
     italic: italic ?? this.italic,
+    outlined: outlined ?? this.outlined,
     effectBrush: effectBrush ?? this.effectBrush,
     effectStrength: effectStrength ?? this.effectStrength,
   );
@@ -119,6 +122,7 @@ class Annotation {
           filled == other.filled &&
           bold == other.bold &&
           italic == other.italic &&
+          outlined == other.outlined &&
           effectBrush == other.effectBrush &&
           effectStrength == other.effectStrength;
 
@@ -134,6 +138,7 @@ class Annotation {
     filled,
     bold,
     italic,
+    outlined,
     effectBrush,
     effectStrength,
   );
@@ -266,6 +271,7 @@ class Annotation {
     'filled': filled,
     'bold': bold,
     'italic': italic,
+    'outlined': outlined,
     'effectBrush': effectBrush,
     'effectStrength': effectStrength,
   };
@@ -286,10 +292,12 @@ class Annotation {
       final family = v['fontFamily'] ?? defaultFontFamily;
       final effectBrush = v['effectBrush'] ?? false;
       final strength = v['effectStrength'] ?? 3;
+      final outlined = v['outlined'] ?? false;
       final filled = v['filled'] ?? false,
           bold = v['bold'] ?? false,
           italic = v['italic'] ?? false;
-      if (effectBrush is! bool ||
+      if (outlined is! bool ||
+          effectBrush is! bool ||
           strength is! int ||
           strength < 1 ||
           strength > 5 ||
@@ -357,6 +365,7 @@ class Annotation {
         filled: filled,
         bold: bold,
         italic: italic,
+        outlined: outlined,
         effectBrush: effectBrush,
         effectStrength: strength,
       );

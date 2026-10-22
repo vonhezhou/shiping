@@ -11,6 +11,8 @@ enum CaptureTool { picker, rectangle, horizontal, vertical, cross, screenshot }
 
 enum EventKind {
   activate,
+  showHistory,
+  showSettings,
   permissionChanged,
   shortcutRecorded,
   cancelled,
@@ -24,6 +26,7 @@ enum EventKind {
   redoPins,
   exportPins,
   modeChanged,
+  toleranceChanged,
   scroll,
   nudge,
   confirm,
@@ -31,10 +34,6 @@ enum EventKind {
   pointer,
   sampleColor,
   copyCaptureSize,
-  toggleCaptureRuler,
-  cancelCaptureInteraction,
-  useMeasurementSelection,
-  copyAllMeasurements,
 }
 
 enum InputPhase { move, down, drag, up, start, update, end }
@@ -128,13 +127,7 @@ class MeasurementPin {
     required this.displayId,
     required this.rect,
     required this.label,
-    this.mode,
-    this.seedX,
-    this.seedY,
   });
-  int? seedX;
-  int? seedY;
-  CaptureTool? mode;
   int id;
   int displayId;
   PixelBounds rect;
@@ -144,7 +137,6 @@ class MeasurementPin {
 class OverlayState {
   OverlayState({
     required this.sessionId,
-    this.captureSession,
     required this.tool,
     required this.tolerance,
     required this.zoom,
@@ -165,9 +157,9 @@ class OverlayState {
     this.rect,
     this.keyboard,
     this.anchored,
+    this.colorOutputName,
   });
   int sessionId;
-  bool? captureSession;
   CaptureTool tool;
   int tolerance;
   int zoom;
@@ -188,6 +180,7 @@ class OverlayState {
   PixelBounds? rect;
   bool? keyboard;
   bool? anchored;
+  String? colorOutputName;
 }
 
 class NativeEvent {
@@ -211,6 +204,7 @@ class NativeEvent {
     this.dy,
     this.resize,
     this.steps,
+    this.tolerance,
     this.save,
     this.suggestedRect,
   });
@@ -233,6 +227,7 @@ class NativeEvent {
   double? dy;
   bool? resize;
   int? steps;
+  int? tolerance;
   bool? save;
   PixelBounds? suggestedRect;
 }

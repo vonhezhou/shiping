@@ -29,6 +29,8 @@ extension EventKind {
   var name: String {
     switch self {
     case .activate: return "activate"
+    case .showHistory: return "showHistory"
+    case .showSettings: return "showSettings"
     case .permissionChanged: return "permissionChanged"
     case .shortcutRecorded: return "shortcutRecorded"
     case .cancelled: return "cancelled"
@@ -42,6 +44,7 @@ extension EventKind {
     case .redoPins: return "redoPins"
     case .exportPins: return "exportPins"
     case .modeChanged: return "modeChanged"
+    case .toleranceChanged: return "toleranceChanged"
     case .scroll: return "scroll"
     case .nudge: return "nudge"
     case .confirm: return "confirm"
@@ -49,15 +52,13 @@ extension EventKind {
     case .pointer: return "pointer"
     case .sampleColor: return "sampleColor"
     case .copyCaptureSize: return "copyCaptureSize"
-    case .toggleCaptureRuler: return "toggleCaptureRuler"
-    case .cancelCaptureInteraction: return "cancelCaptureInteraction"
-    case .useMeasurementSelection: return "useMeasurementSelection"
-    case .copyAllMeasurements: return "copyAllMeasurements"
     }
   }
   init?(name: String) {
     switch name {
     case "activate": self = .activate
+    case "showHistory": self = .showHistory
+    case "showSettings": self = .showSettings
     case "permissionChanged": self = .permissionChanged
     case "shortcutRecorded": self = .shortcutRecorded
     case "cancelled": self = .cancelled
@@ -71,6 +72,7 @@ extension EventKind {
     case "redoPins": self = .redoPins
     case "exportPins": self = .exportPins
     case "modeChanged": self = .modeChanged
+    case "toleranceChanged": self = .toleranceChanged
     case "scroll": self = .scroll
     case "nudge": self = .nudge
     case "confirm": self = .confirm
@@ -78,10 +80,6 @@ extension EventKind {
     case "pointer": self = .pointer
     case "sampleColor": self = .sampleColor
     case "copyCaptureSize": self = .copyCaptureSize
-    case "toggleCaptureRuler": self = .toggleCaptureRuler
-    case "cancelCaptureInteraction": self = .cancelCaptureInteraction
-    case "useMeasurementSelection": self = .useMeasurementSelection
-    case "copyAllMeasurements": self = .copyAllMeasurements
     default: return nil
     }
   }
@@ -165,9 +163,6 @@ extension MeasurementPin {
     data["displayId"] = NSNumber(value: displayId)
     data["rect"] = rect.local
     data["label"] = label
-    data["mode"] = mode?.name ?? "rectangle"
-    if let seedX = seedX { data["seedX"] = Int(seedX) }
-    if let seedY = seedY { data["seedY"] = Int(seedY) }
     return data
   }
 }
@@ -175,7 +170,6 @@ extension OverlayState {
   var local: [String: Any] {
     var data: [String: Any] = [:]
     data["sessionId"] = Int(sessionId)
-    data["captureSession"] = captureSession ?? false
     data["tool"] = tool.name
     data["tolerance"] = Int(tolerance)
     data["zoom"] = Int(zoom)
@@ -196,6 +190,7 @@ extension OverlayState {
     if let rect = rect { data["rect"] = rect.local }
     if let keyboard = keyboard { data["keyboard"] = keyboard }
     if let anchored = anchored { data["anchored"] = anchored }
+    if let colorOutputName = colorOutputName { data["colorOutputName"] = colorOutputName }
     return data
   }
 }
@@ -223,6 +218,7 @@ func nativeEvent(_ d: [String: Any]) -> NativeEvent {
   e.dy = (d["dy"] as? NSNumber)?.doubleValue
   e.resize = d["resize"] as? Bool
   e.steps = (d["steps"] as? NSNumber)?.int64Value
+  e.tolerance = (d["tolerance"] as? NSNumber)?.int64Value
   e.save = d["save"] as? Bool
   if let r = d["suggestedRect"] as? [String: Int] {
     e.suggestedRect = PixelBounds(left: Int64(r["left"]!), top: Int64(r["top"]!),

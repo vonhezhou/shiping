@@ -5,6 +5,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('文字描边序列化兼容旧数据并随历史和坐标变换保留', () {
+    final text = Annotation(
+      kind: AnnotationKind.text,
+      points: const [Offset(10, 10), Offset(90, 60)],
+      text: '描边',
+      outlined: true,
+    );
+    expect(Annotation.decodeList([text.toJson()], 100, 100).single, text);
+    final legacy = text.toJson()..remove('outlined');
+    expect(Annotation.decodeList([legacy], 100, 100).single.outlined, false);
+    expect(
+      () => Annotation.decodeList([text.toJson()..['outlined'] = 1], 100, 100),
+      throwsFormatException,
+    );
+    final history = AnnotationHistory()..commit([text]);
+    history.commit([text.copyWith(outlined: false)]);
+    history.undo();
+    expect(
+      history.items.single
+          .move(const Offset(1, 1), const Size(100, 100))
+          .outlined,
+      true,
+    );
+    history.redo();
+    expect(history.items.single.outlined, false);
+  });
+
   test('选区原点变化同步所有标注和历史，裁切后可恢复且样式不变', () {
     final originals = [
       for (final kind in AnnotationKind.values)

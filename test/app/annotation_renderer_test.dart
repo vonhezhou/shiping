@@ -17,6 +17,41 @@ Future<PixelFrame> rawFrame(ui.Image image) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('文字描边在 PNG 中保留对比色边缘和原文字填充', () async {
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawColor(const ui.Color(0xFF223344), ui.BlendMode.src);
+    final picture = recorder.endRecording();
+    final base = await picture.toImage(100, 100);
+    picture.dispose();
+    final frame = await rawFrame(base);
+    base.dispose();
+    final text = Annotation(
+      kind: AnnotationKind.text,
+      points: const [ui.Offset(10, 10), ui.Offset(90, 90)],
+      text: 'M',
+      color: 0xFF000000,
+      fontSize: 40,
+    );
+    for (final outlined in [false, true]) {
+      final png = await AnnotationRenderer.export(frame, [
+        text.copyWith(outlined: outlined),
+      ]);
+      final codec = await ui.instantiateImageCodec(png);
+      final image = (await codec.getNextFrame()).image;
+      final pixels = (await rawFrame(image)).rgba;
+      var white = 0, black = 0;
+      for (var i = 0; i < pixels.length; i += 4) {
+        if (pixels[i] == 255 && pixels[i + 1] == 255 && pixels[i + 2] == 255) {
+          white++;
+        }
+        if (pixels[i] == 0 && pixels[i + 1] == 0 && pixels[i + 2] == 0) black++;
+      }
+      expect(white, outlined ? greaterThan(0) : 0);
+      expect(black, greaterThan(0));
+      image.dispose();
+      codec.dispose();
+    }
+  });
   test('局部橡皮擦只清除先前标注，保留原图、剩余笔迹和后续绘制', () async {
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder).drawColor(const ui.Color(0xFF13579B), ui.BlendMode.src);

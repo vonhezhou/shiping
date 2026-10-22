@@ -189,30 +189,29 @@ enum CaptureTool: Int {
 
 enum EventKind: Int {
   case activate = 0
-  case permissionChanged = 1
-  case shortcutRecorded = 2
-  case cancelled = 3
-  case continuousChanged = 4
-  case pinDrag = 5
-  case copyMeasurement = 6
-  case editPins = 7
-  case selectPin = 8
-  case deletePin = 9
-  case undoPins = 10
-  case redoPins = 11
-  case exportPins = 12
-  case modeChanged = 13
-  case scroll = 14
-  case nudge = 15
-  case confirm = 16
-  case clearPins = 17
-  case pointer = 18
-  case sampleColor = 19
-  case copyCaptureSize = 20
-  case toggleCaptureRuler = 21
-  case cancelCaptureInteraction = 22
-  case useMeasurementSelection = 23
-  case copyAllMeasurements = 24
+  case showHistory = 1
+  case showSettings = 2
+  case permissionChanged = 3
+  case shortcutRecorded = 4
+  case cancelled = 5
+  case continuousChanged = 6
+  case pinDrag = 7
+  case copyMeasurement = 8
+  case editPins = 9
+  case selectPin = 10
+  case deletePin = 11
+  case undoPins = 12
+  case redoPins = 13
+  case exportPins = 14
+  case modeChanged = 15
+  case toleranceChanged = 16
+  case scroll = 17
+  case nudge = 18
+  case confirm = 19
+  case clearPins = 20
+  case pointer = 21
+  case sampleColor = 22
+  case copyCaptureSize = 23
 }
 
 enum InputPhase: Int {
@@ -555,9 +554,6 @@ struct NativeBindings: Hashable {
 
 /// Generated class from Pigeon that represents data sent in messages.
 struct MeasurementPin: Hashable {
-  var seedX: Int64? = nil
-  var seedY: Int64? = nil
-  var mode: CaptureTool? = nil
   var id: Int64
   var displayId: Int64
   var rect: PixelBounds
@@ -566,18 +562,12 @@ struct MeasurementPin: Hashable {
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> MeasurementPin? {
-    let seedX: Int64? = nilOrValue(pigeonVar_list[0])
-    let seedY: Int64? = nilOrValue(pigeonVar_list[1])
-    let mode: CaptureTool? = nilOrValue(pigeonVar_list[2])
-    let id = pigeonVar_list[3] as! Int64
-    let displayId = pigeonVar_list[4] as! Int64
-    let rect = pigeonVar_list[5] as! PixelBounds
-    let label = pigeonVar_list[6] as! String
+    let id = pigeonVar_list[0] as! Int64
+    let displayId = pigeonVar_list[1] as! Int64
+    let rect = pigeonVar_list[2] as! PixelBounds
+    let label = pigeonVar_list[3] as! String
 
     return MeasurementPin(
-      seedX: seedX,
-      seedY: seedY,
-      mode: mode,
       id: id,
       displayId: displayId,
       rect: rect,
@@ -586,9 +576,6 @@ struct MeasurementPin: Hashable {
   }
   func toList() -> [Any?] {
     return [
-      seedX,
-      seedY,
-      mode,
       id,
       displayId,
       rect,
@@ -599,14 +586,11 @@ struct MeasurementPin: Hashable {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.seedX, rhs.seedX) && deepEqualsDesktop(lhs.seedY, rhs.seedY) && deepEqualsDesktop(lhs.mode, rhs.mode) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.rect, rhs.rect) && deepEqualsDesktop(lhs.label, rhs.label)
+    return deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.rect, rhs.rect) && deepEqualsDesktop(lhs.label, rhs.label)
   }
 
   func hash(into hasher: inout Hasher) {
     hasher.combine("MeasurementPin")
-    deepHashDesktop(value: seedX, hasher: &hasher)
-    deepHashDesktop(value: seedY, hasher: &hasher)
-    deepHashDesktop(value: mode, hasher: &hasher)
     deepHashDesktop(value: id, hasher: &hasher)
     deepHashDesktop(value: displayId, hasher: &hasher)
     deepHashDesktop(value: rect, hasher: &hasher)
@@ -617,7 +601,6 @@ struct MeasurementPin: Hashable {
 /// Generated class from Pigeon that represents data sent in messages.
 struct OverlayState: Hashable {
   var sessionId: Int64
-  var captureSession: Bool? = nil
   var tool: CaptureTool
   var tolerance: Int64
   var zoom: Int64
@@ -638,36 +621,36 @@ struct OverlayState: Hashable {
   var rect: PixelBounds? = nil
   var keyboard: Bool? = nil
   var anchored: Bool? = nil
+  var colorOutputName: String? = nil
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> OverlayState? {
     let sessionId = pigeonVar_list[0] as! Int64
-    let captureSession: Bool? = nilOrValue(pigeonVar_list[1])
-    let tool = pigeonVar_list[2] as! CaptureTool
-    let tolerance = pigeonVar_list[3] as! Int64
-    let zoom = pigeonVar_list[4] as! Int64
-    let continuous = pigeonVar_list[5] as! Bool
-    let pickerActions = pigeonVar_list[6] as! String
-    let capturePurpose = pigeonVar_list[7] as! String
-    let pickedCount = pigeonVar_list[8] as! Int64
-    let selectedPin: Int64? = nilOrValue(pigeonVar_list[9])
-    let editingPins = pigeonVar_list[10] as! Bool
-    let canUndoPins = pigeonVar_list[11] as! Bool
-    let canRedoPins = pigeonVar_list[12] as! Bool
-    let pinned = pigeonVar_list[13] as! [MeasurementPin]
-    let displayId: Int64? = nilOrValue(pigeonVar_list[14])
-    let x: Double? = nilOrValue(pigeonVar_list[15])
-    let y: Double? = nilOrValue(pigeonVar_list[16])
-    let label: String? = nilOrValue(pigeonVar_list[17])
-    let color: NativeColor? = nilOrValue(pigeonVar_list[18])
-    let rect: PixelBounds? = nilOrValue(pigeonVar_list[19])
-    let keyboard: Bool? = nilOrValue(pigeonVar_list[20])
-    let anchored: Bool? = nilOrValue(pigeonVar_list[21])
+    let tool = pigeonVar_list[1] as! CaptureTool
+    let tolerance = pigeonVar_list[2] as! Int64
+    let zoom = pigeonVar_list[3] as! Int64
+    let continuous = pigeonVar_list[4] as! Bool
+    let pickerActions = pigeonVar_list[5] as! String
+    let capturePurpose = pigeonVar_list[6] as! String
+    let pickedCount = pigeonVar_list[7] as! Int64
+    let selectedPin: Int64? = nilOrValue(pigeonVar_list[8])
+    let editingPins = pigeonVar_list[9] as! Bool
+    let canUndoPins = pigeonVar_list[10] as! Bool
+    let canRedoPins = pigeonVar_list[11] as! Bool
+    let pinned = pigeonVar_list[12] as! [MeasurementPin]
+    let displayId: Int64? = nilOrValue(pigeonVar_list[13])
+    let x: Double? = nilOrValue(pigeonVar_list[14])
+    let y: Double? = nilOrValue(pigeonVar_list[15])
+    let label: String? = nilOrValue(pigeonVar_list[16])
+    let color: NativeColor? = nilOrValue(pigeonVar_list[17])
+    let rect: PixelBounds? = nilOrValue(pigeonVar_list[18])
+    let keyboard: Bool? = nilOrValue(pigeonVar_list[19])
+    let anchored: Bool? = nilOrValue(pigeonVar_list[20])
+    let colorOutputName: String? = nilOrValue(pigeonVar_list[21])
 
     return OverlayState(
       sessionId: sessionId,
-      captureSession: captureSession,
       tool: tool,
       tolerance: tolerance,
       zoom: zoom,
@@ -687,13 +670,13 @@ struct OverlayState: Hashable {
       color: color,
       rect: rect,
       keyboard: keyboard,
-      anchored: anchored
+      anchored: anchored,
+      colorOutputName: colorOutputName
     )
   }
   func toList() -> [Any?] {
     return [
       sessionId,
-      captureSession,
       tool,
       tolerance,
       zoom,
@@ -714,19 +697,19 @@ struct OverlayState: Hashable {
       rect,
       keyboard,
       anchored,
+      colorOutputName,
     ]
   }
   static func == (lhs: OverlayState, rhs: OverlayState) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.captureSession, rhs.captureSession) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.tolerance, rhs.tolerance) && deepEqualsDesktop(lhs.zoom, rhs.zoom) && deepEqualsDesktop(lhs.continuous, rhs.continuous) && deepEqualsDesktop(lhs.pickerActions, rhs.pickerActions) && deepEqualsDesktop(lhs.capturePurpose, rhs.capturePurpose) && deepEqualsDesktop(lhs.pickedCount, rhs.pickedCount) && deepEqualsDesktop(lhs.selectedPin, rhs.selectedPin) && deepEqualsDesktop(lhs.editingPins, rhs.editingPins) && deepEqualsDesktop(lhs.canUndoPins, rhs.canUndoPins) && deepEqualsDesktop(lhs.canRedoPins, rhs.canRedoPins) && deepEqualsDesktop(lhs.pinned, rhs.pinned) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.label, rhs.label) && deepEqualsDesktop(lhs.color, rhs.color) && deepEqualsDesktop(lhs.rect, rhs.rect) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.anchored, rhs.anchored)
+    return deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.tolerance, rhs.tolerance) && deepEqualsDesktop(lhs.zoom, rhs.zoom) && deepEqualsDesktop(lhs.continuous, rhs.continuous) && deepEqualsDesktop(lhs.pickerActions, rhs.pickerActions) && deepEqualsDesktop(lhs.capturePurpose, rhs.capturePurpose) && deepEqualsDesktop(lhs.pickedCount, rhs.pickedCount) && deepEqualsDesktop(lhs.selectedPin, rhs.selectedPin) && deepEqualsDesktop(lhs.editingPins, rhs.editingPins) && deepEqualsDesktop(lhs.canUndoPins, rhs.canUndoPins) && deepEqualsDesktop(lhs.canRedoPins, rhs.canRedoPins) && deepEqualsDesktop(lhs.pinned, rhs.pinned) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.label, rhs.label) && deepEqualsDesktop(lhs.color, rhs.color) && deepEqualsDesktop(lhs.rect, rhs.rect) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.anchored, rhs.anchored) && deepEqualsDesktop(lhs.colorOutputName, rhs.colorOutputName)
   }
 
   func hash(into hasher: inout Hasher) {
     hasher.combine("OverlayState")
     deepHashDesktop(value: sessionId, hasher: &hasher)
-    deepHashDesktop(value: captureSession, hasher: &hasher)
     deepHashDesktop(value: tool, hasher: &hasher)
     deepHashDesktop(value: tolerance, hasher: &hasher)
     deepHashDesktop(value: zoom, hasher: &hasher)
@@ -747,6 +730,7 @@ struct OverlayState: Hashable {
     deepHashDesktop(value: rect, hasher: &hasher)
     deepHashDesktop(value: keyboard, hasher: &hasher)
     deepHashDesktop(value: anchored, hasher: &hasher)
+    deepHashDesktop(value: colorOutputName, hasher: &hasher)
   }
 }
 
@@ -771,6 +755,7 @@ struct NativeEvent: Hashable {
   var dy: Double? = nil
   var resize: Bool? = nil
   var steps: Int64? = nil
+  var tolerance: Int64? = nil
   var save: Bool? = nil
   var suggestedRect: PixelBounds? = nil
 
@@ -796,8 +781,9 @@ struct NativeEvent: Hashable {
     let dy: Double? = nilOrValue(pigeonVar_list[16])
     let resize: Bool? = nilOrValue(pigeonVar_list[17])
     let steps: Int64? = nilOrValue(pigeonVar_list[18])
-    let save: Bool? = nilOrValue(pigeonVar_list[19])
-    let suggestedRect: PixelBounds? = nilOrValue(pigeonVar_list[20])
+    let tolerance: Int64? = nilOrValue(pigeonVar_list[19])
+    let save: Bool? = nilOrValue(pigeonVar_list[20])
+    let suggestedRect: PixelBounds? = nilOrValue(pigeonVar_list[21])
 
     return NativeEvent(
       kind: kind,
@@ -819,6 +805,7 @@ struct NativeEvent: Hashable {
       dy: dy,
       resize: resize,
       steps: steps,
+      tolerance: tolerance,
       save: save,
       suggestedRect: suggestedRect
     )
@@ -844,6 +831,7 @@ struct NativeEvent: Hashable {
       dy,
       resize,
       steps,
+      tolerance,
       save,
       suggestedRect,
     ]
@@ -852,7 +840,7 @@ struct NativeEvent: Hashable {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.kind, rhs.kind) && deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.permission, rhs.permission) && deepEqualsDesktop(lhs.chord, rhs.chord) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.phase, rhs.phase) && deepEqualsDesktop(lhs.button, rhs.button) && deepEqualsDesktop(lhs.keep, rhs.keep) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.enabled, rhs.enabled) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.handle, rhs.handle) && deepEqualsDesktop(lhs.dx, rhs.dx) && deepEqualsDesktop(lhs.dy, rhs.dy) && deepEqualsDesktop(lhs.resize, rhs.resize) && deepEqualsDesktop(lhs.steps, rhs.steps) && deepEqualsDesktop(lhs.save, rhs.save) && deepEqualsDesktop(lhs.suggestedRect, rhs.suggestedRect)
+    return deepEqualsDesktop(lhs.kind, rhs.kind) && deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.permission, rhs.permission) && deepEqualsDesktop(lhs.chord, rhs.chord) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.phase, rhs.phase) && deepEqualsDesktop(lhs.button, rhs.button) && deepEqualsDesktop(lhs.keep, rhs.keep) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.enabled, rhs.enabled) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.handle, rhs.handle) && deepEqualsDesktop(lhs.dx, rhs.dx) && deepEqualsDesktop(lhs.dy, rhs.dy) && deepEqualsDesktop(lhs.resize, rhs.resize) && deepEqualsDesktop(lhs.steps, rhs.steps) && deepEqualsDesktop(lhs.tolerance, rhs.tolerance) && deepEqualsDesktop(lhs.save, rhs.save) && deepEqualsDesktop(lhs.suggestedRect, rhs.suggestedRect)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -876,6 +864,7 @@ struct NativeEvent: Hashable {
     deepHashDesktop(value: dy, hasher: &hasher)
     deepHashDesktop(value: resize, hasher: &hasher)
     deepHashDesktop(value: steps, hasher: &hasher)
+    deepHashDesktop(value: tolerance, hasher: &hasher)
     deepHashDesktop(value: save, hasher: &hasher)
     deepHashDesktop(value: suggestedRect, hasher: &hasher)
   }
