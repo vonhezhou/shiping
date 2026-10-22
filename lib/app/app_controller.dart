@@ -141,12 +141,7 @@ class AppController extends ChangeNotifier {
   }
 
   bool get canAdjustScreenshotSelection =>
-      screenshotEditing &&
-      !imageLoading &&
-      !screenshotExporting &&
-      markup.items.isEmpty &&
-      !markup.canUndo &&
-      !markup.canRedo;
+      screenshotEditing && !imageLoading && !screenshotExporting;
 
   Future<void> adjustScreenshotSelection(PixelRect rect) async {
     final session = _session;
@@ -167,6 +162,13 @@ class AppController extends ChangeNotifier {
     try {
       final doc = await imageCodec.cropCapture(display.frame, rect);
       if (_disposed || _session?.id != session.id || !screenshotEditing) return;
+      final previous = screenshotSelection!;
+      markup.translate(
+        Offset(
+          (previous.left - rect.left).toDouble(),
+          (previous.top - rect.top).toDouble(),
+        ),
+      );
       imageDocument = doc;
       screenshotSelection = rect;
       error = null;

@@ -5,6 +5,43 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('选区原点变化同步所有标注和历史，裁切后可恢复且样式不变', () {
+    final originals = [
+      for (final kind in AnnotationKind.values)
+        Annotation(
+          kind: kind,
+          points: const [Offset(10, 20), Offset(90, 80)],
+          text: kind == AnnotationKind.text ? '保留文字' : '',
+          effectBrush: kind == AnnotationKind.eraser,
+          color: 0x80FF0000,
+          width: 12,
+          fontSize: 36,
+          effectStrength: 5,
+        ),
+    ];
+    final history = AnnotationHistory()..commit(originals);
+    history.commit(
+      originals.map((a) => a.copyWith(color: 0xFF00FF00)).toList(),
+    );
+    history.undo();
+    history.translate(const Offset(-50, -60));
+    for (var i = 0; i < originals.length; i++) {
+      expect(
+        history.items[i],
+        originals[i].copyWith(points: const [Offset(-40, -40), Offset(40, 20)]),
+      );
+    }
+    history.redo();
+    expect(history.items.first.color, 0xFF00FF00);
+    history.translate(const Offset(50, 60));
+    history.undo();
+    expect(history.items, originals);
+    history.undo();
+    expect(history.items, isEmpty, reason: '调整选区不增加撤销步骤');
+    history.redo();
+    expect(history.items, originals);
+  });
+
   test('字体随序列化、变换和历史保留，旧数据沿用默认字体', () {
     final a = Annotation(
       kind: AnnotationKind.text,

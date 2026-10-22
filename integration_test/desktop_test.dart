@@ -866,34 +866,7 @@ void main() {
         expect(editStatus?['mainVisible'], false);
         expect(c.busy, true);
         expect(find.textContaining('项目'), findsNothing);
-        await click(tester, find.byKey(const ValueKey('reselect-screenshot')));
-        expect(c.screenshotEditing, false);
-        expect(c.busy, true);
-        expect(
-          (await driver.invokeMapMethod<String, Object?>(
-            'status',
-          ))?['mainVisible'],
-          false,
-        );
-        for (final event in [
-          {'phase': 'down', 'x': 40.0, 'y': 180.0},
-          {'phase': 'drag', 'x': endX, 'y': endY},
-          {'phase': 'up', 'x': endX, 'y': endY},
-        ]) {
-          await driver.invokeMethod<void>('pointer', {
-            'displayId': display.id,
-            ...event,
-          });
-          await tester.pump();
-        }
-        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
-        await tester.pumpAndSettle();
-        expect(
-          (await driver.invokeMapMethod<String, Object?>(
-            'status',
-          ))?['windowNumber'],
-          selectionStatus?['windowNumber'],
-        );
+        expect(find.byKey(const ValueKey('reselect-screenshot')), findsNothing);
         final canvas = find.byKey(const ValueKey('annotation-canvas'));
         final oldSelection = c.screenshotSelection!;
         await mouseDrag(tester, tester.getCenter(canvas), const Offset(12, 8));
@@ -1526,6 +1499,133 @@ void main() {
         }
         expect(c.colors, isNotEmpty);
       } finally {
+        await driver.invokeMethod<void>('restoreClipboard');
+        c.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+  testWidgets(
+    'annotated selection resizes without losing cropped marks or history, native clipboard exports crop',
+    (tester) async {
+      final desktop = NativeDesktop();
+      final c = AppController(desktop);
+      await c.initialize();
+      await driver.invokeMethod<void>('backupClipboard');
+      try {
+        await tester.pumpWidget(FrulerApp(controller: c));
+        expect(
+          c.permissionGranted,
+          true,
+          reason: 'Real screen-recording permission is required',
+        );
+        await c.startScreenshot();
+        final display = desktop.lastCapture!.displays.first;
+        for (final event in [
+          {'phase': 'down', 'x': 100.0, 'y': 180.0},
+          {'phase': 'drag', 'x': 500.0, 'y': 430.0},
+          {'phase': 'up', 'x': 500.0, 'y': 430.0},
+        ]) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': display.id,
+            ...event,
+          });
+          await tester.pump();
+        }
+        Future<void> ready() => waitFor(tester, () {
+          final copy = find.byKey(const ValueKey('copy-screenshot'));
+          return !c.imageLoading &&
+              copy.evaluate().isNotEmpty &&
+              tester.widget<IconButton>(copy).onPressed != null;
+        });
+        await ready();
+        final panel = await driver.invokeMapMethod<String, Object?>('status');
+        final initial = c.screenshotSelection!;
+        await chooseAnnotationTool(tester, AnnotationKind.rectangle);
+        await click(tester, find.byKey(const ValueKey('annotation-fill')));
+        await mouseDrag(tester, const Offset(140, 220), const Offset(180, 100));
+        await tester.pumpAndSettle();
+        final original = c.markup.items.single;
+        await mouseDrag(
+          tester,
+          tester.getCenter(find.byKey(const ValueKey('screenshot-handle-nw'))),
+          const Offset(100, 80),
+        );
+        await ready();
+        expect(
+          c.screenshotSelection!.left,
+          initial.left + (100 * display.frame.scaleX).round(),
+        );
+        expect(c.markup.items.single.bounds.left, lessThan(0));
+        expect(c.markup.items.single.bounds.width, original.bounds.width);
+        c.markup.undo();
+        expect(c.markup.items, isEmpty);
+        c.markup.redo();
+        expect(c.markup.items, hasLength(1));
+        await tester.pumpAndSettle();
+        await mouseDrag(
+          tester,
+          tester.getCenter(find.byKey(const ValueKey('screenshot-handle-nw'))),
+          const Offset(-100, -80),
+        );
+        await ready();
+        expect(c.screenshotSelection!.toJson(), initial.toJson());
+        expect(c.markup.items.single, original);
+        await mouseDrag(
+          tester,
+          tester.getCenter(find.byKey(const ValueKey('screenshot-handle-nw'))),
+          const Offset(100, 80),
+        );
+        await ready();
+        final crop = c.screenshotSelection!;
+        final status = await driver.invokeMapMethod<String, Object?>('status');
+        expect(status?['windowNumber'], panel?['windowNumber']);
+        expect(status?['mainVisible'], false);
+        expect(desktop.captureCount, 1);
+        await click(tester, find.byKey(const ValueKey('copy-screenshot')));
+        await waitFor(tester, () => !c.busy);
+        final bytes = (await driver.invokeMethod<Uint8List>('clipboardPng'))!;
+        final codec = await ui.instantiateImageCodec(bytes);
+        final output = (await codec.getNextFrame()).image;
+        try {
+          expect((output.width, output.height), (crop.width, crop.height));
+          final raw = (await output.toByteData(
+            format: ui.ImageByteFormat.rawRgba,
+          ))!;
+          final pixels = raw.buffer.asUint8List(
+            raw.offsetInBytes,
+            raw.lengthInBytes,
+          );
+          expect(pixels.sublist(0, 4), [
+            (original.color >> 16) & 255,
+            (original.color >> 8) & 255,
+            original.color & 255,
+            255,
+          ], reason: '跨边界的填充标注只输出选区内部分');
+          final x = output.width - 1, y = output.height - 1;
+          final background = display.frame.pixelAt(
+            crop.right - 1,
+            crop.bottom - 1,
+          );
+          final index = (y * output.width + x) * 4;
+          expect(pixels.sublist(index, index + 4), [
+            background.r,
+            background.g,
+            background.b,
+            255,
+          ]);
+        } finally {
+          output.dispose();
+          codec.dispose();
+        }
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))?['mainVisible'],
+          false,
+        );
+      } finally {
+        await c.cancelScreenshot();
         await driver.invokeMethod<void>('restoreClipboard');
         c.dispose();
         await tester.pumpWidget(const SizedBox.shrink());

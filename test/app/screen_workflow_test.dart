@@ -107,7 +107,7 @@ void main() {
       await desktop.input.close();
     }
   });
-  test('调整截图选区复用冻结快照，校验边界并保护已存在的标注', () async {
+  test('调整截图选区复用冻结快照，裁切不丢标注且保留撤销重做', () async {
     final d = FakeDesktop();
     final c = AppController(d);
     await c.initialize();
@@ -145,8 +145,34 @@ void main() {
       await c.adjustScreenshotSelection(
         const PixelRect(left: 0, top: 0, right: 4, bottom: 4),
       );
-      expect(c.imageDocument, same(doc));
+      expect(c.imageDocument!.frame.width, 4);
       expect(c.markup.items, hasLength(1));
+      final original = c.markup.items.single;
+      c.markup.commit([original.copyWith(color: 0xFF00FF00)]);
+      c.markup.undo();
+      await c.adjustScreenshotSelection(
+        const PixelRect(left: 3, top: 3, right: 5, bottom: 5),
+      );
+      expect(c.screenshotSelection!.left, 3);
+      expect(c.markup.items.single.points, [
+        const Offset(-3, -3),
+        const Offset(-1, -1),
+      ]);
+      expect(c.markup.canRedo, true);
+      c.markup.redo();
+      expect(c.markup.items.single.color, 0xFF00FF00);
+      expect(c.markup.items.single.points.first, const Offset(-3, -3));
+      await c.adjustScreenshotSelection(
+        const PixelRect(left: 0, top: 0, right: 8, bottom: 6),
+      );
+      expect(c.markup.items.single.points, original.points);
+      c.markup.undo();
+      expect(c.markup.items.single, original);
+      c.markup.undo();
+      expect(c.markup.items, isEmpty);
+      expect(c.canAdjustScreenshotSelection, true);
+      c.markup.redo();
+      expect(c.markup.items.single, original);
       expect(c.busy, true);
     } finally {
       c.dispose();

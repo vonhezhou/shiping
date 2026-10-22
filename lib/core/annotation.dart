@@ -138,11 +138,11 @@ class Annotation {
     effectStrength,
   );
 
-  Annotation move(Offset delta, Size size) {
+  Annotation move(Offset delta, Size size, {Offset origin = Offset.zero}) {
     final b = bounds;
     final d = Offset(
-      delta.dx.clamp(-b.left, size.width - b.right),
-      delta.dy.clamp(-b.top, size.height - b.bottom),
+      delta.dx.clamp(-origin.dx - b.left, size.width - origin.dx - b.right),
+      delta.dy.clamp(-origin.dy - b.top, size.height - origin.dy - b.bottom),
     );
     return copyWith(points: points.map((p) => p + d).toList());
   }
@@ -418,6 +418,22 @@ class AnnotationHistory extends ChangeNotifier {
     _items = List.unmodifiable(items);
     _undo.clear();
     _redo.clear();
+  }
+
+  /// 选区原点变化时同步平移所有历史，不产生撤销步骤，也不丢弃重做。
+  void translate(Offset delta) {
+    if (delta == Offset.zero) return;
+    List<Annotation> shift(List<Annotation> items) => List.unmodifiable(
+      items.map(
+        (a) => a.copyWith(points: a.points.map((p) => p + delta).toList()),
+      ),
+    );
+    _items = shift(_items);
+    for (final stack in [_undo, _redo]) {
+      for (var i = 0; i < stack.length; i++) {
+        stack[i] = shift(stack[i]);
+      }
+    }
   }
 
   void commit(List<Annotation> items) {

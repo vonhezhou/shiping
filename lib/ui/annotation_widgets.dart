@@ -257,8 +257,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     if (start != null) cancelGesture();
     if (tool != 'select' || selected != null) {
       selectTool('select');
-    } else {
-      c.reselectScreenshot();
     }
   }
 
@@ -521,16 +519,24 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   Offset clamp(Offset p) =>
       Offset(p.dx.clamp(0, imageSize.width), p.dy.clamp(0, imageSize.height));
 
+  Annotation moveAnnotation(Annotation annotation, Offset delta) {
+    final source = c.screenshotSourceSize!, selection = c.screenshotSelection!;
+    return annotation.move(
+      delta,
+      Size(source.width.toDouble(), source.height.toDouble()),
+      origin: Offset(selection.left.toDouble(), selection.top.toDouble()),
+    );
+  }
+
   bool get canAdjustSelection =>
-      tool == 'select' &&
-      c.canAdjustScreenshotSelection &&
-      !textEditing &&
-      editable;
+      c.canAdjustScreenshotSelection && !textEditing && editable;
 
   void beginSelection(PointerDownEvent event, String handle) {
     if (!canAdjustSelection || event.buttons != kPrimaryMouseButton) return;
+    finishLine();
     focus.requestFocus();
     setState(() {
+      selected = null;
       selectionDrag = (
         pointer: event.pointer,
         start: event.position,
@@ -626,7 +632,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   MouseCursor get canvasCursor {
     if (!editable || image == null) return SystemMouseCursors.basic;
     if (selectionDrag != null) return SystemMouseCursors.grabbing;
-    if (canAdjustSelection) return SystemMouseCursors.grab;
+    if (canAdjustSelection &&
+        tool == 'select' &&
+        selected == null &&
+        (hoverPosition == null || annotationAt(hoverPosition!) == null)) {
+      return SystemMouseCursors.grab;
+    }
     if (pointerId != null && original != null) {
       return SystemMouseCursors.grabbing;
     }
@@ -669,7 +680,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       cancelGesture();
       return;
     }
-    if (canAdjustSelection) {
+    if (canAdjustSelection &&
+        tool == 'select' &&
+        !selectedHandle(event.localPosition) &&
+        annotationAt(event.localPosition) == null) {
+      setState(() => selected = null);
       beginSelection(event, 'move');
       return;
     }
@@ -751,7 +766,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           preview = original!.resize(b, fontScale: c.screenshotScaleY);
         }
       } else {
-        preview = original!.move(p - start!, imageSize);
+        preview = moveAnnotation(original!, p - start!);
       }
     } else if (preview != null) {
       final free = preview!.isPath && tool != 'line' && tool != 'arrow';
@@ -940,7 +955,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       LogicalKeyboardKey.arrowUp: const Offset(0, -1),
       LogicalKeyboardKey.arrowDown: const Offset(0, 1),
     }[k];
-    if (delta != null && canAdjustSelection && selectionDrag == null) {
+    if (delta != null &&
+        tool == 'select' &&
+        selected == null &&
+        canAdjustSelection &&
+        selectionDrag == null) {
       final size = c.screenshotSourceSize!;
       final handle = (shift || meta)
           ? {
@@ -966,22 +985,26 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       final next = List<Annotation>.of(items);
       final a = next[selected!];
       if (shift) {
+        final source = c.screenshotSourceSize!,
+            selection = c.screenshotSelection!;
+        final maxWidth = (source.width - selection.left).toDouble();
+        final maxHeight = (source.height - selection.top).toDouble();
         final b = a.bounds;
         final r = Rect.fromLTRB(
           b.left,
           b.top,
           (b.right + delta.dx).clamp(
-            b.left + math.min(1, imageSize.width - b.left),
-            imageSize.width,
+            b.left + math.min(1, maxWidth - b.left),
+            maxWidth,
           ),
           (b.bottom + delta.dy).clamp(
-            b.top + math.min(1, imageSize.height - b.top),
-            imageSize.height,
+            b.top + math.min(1, maxHeight - b.top),
+            maxHeight,
           ),
         );
         next[selected!] = a.resize(r, fontScale: c.screenshotScaleY);
       } else {
-        next[selected!] = a.move(delta, imageSize);
+        next[selected!] = moveAnnotation(a, delta);
       }
       commit(next);
       return KeyEventResult.handled;
@@ -1199,7 +1222,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             ? null
             : () => controller.isOpen ? controller.close() : controller.open(),
         child: SizedBox(
-          width: 140,
+          width: 132,
           height: 28,
           child: Row(
             children: [
@@ -1764,12 +1787,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           c.cancelScreenshot,
         ),
         toolbarButton(
-          'reselect-screenshot',
-          '重新框选',
-          Icons.crop,
-          c.reselectScreenshot,
-        ),
-        toolbarButton(
           'save-screenshot',
           '保存 PNG ⌘S',
           Icons.save_alt,
@@ -1968,6 +1985,19 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       selection.bottom / c.screenshotScaleY,
     );
     final activeSelection = selectionPreview ?? selection;
+    final selectionOffset = Offset(
+      (selection.left - activeSelection.left).toDouble(),
+      (selection.top - activeSelection.top).toDouble(),
+    );
+    final displayedItems = selectionOffset == Offset.zero
+        ? visibleItems
+        : visibleItems
+              .map(
+                (a) => a.copyWith(
+                  points: a.points.map((p) => p + selectionOffset).toList(),
+                ),
+              )
+              .toList();
     final activeRect = Rect.fromLTRB(
       activeSelection.left / c.screenshotScaleX,
       activeSelection.top / c.screenshotScaleY,
@@ -1980,9 +2010,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 14 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
+          // 13 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
           final toolbarWidth = math.min(
-            14 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
+            13 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
           final totalHeight = hasProperties ? 72.0 : 36.0;
@@ -2027,7 +2057,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                     ),
                   ),
                   Positioned.fromRect(
-                    rect: rect,
+                    rect: activeRect,
                     child: ClipRect(
                       child: OverflowBox(
                         alignment: Alignment.topLeft,
@@ -2068,8 +2098,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                               onHover: (event) => hover(event.localPosition),
                               onExit: (_) => hover(null),
                               child: SizedBox(
-                                width: imageSize.width,
-                                height: imageSize.height,
+                                width: activeSelection.width.toDouble(),
+                                height: activeSelection.height.toDouble(),
                                 child: image == null
                                     ? const SizedBox.shrink()
                                     : RepaintBoundary(
@@ -2079,11 +2109,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                                         child: CustomPaint(
                                           painter: _AnnotationPainter(
                                             image!,
-                                            pixelFrameSourceRect(
-                                              c.imageDocument!.frame,
+                                            Rect.fromLTWH(
+                                              activeSelection.left.toDouble(),
+                                              activeSelection.top.toDouble(),
+                                              activeSelection.width.toDouble(),
+                                              activeSelection.height.toDouble(),
                                             ),
                                             mosaics,
-                                            visibleItems,
+                                            displayedItems,
                                             textEditing ? null : selected,
                                             scale,
                                             !eraserBrush &&
