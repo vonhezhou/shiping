@@ -49,6 +49,10 @@ extension EventKind {
     case .pointer: return "pointer"
     case .sampleColor: return "sampleColor"
     case .copyCaptureSize: return "copyCaptureSize"
+    case .toggleCaptureRuler: return "toggleCaptureRuler"
+    case .cancelCaptureInteraction: return "cancelCaptureInteraction"
+    case .useMeasurementSelection: return "useMeasurementSelection"
+    case .copyAllMeasurements: return "copyAllMeasurements"
     }
   }
   init?(name: String) {
@@ -74,6 +78,10 @@ extension EventKind {
     case "pointer": self = .pointer
     case "sampleColor": self = .sampleColor
     case "copyCaptureSize": self = .copyCaptureSize
+    case "toggleCaptureRuler": self = .toggleCaptureRuler
+    case "cancelCaptureInteraction": self = .cancelCaptureInteraction
+    case "useMeasurementSelection": self = .useMeasurementSelection
+    case "copyAllMeasurements": self = .copyAllMeasurements
     default: return nil
     }
   }
@@ -157,6 +165,9 @@ extension MeasurementPin {
     data["displayId"] = NSNumber(value: displayId)
     data["rect"] = rect.local
     data["label"] = label
+    data["mode"] = mode?.name ?? "rectangle"
+    if let seedX = seedX { data["seedX"] = Int(seedX) }
+    if let seedY = seedY { data["seedY"] = Int(seedY) }
     return data
   }
 }
@@ -164,6 +175,7 @@ extension OverlayState {
   var local: [String: Any] {
     var data: [String: Any] = [:]
     data["sessionId"] = Int(sessionId)
+    data["captureSession"] = captureSession ?? false
     data["tool"] = tool.name
     data["tolerance"] = Int(tolerance)
     data["zoom"] = Int(zoom)

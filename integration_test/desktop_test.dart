@@ -507,6 +507,196 @@ void main() {
     },
   );
 
+  testWidgets('截图内 Cocoa 多框、自动测距、选区锁定和真实尺寸剪贴板', (tester) async {
+    final d = NativeDesktop();
+    final c = AppController(d);
+    await c.initialize();
+    final historyBefore = List.of(c.measurements);
+    await driver.invokeMethod<void>('backupClipboard');
+    final propagate = tester.binding.shouldPropagateDevicePointerEvents;
+    tester.binding.shouldPropagateDevicePointerEvents = true;
+    try {
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await c.startScreenshot();
+      final id = d.lastCapture!.displays.first.id;
+      final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      Future<void> key(int code) async {
+        await driver.invokeMethod<void>('key', {'keyCode': code});
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> pointer(String phase, double x, double y) async {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': id,
+          'x': x,
+          'y': y,
+          'phase': phase,
+          'warp': true,
+        });
+        await tester.pumpAndSettle();
+      }
+
+      await key(15); // R：手动多框。
+      await waitFor(tester, () => c.captureRulerMode == RulerMode.rectangle);
+      final rulerStatus = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      for (final view in rulerStatus['rulerViews'] as List) {
+        final modes = (view as Map)['modes'] as Map;
+        for (final mode in ['rectangle', 'horizontal', 'vertical', 'cross']) {
+          final button = modes[mode] as Map;
+          expect(button['title'], isEmpty);
+          expect(button['hasImage'], true);
+          expect(button['tooltip'], isNotEmpty);
+        }
+      }
+      for (final x in [50.0, 200.0]) {
+        await pointer('down', x, 200);
+        await pointer('drag', x + 80, 260);
+        await pointer('up', x + 80, 260);
+      }
+      expect(c.captureMeasurementPins, hasLength(2));
+      expect(c.measurements, historyBefore);
+      // 原生拖动仍然复用测量框编辑能力。
+      final beforeMove = c.captureMeasurementPins.last.measurement.rect.left;
+      await pointer('down', 230, 220);
+      await pointer('drag', 240, 225);
+      await pointer('up', 240, 225);
+      expect(
+        c.captureMeasurementPins.last.measurement.rect.left,
+        greaterThan(beforeMove),
+      );
+      expect(
+        await driver.invokeMethod<bool>('clickRulerControl', {
+          'name': 'useSelection',
+        }),
+        true,
+      );
+      await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+      final selection = c.screenshotSelection!.toJson();
+      c.markup.commit([
+        Annotation(
+          kind: AnnotationKind.rectangle,
+          points: [const Offset(10, 10), const Offset(50, 50)],
+        ),
+      ]);
+      await tester.pumpAndSettle();
+      await key(15);
+      expect(c.captureRulerMode, RulerMode.cross);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('screenshot-manual-measure')),
+            )
+            .onPressed,
+        isNull,
+      );
+      c.setCaptureRulerMode(RulerMode.rectangle);
+      expect(c.captureRulerMode, RulerMode.cross);
+      await pointer('move', 100, 400);
+      await pointer('down', 100, 400);
+      await pointer('up', 100, 400);
+      await waitFor(tester, () => c.captureMeasurementPins.length == 3);
+      expect(c.screenshotSelection!.toJson(), selection);
+      expect(c.markup.items, hasLength(1));
+      expect(d.captureCount, 1);
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['windowNumber'],
+        status['windowNumber'],
+      );
+      // 先退出自动测距，再重新进入并复制实时水平结果。
+      await key(53);
+      expect(c.busy, true);
+      expect(c.captureRulerMode, isNull);
+      await key(15);
+      c.setCaptureRulerMode(RulerMode.horizontal);
+      await pointer('move', 120, 400);
+      final expected = c.captureRulerPreview!.label;
+      await key(46); // M，真实系统剪贴板。
+      await waitFor(tester, () => !c.busy);
+      expect(await driver.invokeMethod<String>('clipboardText'), expected);
+      expect(c.measurements.first.measurement.mode, RulerMode.horizontal);
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        false,
+      );
+    } finally {
+      tester.binding.shouldPropagateDevicePointerEvents = propagate;
+      await c.cancelScreenshot();
+      c.dispose();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
+  testWidgets('截图测量辅助线不进入真实 PNG 剪贴板', (tester) async {
+    final d = NativeDesktop();
+    final c = AppController(d);
+    await c.initialize();
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await c.startScreenshot();
+      final display = d.lastCapture!.displays.first;
+      c.setCaptureRulerMode(RulerMode.rectangle);
+      for (final phase in ['down', 'drag', 'up']) {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': display.id,
+          'phase': phase,
+          'x': phase == 'down' ? 60.0 : 200.0,
+          'y': phase == 'down' ? 200.0 : 300.0,
+          'warp': true,
+        });
+        await tester.pumpAndSettle();
+      }
+      expect(c.captureMeasurementPins, hasLength(1));
+      await c.useMeasurementSelection();
+      await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+      c.toggleCaptureRuler();
+      c.updateCaptureRulerPointer(120, 240);
+      c.fixCaptureRulerPreview();
+      await tester.pumpAndSettle();
+      expect(c.captureMeasurementPins, hasLength(2));
+      final frame = c.imageDocument!.frame;
+      // 导出前保留原始像素，验证原生结束会话后也无需落盘截图。
+      final expected = Uint8List(frame.width * frame.height * 4);
+      for (var y = 0; y < frame.height; y++) {
+        final start = frame.byteIndex(0, y);
+        expected.setRange(
+          y * frame.width * 4,
+          (y + 1) * frame.width * 4,
+          frame.rgba,
+          start,
+        );
+      }
+      await c.exportScreenshot(save: false);
+      await waitFor(tester, () => !c.busy);
+      final png = (await driver.invokeMethod<Uint8List>('clipboardPng'))!;
+      final codec = await ui.instantiateImageCodec(png);
+      final image = (await codec.getNextFrame()).image;
+      try {
+        final bytes = (await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        ))!;
+        expect(
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+          orderedEquals(expected),
+          reason: '测量框、测距线和尺寸标签不能写入截图',
+        );
+      } finally {
+        image.dispose();
+        codec.dispose();
+      }
+    } finally {
+      await c.cancelScreenshot();
+      c.dispose();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
   testWidgets(
     'screenshot shares capture with color picker and ruler, Cocoa C/M copy and return',
     (tester) async {

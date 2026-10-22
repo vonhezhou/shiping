@@ -395,7 +395,7 @@ void main() {
       void expectCompactToolbar() {
         final bar = tester.getRect(toolbar);
         final first = tester.getRect(
-          find.byKey(const ValueKey('copy-screenshot-size')),
+          find.byKey(const ValueKey('screenshot-ruler')),
         );
         final last = tester.getRect(
           find.byKey(const ValueKey('copy-screenshot')),

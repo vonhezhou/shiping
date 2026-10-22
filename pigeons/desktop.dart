@@ -31,6 +31,10 @@ enum EventKind {
   pointer,
   sampleColor,
   copyCaptureSize,
+  toggleCaptureRuler,
+  cancelCaptureInteraction,
+  useMeasurementSelection,
+  copyAllMeasurements,
 }
 
 enum InputPhase { move, down, drag, up, start, update, end }
@@ -124,7 +128,13 @@ class MeasurementPin {
     required this.displayId,
     required this.rect,
     required this.label,
+    this.mode,
+    this.seedX,
+    this.seedY,
   });
+  int? seedX;
+  int? seedY;
+  CaptureTool? mode;
   int id;
   int displayId;
   PixelBounds rect;
@@ -134,6 +144,7 @@ class MeasurementPin {
 class OverlayState {
   OverlayState({
     required this.sessionId,
+    this.captureSession,
     required this.tool,
     required this.tolerance,
     required this.zoom,
@@ -156,6 +167,7 @@ class OverlayState {
     this.anchored,
   });
   int sessionId;
+  bool? captureSession;
   CaptureTool tool;
   int tolerance;
   int zoom;

@@ -138,6 +138,10 @@ enum EventKind {
   pointer,
   sampleColor,
   copyCaptureSize,
+  toggleCaptureRuler,
+  cancelCaptureInteraction,
+  useMeasurementSelection,
+  copyAllMeasurements,
 }
 
 enum InputPhase {
@@ -543,11 +547,20 @@ class NativeBindings {
 
 class MeasurementPin {
   MeasurementPin({
+    this.seedX,
+    this.seedY,
+    this.mode,
     required this.id,
     required this.displayId,
     required this.rect,
     required this.label,
   });
+
+  int? seedX;
+
+  int? seedY;
+
+  CaptureTool? mode;
 
   int id;
 
@@ -559,6 +572,9 @@ class MeasurementPin {
 
   List<Object?> _toList() {
     return <Object?>[
+      seedX,
+      seedY,
+      mode,
       id,
       displayId,
       rect,
@@ -572,10 +588,13 @@ class MeasurementPin {
   static MeasurementPin decode(Object result) {
     result as List<Object?>;
     return MeasurementPin(
-      id: result[0]! as int,
-      displayId: result[1]! as int,
-      rect: result[2]! as PixelBounds,
-      label: result[3]! as String,
+      seedX: result[0] as int?,
+      seedY: result[1] as int?,
+      mode: result[2] as CaptureTool?,
+      id: result[3]! as int,
+      displayId: result[4]! as int,
+      rect: result[5]! as PixelBounds,
+      label: result[6]! as String,
     );
   }
 
@@ -588,7 +607,7 @@ class MeasurementPin {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(id, other.id) && _deepEquals(displayId, other.displayId) && _deepEquals(rect, other.rect) && _deepEquals(label, other.label);
+    return _deepEquals(seedX, other.seedX) && _deepEquals(seedY, other.seedY) && _deepEquals(mode, other.mode) && _deepEquals(id, other.id) && _deepEquals(displayId, other.displayId) && _deepEquals(rect, other.rect) && _deepEquals(label, other.label);
   }
 
   @override
@@ -599,6 +618,7 @@ class MeasurementPin {
 class OverlayState {
   OverlayState({
     required this.sessionId,
+    this.captureSession,
     required this.tool,
     required this.tolerance,
     required this.zoom,
@@ -622,6 +642,8 @@ class OverlayState {
   });
 
   int sessionId;
+
+  bool? captureSession;
 
   CaptureTool tool;
 
@@ -666,6 +688,7 @@ class OverlayState {
   List<Object?> _toList() {
     return <Object?>[
       sessionId,
+      captureSession,
       tool,
       tolerance,
       zoom,
@@ -696,26 +719,27 @@ class OverlayState {
     result as List<Object?>;
     return OverlayState(
       sessionId: result[0]! as int,
-      tool: result[1]! as CaptureTool,
-      tolerance: result[2]! as int,
-      zoom: result[3]! as int,
-      continuous: result[4]! as bool,
-      pickerActions: result[5]! as String,
-      capturePurpose: result[6]! as String,
-      pickedCount: result[7]! as int,
-      selectedPin: result[8] as int?,
-      editingPins: result[9]! as bool,
-      canUndoPins: result[10]! as bool,
-      canRedoPins: result[11]! as bool,
-      pinned: (result[12]! as List<Object?>).cast<MeasurementPin>(),
-      displayId: result[13] as int?,
-      x: result[14] as double?,
-      y: result[15] as double?,
-      label: result[16] as String?,
-      color: result[17] as NativeColor?,
-      rect: result[18] as PixelBounds?,
-      keyboard: result[19] as bool?,
-      anchored: result[20] as bool?,
+      captureSession: result[1] as bool?,
+      tool: result[2]! as CaptureTool,
+      tolerance: result[3]! as int,
+      zoom: result[4]! as int,
+      continuous: result[5]! as bool,
+      pickerActions: result[6]! as String,
+      capturePurpose: result[7]! as String,
+      pickedCount: result[8]! as int,
+      selectedPin: result[9] as int?,
+      editingPins: result[10]! as bool,
+      canUndoPins: result[11]! as bool,
+      canRedoPins: result[12]! as bool,
+      pinned: (result[13]! as List<Object?>).cast<MeasurementPin>(),
+      displayId: result[14] as int?,
+      x: result[15] as double?,
+      y: result[16] as double?,
+      label: result[17] as String?,
+      color: result[18] as NativeColor?,
+      rect: result[19] as PixelBounds?,
+      keyboard: result[20] as bool?,
+      anchored: result[21] as bool?,
     );
   }
 
@@ -728,7 +752,7 @@ class OverlayState {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(sessionId, other.sessionId) && _deepEquals(tool, other.tool) && _deepEquals(tolerance, other.tolerance) && _deepEquals(zoom, other.zoom) && _deepEquals(continuous, other.continuous) && _deepEquals(pickerActions, other.pickerActions) && _deepEquals(capturePurpose, other.capturePurpose) && _deepEquals(pickedCount, other.pickedCount) && _deepEquals(selectedPin, other.selectedPin) && _deepEquals(editingPins, other.editingPins) && _deepEquals(canUndoPins, other.canUndoPins) && _deepEquals(canRedoPins, other.canRedoPins) && _deepEquals(pinned, other.pinned) && _deepEquals(displayId, other.displayId) && _deepEquals(x, other.x) && _deepEquals(y, other.y) && _deepEquals(label, other.label) && _deepEquals(color, other.color) && _deepEquals(rect, other.rect) && _deepEquals(keyboard, other.keyboard) && _deepEquals(anchored, other.anchored);
+    return _deepEquals(sessionId, other.sessionId) && _deepEquals(captureSession, other.captureSession) && _deepEquals(tool, other.tool) && _deepEquals(tolerance, other.tolerance) && _deepEquals(zoom, other.zoom) && _deepEquals(continuous, other.continuous) && _deepEquals(pickerActions, other.pickerActions) && _deepEquals(capturePurpose, other.capturePurpose) && _deepEquals(pickedCount, other.pickedCount) && _deepEquals(selectedPin, other.selectedPin) && _deepEquals(editingPins, other.editingPins) && _deepEquals(canUndoPins, other.canUndoPins) && _deepEquals(canRedoPins, other.canRedoPins) && _deepEquals(pinned, other.pinned) && _deepEquals(displayId, other.displayId) && _deepEquals(x, other.x) && _deepEquals(y, other.y) && _deepEquals(label, other.label) && _deepEquals(color, other.color) && _deepEquals(rect, other.rect) && _deepEquals(keyboard, other.keyboard) && _deepEquals(anchored, other.anchored);
   }
 
   @override

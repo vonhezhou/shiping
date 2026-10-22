@@ -24,11 +24,15 @@ wire.MeasurementPin pinToWire(Map<String, Object?> p) => wire.MeasurementPin(
   displayId: p['displayId'] as int,
   rect: boundsToWire(p['rect']!),
   label: p['label'] as String,
+  mode: wire.CaptureTool.values.byName(p['mode'] as String? ?? 'rectangle'),
+  seedX: p['seedX'] as int?,
+  seedY: p['seedY'] as int?,
 );
 wire.OverlayState overlayToWire(Map<String, Object?> d) {
   final color = d['color'] as List?;
   return wire.OverlayState(
     sessionId: d['sessionId'] as int,
+    captureSession: d['captureSession'] as bool? ?? false,
     tool: wire.CaptureTool.values.byName(d['tool'] as String),
     tolerance: d['tolerance'] as int,
     zoom: d['zoom'] as int,
