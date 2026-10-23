@@ -4,6 +4,37 @@ import XCTest
 @testable import fruler
 
 class RunnerTests: XCTestCase {
+  func testNativeLogsRetainLatestStartupEntriesAndDrainOnce() {
+    let buffer = NativeLogBuffer(capacity: 2)
+    buffer.log(800, "lifecycle", "first")
+    buffer.log(900, "capture", "second")
+    buffer.log(1000, "storage", "third")
+    var entries: [NativeLogEntry] = []
+    buffer.attach { entries.append($0) }
+    XCTAssertEqual(entries.map { $0.message }, ["second", "third"])
+    XCTAssertEqual(entries.map { $0.level }, [900, 1000])
+    XCTAssertEqual(entries.map { $0.category }, ["capture", "storage"])
+    buffer.log(800, "desktop", "live")
+    XCTAssertEqual(entries.last?.message, "live")
+    buffer.attach { entries.append($0) }
+    XCTAssertEqual(entries.count, 3)
+  }
+
+  func testNativeLogTransportFailureBuffersWithoutRecursiveDelivery() {
+    let buffer = NativeLogBuffer(capacity: 2)
+    var deliveries = 0
+    buffer.attach { entry in
+      deliveries += 1
+      buffer.pauseAndRetain(entry)
+    }
+    buffer.log(900, "desktop", "failed")
+    buffer.log(800, "desktop", "later")
+    XCTAssertEqual(deliveries, 1)
+    var recovered: [String] = []
+    buffer.attach { recovered.append($0.message) }
+    XCTAssertEqual(recovered, ["failed", "later"])
+  }
+
   func testColorPanelUsesNativePickersAndConfirmsOnlyOnce() {
     var replies: [Int64?] = []
     let dialog = AnnotationColorDialog(initialColor: 0x7F12AB34) { replies.append($0) }

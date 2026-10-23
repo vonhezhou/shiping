@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 
 import '../core/core.dart';
 import '../platform/desktop_service.dart';
@@ -91,6 +92,7 @@ class AppController extends ChangeNotifier {
     : imageCodec = imageCodec ?? ImageDocumentCodec() {
     markup.addListener(_notify);
   }
+  static final _logger = Logger('app.controller');
   final DesktopService desktop;
   final ImageDocumentCodec imageCodec;
   final markup = AnnotationHistory();
@@ -172,7 +174,8 @@ class AppController extends ChangeNotifier {
       imageDocument = doc;
       screenshotSelection = rect;
       error = null;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Screenshot selection adjustment', e, stackTrace);
       if (_session?.id == session.id) error = '截图区域调整失败：${_message(e)}';
     } finally {
       if (_session?.id == session.id) imageLoading = false;
@@ -198,7 +201,15 @@ class AppController extends ChangeNotifier {
         loadImage: imageCodec.sourceImage,
       );
       if (_disposed || _session?.id != sessionId) return;
-      if (!await desktop.exportImage(png, save: save)) return;
+      if (!await desktop.exportImage(png, save: save)) {
+        _logger.info(
+          'Screenshot export cancelled: session=$sessionId, save=$save.',
+        );
+        return;
+      }
+      _logger.info(
+        'Screenshot export completed: session=$sessionId, save=$save.',
+      );
       _screenshots.insert(0, png);
       _screenshotBytes += png.length;
       while (_screenshots.length > 12 || _screenshotBytes > 64 * 1024 * 1024) {
@@ -208,7 +219,8 @@ class AppController extends ChangeNotifier {
       _resetSession();
       notice = save ? '截图已保存' : '截图已复制';
       error = null;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Screenshot export', e, stackTrace);
       _fail('截图导出失败：${_message(e)}');
     } finally {
       screenshotExporting = false;
@@ -219,9 +231,11 @@ class AppController extends ChangeNotifier {
   Future<void> copyScreenshot(Uint8List png) async {
     try {
       await desktop.exportImage(png, save: false);
+      _logger.info('Screenshot clipboard write completed.');
       notice = '已复制截图';
       _notify();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Screenshot clipboard write', e, stackTrace);
       _fail(_message(e));
     }
   }
@@ -422,7 +436,8 @@ class AppController extends ChangeNotifier {
       _persist();
       _notify();
       return true;
-    } on FormatException catch (e) {
+    } on FormatException catch (e, stackTrace) {
+      _logFailure('Color output validation', e, stackTrace);
       _fail(e.message);
       return false;
     }
@@ -519,9 +534,11 @@ class AppController extends ChangeNotifier {
 
   Future<void> initialize() async {
     if (_subscription != null) return;
+    _logger.info('Controller initialization started.');
     _subscription = desktop.events.listen(
       _event,
-      onError: (Object e) {
+      onError: (Object e, StackTrace stackTrace) {
+        _logFailure('Desktop event stream', e, stackTrace);
         _fail('系统工具连接中断，请重新打开 fruler。');
       },
     );
@@ -532,18 +549,24 @@ class AppController extends ChangeNotifier {
       supported = status.supported;
       final saved = await desktop.loadState();
       if (saved != null) _restore(saved);
+      _logger.info('State loaded: present=${saved != null}.');
       if (supported) {
         try {
           shortcutsAvailable = await desktop.configureShortcuts(shortcuts);
-        } catch (e) {
+        } catch (e, stackTrace) {
+          _logFailure('Initial shortcut registration', e, stackTrace);
           shortcutsAvailable = false;
           error = _message(e);
         }
       }
       if (!supported) error = '当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。';
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Controller initialization', e, stackTrace);
       error = _message(e);
     } finally {
+      _logger.info(
+        'Controller initialized: supported=$supported, permission=$permissionGranted, shortcuts=$shortcutsAvailable.',
+      );
       initializing = false;
       _notify();
     }
@@ -585,13 +608,15 @@ class AppController extends ChangeNotifier {
   Future<void> requestPermission() async {
     try {
       permissionGranted = await desktop.requestPermission();
+      _logger.info('Screen permission requested: granted=$permissionGranted.');
       if (permissionGranted) screenshotPermissionRequired = false;
       notice = permissionGranted
           ? '屏幕访问已授权，可以开始使用。'
           : '请在系统设置中允许 fruler 录制屏幕，然后返回重试。';
       error = null;
       _notify();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Permission request', e, stackTrace);
       _fail(_message(e));
     }
   }
@@ -599,7 +624,8 @@ class AppController extends ChangeNotifier {
   Future<void> openPrivacySettings() async {
     try {
       await desktop.openPrivacySettings();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Privacy settings open', e, stackTrace);
       _fail(_message(e));
     }
   }
@@ -729,7 +755,8 @@ class AppController extends ChangeNotifier {
       markup.reset();
       _notify();
       await desktop.editScreenshot(id, display.id);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Screenshot crop', e, stackTrace);
       await _abortScreenshot(e, id);
     } finally {
       _committing = false;
@@ -741,7 +768,9 @@ class AppController extends ChangeNotifier {
   Future<void> _abortScreenshot(Object error, int id) async {
     try {
       await desktop.finish(id);
-    } catch (_) {}
+    } catch (e, stackTrace) {
+      _logFailure('Screenshot abort cleanup', e, stackTrace);
+    }
     _resetSession();
     _fail('截图失败：${_message(error)}');
     await desktop.showMainWindow();
@@ -794,7 +823,11 @@ class AppController extends ChangeNotifier {
         : AppSection.ruler;
     _notify();
     try {
+      _logger.info('Capture begin requested: tool=$tool.');
       final session = await desktop.begin(tool);
+      _logger.info(
+        'Capture began: tool=$tool, session=${session.id}, displays=${session.displays.length}.',
+      );
       if (_disposed) {
         await desktop.finish(session.id);
         return;
@@ -807,7 +840,8 @@ class AppController extends ChangeNotifier {
       for (final event in pending) {
         _event(event);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Capture begin', e, stackTrace);
       busy = false;
       _session = null;
       _pending.clear();
@@ -870,6 +904,7 @@ class AppController extends ChangeNotifier {
     }
     if (event['sessionId'] != _session!.id) return;
     if (event['type'] == 'cancelled') {
+      _logger.info('Capture cancelled: session=${_session!.id}, tool=$_tool.');
       final count = _tool == 'picker' ? _pickedCount : 0;
       _resetSession();
       notice = count > 0 ? '取色已结束，已采集 $count 次' : '已取消';
@@ -1077,7 +1112,8 @@ class AppController extends ChangeNotifier {
 
   void _updateOverlay(Map<String, Object?> data) {
     unawaited(
-      desktop.updateOverlay(data).catchError((Object e) {
+      desktop.updateOverlay(data).catchError((Object e, StackTrace stackTrace) {
+        _logFailure('Overlay update', e, stackTrace);
         unawaited(_abort(e));
       }),
     );
@@ -1201,7 +1237,8 @@ class AppController extends ChangeNotifier {
         await desktop.finish(sessionId);
         notice = '已取消取色';
         error = null;
-      } catch (e) {
+      } catch (e, stackTrace) {
+        _logFailure('Color picker finish', e, stackTrace);
         _fail('无法关闭取色浮层：${_message(e)}');
       } finally {
         if (_session?.id == sessionId) _resetSession();
@@ -1228,11 +1265,13 @@ class AppController extends ChangeNotifier {
     if (action == PickerMouseAction.pickAndContinue) {
       try {
         await desktop.writeClipboard(formatColor(color));
+        _logger.info('Color clipboard write completed: session=$sessionId.');
         if (_session?.id == sessionId) {
           notice = '已连续取色 $_pickedCount 次，Esc 结束';
           error = null;
         }
-      } catch (e) {
+      } catch (e, stackTrace) {
+        _logFailure('Continuous color clipboard write', e, stackTrace);
         if (_session?.id == sessionId) error = '颜色已保存，但复制失败：${_message(e)}';
       } finally {
         if (_session?.id == sessionId) {
@@ -1278,10 +1317,14 @@ class AppController extends ChangeNotifier {
       _keyboardRectangle = false;
       try {
         await desktop.writeClipboard(measurement.label);
+        _logger.info(
+          'Measurement clipboard write completed: session=$sessionId.',
+        );
         if (_session?.id == sessionId) {
           notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
         }
-      } catch (e) {
+      } catch (e, stackTrace) {
+        _logFailure('Measurement clipboard write', e, stackTrace);
         if (_session?.id == sessionId) error = '标注已保留，但复制失败：${_message(e)}';
       } finally {
         if (_session?.id == sessionId) {
@@ -1320,7 +1363,8 @@ class AppController extends ChangeNotifier {
         notice = '已复制 ${result.label}';
         error = null;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Selected measurement clipboard write', e, stackTrace);
       if (_session?.id == session.id) error = '尺寸复制失败：${_message(e)}';
     } finally {
       if (_session?.id == session.id) _committing = false;
@@ -1456,7 +1500,8 @@ class AppController extends ChangeNotifier {
         notice = save ? '标注图片已导出' : '标注图片已复制';
         error = null;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Measurement image export', e, stackTrace);
       if (_session?.id == session.id) _fail('标注图片导出失败：${_message(e)}');
     } finally {
       if (_session?.id == session.id) {
@@ -1471,13 +1516,16 @@ class AppController extends ChangeNotifier {
     final id = _session?.id;
     try {
       await desktop.writeClipboard(text);
+      _logger.info('Clipboard write completed.');
       if (_session?.id == id) notice = '已复制 $text';
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Result clipboard write', e, stackTrace);
       if (_session?.id == id) error = '结果已保存，但复制失败：${_message(e)}';
     } finally {
       try {
         if (id != null) await desktop.finish(id);
-      } catch (e) {
+      } catch (e, stackTrace) {
+        _logFailure('Capture finish', e, stackTrace);
         if (_session?.id == id) error = '无法关闭测量浮层，请按 Esc：${_message(e)}';
       }
       if (_session?.id == id) _resetSession();
@@ -1492,7 +1540,8 @@ class AppController extends ChangeNotifier {
     final id = _session?.id;
     try {
       if (id != null) await desktop.finish(id);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logFailure('Capture abort cleanup', error, stackTrace);
       /* Preserve original failure. */
     }
     _resetSession();
@@ -1501,6 +1550,11 @@ class AppController extends ChangeNotifier {
 
   void _resetSession() {
     imageCodec.clearCaptureImages();
+    if (_session != null) {
+      _logger.info(
+        'Capture session released: session=${_session!.id}, tool=$_tool.',
+      );
+    }
     _session = null;
     imageDocument = null;
     screenshotSelection = null;
@@ -1540,7 +1594,8 @@ class AppController extends ChangeNotifier {
       recordingShortcut = true;
       _notify();
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Shortcut recording start', e, stackTrace);
       _fail(_message(e));
       return false;
     }
@@ -1549,7 +1604,8 @@ class AppController extends ChangeNotifier {
   Future<void> endShortcutRecording() async {
     try {
       shortcutsAvailable = await desktop.setShortcutRecording(false);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Shortcut recording finish', e, stackTrace);
       _fail(_message(e));
     } finally {
       recordingShortcut = false;
@@ -1580,13 +1636,15 @@ class AppController extends ChangeNotifier {
         _fail('快捷键注册失败，已保留原配置。');
         return false;
       }
+      _logger.info('Shortcut configuration completed.');
       shortcuts = candidate;
       shortcutsAvailable = true;
       error = null;
       notice = '快捷键已更新';
       _persist();
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Shortcut configuration', e, stackTrace);
       if (e is PlatformException && e.details is Map) {
         final status = (e.details as Map)['shortcuts'];
         if (status is bool) shortcutsAvailable = status;
@@ -1676,7 +1734,8 @@ class AppController extends ChangeNotifier {
         error = null;
         _notify();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Palette export', e, stackTrace);
       _fail('颜色导出失败：${_message(e)}');
     }
   }
@@ -1685,7 +1744,8 @@ class AppController extends ChangeNotifier {
     try {
       final text = await desktop.openPaletteFile();
       return text == null ? null : importPalette(text);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Palette import', e, stackTrace);
       _fail(e is FormatException ? e.message : '无法读取调色板文件：${_message(e)}');
       return null;
     }
@@ -1811,7 +1871,8 @@ class AppController extends ChangeNotifier {
         error = null;
         _notify();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Measurement history export', e, stackTrace);
       _fail('测量记录导出失败：${_message(e)}');
     }
   }
@@ -1826,10 +1887,12 @@ class AppController extends ChangeNotifier {
   Future<void> _copy(String text, {String? message}) async {
     try {
       await desktop.writeClipboard(text);
+      _logger.info('Clipboard write completed.');
       notice = message ?? '已复制 $text';
       error = null;
       _notify();
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _logFailure('Clipboard write', e, stackTrace);
       _fail(_message(e));
     }
   }
@@ -1867,7 +1930,8 @@ class AppController extends ChangeNotifier {
       'measurements': _measurements.map((r) => r.toJson()).toList(),
     });
     unawaited(
-      desktop.saveState(json).catchError((Object e) {
+      desktop.saveState(json).catchError((Object e, StackTrace stackTrace) {
+        _logFailure('State save', e, stackTrace);
         _fail('历史记录保存失败：${_message(e)}');
       }),
     );
@@ -1876,6 +1940,7 @@ class AppController extends ChangeNotifier {
   void _restore(String saved) {
     try {
       final data = jsonDecode(saved) as Map<String, dynamic>;
+      var ignoredRecords = 0;
       final annotationColors = data['annotationColors'];
       if (annotationColors is Map) {
         for (final tool in _annotationColorTools) {
@@ -1897,7 +1962,8 @@ class AppController extends ChangeNotifier {
         if (data['shortcuts'] != null) {
           shortcuts = ShortcutBindings.fromJson(data['shortcuts']);
         }
-      } catch (_) {
+      } catch (e, stackTrace) {
+        _logFailure('Shortcut restore', e, stackTrace);
         notice = '快捷键配置无效，已恢复默认值。';
       }
       continuousPicker = data['continuousPicker'] == true;
@@ -1915,7 +1981,7 @@ class AppController extends ChangeNotifier {
               restored.add(output);
             }
           } catch (_) {
-            /* Keep other valid formats and history. */
+            ignoredRecords++;
           }
         }
         if (restored.any((e) => e.enabled)) {
@@ -1962,7 +2028,7 @@ class AppController extends ChangeNotifier {
             _paletteGroups.add(entry.group);
           }
         } catch (_) {
-          /* Preserve other palette entries. */
+          ignoredRecords++;
         }
       }
       final savedZoom = data['zoom'];
@@ -1976,7 +2042,7 @@ class AppController extends ChangeNotifier {
           final c = RgbColor.fromJson(value);
           if (!_colors.contains(c)) _colors.add(c);
         } catch (_) {
-          /* Ignore a corrupt record, preserving other history. */
+          ignoredRecords++;
         }
       }
       for (final value in (data['measurements'] as List? ?? [])) {
@@ -1985,13 +2051,29 @@ class AppController extends ChangeNotifier {
             MeasurementRecord.fromJson(value as Map<String, dynamic>),
           );
         } catch (_) {
-          /* Ignore a corrupt record. */
+          ignoredRecords++;
         }
       }
+      if (ignoredRecords > 0) {
+        _logger.warning(
+          'State restored with invalid records ignored: count=$ignoredRecords.',
+        );
+      }
       if (_colors.isNotEmpty) selectedColor = _colors.first;
-    } catch (_) {
+    } catch (e, stackTrace) {
+      _logFailure('State restore', e, stackTrace);
       notice = '历史记录无法读取，已使用默认设置。';
     }
+  }
+
+  void _logFailure(String operation, Object error, StackTrace stackTrace) {
+    // 平台错误可能包含用户路径或剪贴板内容，只保留错误类型和稳定代码。
+    final code = error is PlatformException ? ', code=${error.code}' : '';
+    _logger.warning(
+      '$operation failed: errorType=${error.runtimeType}$code.',
+      null,
+      stackTrace,
+    );
   }
 
   String _message(Object e) {
@@ -2023,12 +2105,17 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _logger.info('Controller disposed.');
     _disposed = true;
     _subscription?.cancel();
     final id = _session?.id;
     _resetSession();
     if (id != null) {
-      unawaited(desktop.finish(id).catchError((Object _) {}));
+      unawaited(
+        desktop.finish(id).catchError((Object e, StackTrace stackTrace) {
+          _logFailure('Disposed capture cleanup', e, stackTrace);
+        }),
+      );
     }
     markup.removeListener(_notify);
     markup.dispose();

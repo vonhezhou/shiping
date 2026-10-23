@@ -1,4 +1,23 @@
 import Cocoa
+// 夹具独立于被测进程：即使测试应用异常退出，也恢复测试前的系统剪贴板。
+let savedPasteboard = (NSPasteboard.general.pasteboardItems ?? []).map { item in
+  Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+    item.data(forType: type).map { (type, $0) }
+  })
+}
+signal(SIGTERM, SIG_IGN)
+let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+termination.setEventHandler {
+  NSPasteboard.general.clearContents()
+  let items = savedPasteboard.map { entry in
+    let item = NSPasteboardItem()
+    for (type, data) in entry { item.setData(data, forType: type) }
+    return item
+  }
+  NSPasteboard.general.writeObjects(items)
+  exit(0)
+}
+termination.resume()
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let screen = NSScreen.screens[0].frame

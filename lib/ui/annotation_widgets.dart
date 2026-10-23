@@ -104,7 +104,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     try {
       final families = await c.desktop.availableFontFamilies();
       if (mounted) setState(() => fontFamilies = families);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      Logger('ui.annotation').warning(
+        'Font loading failed: errorType=${error.runtimeType}.',
+        null,
+        stackTrace,
+      );
       if (mounted) setState(() => fontError = '系统字体读取失败，请重新框选后重试');
     }
   }
@@ -130,7 +135,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         image = decoded;
         mosaics = pixels;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      Logger('ui.annotation').warning(
+        'Screenshot preview loading failed: errorType=${error.runtimeType}.',
+        null,
+        stackTrace,
+      );
       decoded?.dispose();
       for (final image in pixels.values) {
         image.dispose();
@@ -1343,7 +1353,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       final value = await c.desktop.pickAnnotationColor(color);
       if (!mounted) return;
       if (value != null) style(nextColor: value);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      Logger('ui.annotation').warning(
+        'Color panel failed: errorType=${error.runtimeType}.',
+        null,
+        stackTrace,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('无法打开系统调色盘，请重试')));

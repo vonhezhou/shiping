@@ -870,6 +870,47 @@ struct NativeEvent: Hashable {
   }
 }
 
+/// Generated class from Pigeon that represents data sent in messages.
+struct NativeLogEntry: Hashable {
+  var level: Int64
+  var category: String
+  var message: String
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> NativeLogEntry? {
+    let level = pigeonVar_list[0] as! Int64
+    let category = pigeonVar_list[1] as! String
+    let message = pigeonVar_list[2] as! String
+
+    return NativeLogEntry(
+      level: level,
+      category: category,
+      message: message
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      level,
+      category,
+      message,
+    ]
+  }
+  static func == (lhs: NativeLogEntry, rhs: NativeLogEntry) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return deepEqualsDesktop(lhs.level, rhs.level) && deepEqualsDesktop(lhs.category, rhs.category) && deepEqualsDesktop(lhs.message, rhs.message)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("NativeLogEntry")
+    deepHashDesktop(value: level, hasher: &hasher)
+    deepHashDesktop(value: category, hasher: &hasher)
+    deepHashDesktop(value: message, hasher: &hasher)
+  }
+}
+
 private class DesktopPigeonCodecReader: FlutterStandardReader {
   override func readValue(ofType type: UInt8) -> Any? {
     switch type {
@@ -917,6 +958,8 @@ private class DesktopPigeonCodecReader: FlutterStandardReader {
       return OverlayState.fromList(self.readValue() as! [Any?])
     case 142:
       return NativeEvent.fromList(self.readValue() as! [Any?])
+    case 143:
+      return NativeLogEntry.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
     }
@@ -966,6 +1009,9 @@ private class DesktopPigeonCodecWriter: FlutterStandardWriter {
       super.writeValue(value.toList())
     } else if let value = value as? NativeEvent {
       super.writeByte(142)
+      super.writeValue(value.toList())
+    } else if let value = value as? NativeLogEntry {
+      super.writeByte(143)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1355,6 +1401,7 @@ class DesktopHostApiSetup {
 /// Generated protocol from Pigeon that represents Flutter messages that can be called from Swift.
 protocol DesktopFlutterApiProtocol {
   func onEvent(event eventArg: NativeEvent, completion: @escaping (Result<Void, PigeonError>) -> Void)
+  func onLog(entry entryArg: NativeLogEntry, completion: @escaping (Result<Void, PigeonError>) -> Void)
 }
 class DesktopFlutterApi: DesktopFlutterApiProtocol {
   private let binaryMessenger: FlutterBinaryMessenger
@@ -1370,6 +1417,24 @@ class DesktopFlutterApi: DesktopFlutterApiProtocol {
     let channelName: String = "dev.flutter.pigeon.fruler.DesktopFlutterApi.onEvent\(messageChannelSuffix)"
     let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
     channel.sendMessage([eventArg] as [Any?]) { response in
+      guard let listResponse = response as? [Any?] else {
+        completion(.failure(createConnectionError(withChannelName: channelName)))
+        return
+      }
+      if listResponse.count > 1 {
+        let code: String = listResponse[0] as! String
+        let message: String? = nilOrValue(listResponse[1])
+        let details: String? = nilOrValue(listResponse[2])
+        completion(.failure(PigeonError(code: code, message: message, details: details)))
+      } else {
+        completion(.success(()))
+      }
+    }
+  }
+  func onLog(entry entryArg: NativeLogEntry, completion: @escaping (Result<Void, PigeonError>) -> Void) {
+    let channelName: String = "dev.flutter.pigeon.fruler.DesktopFlutterApi.onLog\(messageChannelSuffix)"
+    let channel = FlutterBasicMessageChannel(name: channelName, binaryMessenger: binaryMessenger, codec: codec)
+    channel.sendMessage([entryArg] as [Any?]) { response in
       guard let listResponse = response as? [Any?] else {
         completion(.failure(createConnectionError(withChannelName: channelName)))
         return

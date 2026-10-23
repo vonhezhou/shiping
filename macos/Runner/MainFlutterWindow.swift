@@ -4,6 +4,53 @@ import ScreenCaptureKit
 import Carbon.HIToolbox
 import UniformTypeIdentifiers
 
+/// 启动时 Dart 通道尚未就绪，保留有限条原生日志，由 Dart 统一落盘和轮转。
+final class NativeLogBuffer {
+  private let capacity: Int
+  private var pending: [NativeLogEntry] = []
+  private var delivery: ((NativeLogEntry) -> Void)?
+
+  init(capacity: Int = 128) { self.capacity = max(1, capacity) }
+
+  func log(_ level: Int64 = 800, _ category: String, _ message: String) {
+    emit(NativeLogEntry(level: level, category: category, message: message))
+  }
+
+  func attach(_ delivery: @escaping (NativeLogEntry) -> Void) {
+    self.delivery = delivery
+    let entries = pending
+    pending.removeAll()
+    for entry in entries { emit(entry) }
+  }
+
+  func pauseAndRetain(_ entry: NativeLogEntry) {
+    // 日志回调本身失败时只入队，避免递归调用已经失效的通道。
+    delivery = nil
+    emit(entry)
+  }
+
+  private func emit(_ entry: NativeLogEntry) {
+    if let delivery = delivery { delivery(entry) }
+    else {
+      pending.append(entry)
+      if pending.count > capacity { pending.removeFirst(pending.count - capacity) }
+    }
+  }
+}
+
+let nativeLogs = NativeLogBuffer()
+
+#if FRULER_INTEGRATION_TEST
+private enum NativeInputDiagnostics {
+  static private(set) var recent: [String] = []
+  static func record(_ message: String) {
+    if recent.last == message { return }
+    recent.append(message)
+    if recent.count > 8 { recent.removeFirst(recent.count - 8) }
+  }
+}
+#endif
+
 class MainFlutterWindow: NSWindow {
   private var desktopBridge: FrulerDesktopBridge?
   private var historyRequested = false
@@ -22,7 +69,12 @@ class MainFlutterWindow: NSWindow {
   func requestQuitConfirmation() -> Bool { desktopBridge?.requestQuitConfirmation() ?? false }
 
   override func awakeFromNib() {
-    guard FrulerInstance.acquire() else { NSApp.terminate(nil); return }
+    guard FrulerInstance.acquire(logFailure: { message in
+      nativeLogs.log(1000, "lifecycle", message)
+      // 实例锁失败会阻止 Flutter 启动，此时仍需在系统日志中保留诊断。
+      NSLog("fruler %@", message)
+    }) else { NSApp.terminate(nil); return }
+    nativeLogs.log(800, "lifecycle", "Native application launch started.")
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
     // Start the engine even though the history window stays hidden at launch.
@@ -87,12 +139,13 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard let self = self else { return }
       self.callbacks.onEvent(event: nativeEvent(data)) { response in
         if case .failure(let error) = response {
-          NSLog("fruler callback failed: %@", String(describing: error))
+          nativeLogs.log(1000, "desktop", "Native event callback failed: errorType=\(String(reflecting: type(of: error))).")
         }
       }
     }
     setupMenu()
     setupHotkeys()
+    nativeLogs.log(800, "desktop", "Desktop bridge installed.")
     localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       guard let self = self else { return event }
       if self.shortcutRecording {
@@ -165,6 +218,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard let self = self else { return }
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
+      case "inputDiagnostics": result(NativeInputDiagnostics.recent)
+      case "requestExit":
+        result(nil)
+        DispatchQueue.main.async { NSApp.terminate(nil) }
       case "pixelBufferCount": result(NativePixelBuffer.liveCount)
       case "createPixelFixture":
         self.integrationPixelFixture?.unpublish()
@@ -199,6 +256,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         result(true)
       case "status":
         result(["panels":self.overlays.count,"active":self.session != nil,
+          "applicationActive":NSApp.isActive,
           "permission":CGPreflightScreenCaptureAccess(),"bundleId":Bundle.main.bundleIdentifier ?? "",
           "mainVisible":self.mainWindow?.isVisible == true,"editing":self.screenshotHost != nil,
           "menu": self.statusItem?.menu?.items.map { entry -> [String: Any] in
@@ -313,6 +371,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         // 测试驱动接管浮层鼠标，避免 CGWarpMouseCursorPosition 随后生成的
         // 系统悬停事件覆盖已投递的定位、框选或拖动事件。
         for overlay in self.overlays.values { overlay.overlay.integrationDriving = true }
+        let before = "active=\(NSApp.isActive),key=\(panel.isKeyWindow)"
+        let firstMouseBefore = panel.overlay.integrationFirstMouseCount
         panel.makeKeyAndOrderFront(nil)
         panel.layoutIfNeeded()
         let point=panel.overlay.convert(NSPoint(x:x,y:y),to:nil)
@@ -324,7 +384,11 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         guard let event=NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],
           timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
           context:nil,eventNumber:CaptureOverlayView.integrationEventNumber,clickCount:1,pressure:1) else {result(nil);return}
-        panel.sendEvent(event);result(nil)
+        let hit = panel.contentView?.hitTest(point)
+        let target = hit.map { NSStringFromClass(Swift.type(of: $0)) } ?? "nil"
+        panel.sendEvent(event)
+        NativeInputDiagnostics.record("driver \(phase) session=\(self.session ?? -1) before[\(before)] after[active=\(NSApp.isActive),key=\(panel.isKeyWindow)] hit=\(target) firstMouse=\(firstMouseBefore)->\(panel.overlay.integrationFirstMouseCount) phases=\(panel.overlay.integrationInputPhases.joined(separator: ","))")
+        result(nil)
       case "scroll":
         guard let host=self.screenshotHost, let view=self.flutterController?.view,
           let x=args["x"] as? Double, let y=args["y"] as? Double,
@@ -405,12 +469,24 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   #endif
 
   func initialize(completion: @escaping (Result<NativeStatus, Error>) -> Void) {
-    completion(.success(NativeStatus(permission: CGPreflightScreenCaptureAccess(), shortcuts: hasShortcuts)))
+    nativeLogs.attach { [weak self] entry in
+      guard let self = self else { nativeLogs.pauseAndRetain(entry); return }
+      self.callbacks.onLog(entry: entry) { response in
+        if case .failure = response {
+          nativeLogs.pauseAndRetain(entry)
+          NSLog("fruler native log delivery failed; buffered for retry")
+        }
+      }
+    }
+    let permission = CGPreflightScreenCaptureAccess()
+    nativeLogs.log(800, "desktop", "Desktop initialized: permission=\(permission), shortcuts=\(hasShortcuts).")
+    completion(.success(NativeStatus(permission: permission, shortcuts: hasShortcuts)))
   }
 
   func configureShortcuts(bindings: NativeBindings, completion: @escaping (Result<Bool, Error>) -> Void) {
     let args: [String: Any] = bindings.local
     guard let requested = NativeShortcutBindings(args), requested.isValid else {
+      nativeLogs.log(900, "shortcuts", "Shortcut configuration rejected: invalid binding.")
       completion(.failure(PigeonError(code: "shortcut_invalid", message: "请使用不同的字母或数字组合，并避开系统退出、编辑和截图快捷键。", details: nil)))
       return
     }
@@ -421,15 +497,18 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     if shortcutRecording || registerHotkeys(requested) {
       shortcuts = requested
       updateMenuShortcuts()
+      nativeLogs.log(800, "shortcuts", "Shortcut configuration completed.")
       completion(.success(true))
     } else {
       if hadShortcuts { _ = registerHotkeys(previous) }
       updateMenuShortcuts()
+      nativeLogs.log(900, "shortcuts", "Shortcut configuration failed: conflict, restored=\(hasShortcuts).")
       completion(.failure(PigeonError(code: "shortcut_conflict", message: "快捷键已被占用", details: ["shortcuts": hasShortcuts])))
     }
   }
 
   func setShortcutRecording(recording: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
+    nativeLogs.log(800, "shortcuts", "Shortcut recording changed: recording=\(recording).")
     shortcutRecording = recording
     if shortcutRecording {
       pauseApplicationMenuKeys()
@@ -463,10 +542,13 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   func requestPermission(completion: @escaping (Result<Bool, Error>) -> Void) {
-    completion(.success(CGRequestScreenCaptureAccess()))
+    let granted = CGRequestScreenCaptureAccess()
+    nativeLogs.log(800, "desktop", "Screen permission requested: granted=\(granted).")
+    completion(.success(granted))
   }
 
   func showMainWindow(completion: @escaping (Result<Void, Error>) -> Void) {
+    nativeLogs.log(800, "desktop", "Main window requested.")
     presentMainWindow(); completion(.success(()))
   }
 
@@ -478,11 +560,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   func loadState(completion: @escaping (Result<String?, Error>) -> Void) {
-    completion(.success(UserDefaults.standard.string(forKey: stateKey)))
+    let saved = UserDefaults.standard.string(forKey: stateKey)
+    nativeLogs.log(800, "storage", "State loaded: present=\(saved != nil).")
+    completion(.success(saved))
   }
 
   func saveState(json: String, completion: @escaping (Result<Void, Error>) -> Void) {
     UserDefaults.standard.set(json, forKey: stateKey)
+    nativeLogs.log(500, "storage", "State saved.")
     completion(.success(()))
   }
 
@@ -493,6 +578,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   func exportImage(png: FlutterStandardTypedData, save: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
     let bytes = png
+    nativeLogs.log(800, "export", "Image export requested: save=\(save).")
     if save {
       let captureID = session
       for panel in overlays.values { panel.orderOut(nil) }
@@ -512,13 +598,27 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       #endif
       panel.allowedContentTypes = [.png]
       NSApp.activate(ignoringOtherApps:true)
-      guard panel.runModal() == .OK, let url = panel.url else { completion(.success(false)); return }
-      do { try bytes.data.write(to:url,options:.atomic); completion(.success(true)) }
-      catch { completion(.failure(PigeonError(code:"image_export_failed",message:error.localizedDescription,details:nil))) }
+      guard panel.runModal() == .OK, let url = panel.url else {
+        nativeLogs.log(800, "export", "File export cancelled.")
+        completion(.success(false)); return
+      }
+      do {
+        try bytes.data.write(to:url,options:.atomic)
+        nativeLogs.log(800, "export", "Image file export completed.")
+        completion(.success(true))
+      } catch {
+        nativeLogs.log(1000, "export", "Image file export failed: errorType=\(String(reflecting: type(of: error))).")
+        completion(.failure(PigeonError(code:"image_export_failed",message:error.localizedDescription,details:nil)))
+      }
     } else {
       NSPasteboard.general.clearContents()
-      if NSPasteboard.general.setData(bytes.data,forType:.png) { completion(.success(true)) }
-      else { completion(.failure(PigeonError(code:"clipboard_failed",message:"无法写入图片剪贴板",details:nil))) }
+      if NSPasteboard.general.setData(bytes.data,forType:.png) {
+        nativeLogs.log(800, "export", "Image clipboard write completed.")
+        completion(.success(true))
+      } else {
+        nativeLogs.log(1000, "export", "Image clipboard write failed.")
+        completion(.failure(PigeonError(code:"clipboard_failed",message:"无法写入图片剪贴板",details:nil)))
+      }
     }
   }
 
@@ -528,7 +628,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     panel.allowsMultipleSelection = false
     panel.canChooseDirectories = false
     NSApp.activate(ignoringOtherApps: true)
-    guard panel.runModal() == .OK, let url = panel.url else { completion(.success(nil)); return }
+    guard panel.runModal() == .OK, let url = panel.url else {
+      nativeLogs.log(800, "storage", "Palette import cancelled.")
+      completion(.success(nil)); return
+    }
     do {
       let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
       guard size <= 2 * 1024 * 1024 else {
@@ -538,8 +641,12 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard text.utf8.count <= 2 * 1024 * 1024 else {
         completion(.failure(PigeonError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil))); return
       }
+      nativeLogs.log(800, "storage", "Palette import read completed.")
       completion(.success(text))
-    } catch { completion(.failure(PigeonError(code: "import_failed", message: error.localizedDescription, details: nil))) }
+    } catch {
+      nativeLogs.log(1000, "storage", "Palette import read failed: errorType=\(String(reflecting: type(of: error))).")
+      completion(.failure(PigeonError(code: "import_failed", message: error.localizedDescription, details: nil)))
+    }
   }
 
   func saveTextFile(filename: String, text: String, completion: @escaping (Result<Bool, Error>) -> Void) {
@@ -548,9 +655,18 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     panel.allowedContentTypes = [UTType(filenameExtension: (filename as NSString).pathExtension) ?? .plainText]
     panel.canCreateDirectories = true
     NSApp.activate(ignoringOtherApps: true)
-    guard panel.runModal() == .OK, let url = panel.url else { completion(.success(false)); return }
-    do { try Data(text.utf8).write(to: url, options: .atomic); completion(.success(true)) }
-    catch { completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil))) }
+    guard panel.runModal() == .OK, let url = panel.url else {
+      nativeLogs.log(800, "export", "File export cancelled.")
+      completion(.success(false)); return
+    }
+    do {
+      try Data(text.utf8).write(to: url, options: .atomic)
+      nativeLogs.log(800, "export", "Text file export completed.")
+      completion(.success(true))
+    } catch {
+      nativeLogs.log(1000, "export", "File export failed: errorType=\(String(reflecting: type(of: error))).")
+      completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil)))
+    }
   }
 
   func exportAnnotations(sessionId: Int64, displayId: Int64, annotations: [MeasurementPin], save: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
@@ -573,17 +689,32 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       panel.allowedContentTypes = [.png]
       panel.canCreateDirectories = true
       NSApp.activate(ignoringOtherApps: true)
-      guard panel.runModal() == .OK, let url = panel.url else { completion(.success(false)); return }
-      do { try png.write(to: url, options: .atomic); completion(.success(true)) }
-      catch { completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil))) }
+      guard panel.runModal() == .OK, let url = panel.url else {
+        nativeLogs.log(800, "export", "File export cancelled.")
+        completion(.success(false)); return
+      }
+      do {
+        try png.write(to: url, options: .atomic)
+        nativeLogs.log(800, "export", "Measurement image file export completed.")
+        completion(.success(true))
+      } catch {
+        nativeLogs.log(1000, "export", "File export failed: errorType=\(String(reflecting: type(of: error))).")
+        completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil)))
+      }
     } else {
       NSPasteboard.general.clearContents()
-      if NSPasteboard.general.setData(png, forType: .png) { completion(.success(true)) }
-      else { completion(.failure(PigeonError(code: "clipboard_failed", message: "无法写入图片剪贴板", details: nil))) }
+      if NSPasteboard.general.setData(png, forType: .png) {
+        nativeLogs.log(800, "export", "Measurement image clipboard write completed.")
+        completion(.success(true))
+      } else {
+        nativeLogs.log(1000, "export", "Measurement image clipboard write failed.")
+        completion(.failure(PigeonError(code: "clipboard_failed", message: "无法写入图片剪贴板", details: nil)))
+      }
     }
   }
 
   func begin(tool: CaptureTool, completion: @escaping (Result<CaptureReply, Error>) -> Void) {
+    nativeLogs.log(800, "capture", "Capture requested: tool=\(tool.name).")
     capture(tool: tool.name, completion: completion)
   }
 
@@ -613,6 +744,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     controller.view.frame = panel.overlay.bounds
     controller.view.autoresizingMask = [.width,.height]
     panel.overlay.addSubview(controller.view)
+    nativeLogs.log(800, "capture", "Screenshot editor attached: session=\(id).")
     screenshotHost = panel
     panel.makeKeyAndOrderFront(nil)
     panel.makeFirstResponder(controller.view)
@@ -630,6 +762,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   func finish(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void) {
+    nativeLogs.log(800, "capture", "Capture finish requested: session=\(sessionId).")
     if Int(sessionId) == session { closeSession() }
     completion(.success(()))
   }
@@ -640,6 +773,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       return
     }
     guard CGPreflightScreenCaptureAccess() else {
+      nativeLogs.log(900, "capture", "Capture rejected: screen permission required.")
       completion(.failure(PigeonError(code: "screen_permission", message: "请先允许 fruler 录制屏幕", details: nil)))
       return
     }
@@ -656,15 +790,20 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     mainWindow?.orderOut(nil)
     captureTask = Task { @MainActor [weak self] in
       guard let self = self else { return }
+      var captureStage = "compositor_wait"
       do {
         // Allow the compositor to remove the dashboard before taking snapshots.
         try await Task.sleep(nanoseconds: 160_000_000)
         try Task.checkCancellation()
+        captureStage = "shareable_content"
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let screens = NSScreen.screens
+        nativeLogs.log(800, "capture", "Capture displays discovered: session=\(id), screens=\(screens.count), shareableDisplays=\(content.displays.count).")
         let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         var captures: [DisplaySnapshot] = []
-        for screen in NSScreen.screens {
+        for screen in screens {
           try Task.checkCancellation()
+          captureStage = "display_match"
           guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
                 let display = content.displays.first(where: { $0.displayID == number.uint32Value }) else { continue }
           let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
@@ -675,11 +814,15 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           config.showsCursor = false
           config.pixelFormat = kCVPixelFormatType_32BGRA
           config.colorSpaceName = CGColorSpace.sRGB
+          captureStage = "screen_image"
           let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+          captureStage = "snapshot_normalization"
           captures.append(try DisplaySnapshot(screen: screen, displayID: display.displayID, image: image))
         }
         try Task.checkCancellation()
+        captureStage = "display_validation"
         guard self.session == id, !captures.isEmpty else { throw CaptureFailure.unavailable }
+        captureStage = "panel_setup"
         let targets = CaptureRegionTarget.visibleWindows()
         for snapshot in captures {
           let panel = CapturePanel(snapshot: snapshot, tool: tool)
@@ -695,6 +838,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           self.overlays[snapshot.displayID] = panel
         }
         self.preparing = false
+        nativeLogs.log(800, "capture", "Capture prepared: session=\(id), tool=\(tool), displays=\(captures.count).")
         NSApp.activate(ignoringOtherApps: true)
         for panel in self.overlays.values { panel.orderFrontRegardless() }
         let pointer = NSEvent.mouseLocation
@@ -708,6 +852,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
       } catch {
         let cancelled = error is CancellationError || self.session != id
+        nativeLogs.log(cancelled ? 800 : 1000, "capture", "Capture failed: session=\(id), stage=\(captureStage), cancelled=\(cancelled), errorType=\(String(reflecting: type(of: error))).")
         if self.session == id { self.closeSession() }
         completion(.failure(PigeonError(code: cancelled ? "capture_cancelled" : "capture_failed",
           message: cancelled ? "已取消截图" : "屏幕截图失败：\(error.localizedDescription)", details: nil)))
@@ -717,6 +862,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   private func cancelSession() {
     guard let id = session else { return }
+    nativeLogs.log(800, "capture", "Capture cancelled: session=\(id).")
     captureTask?.cancel()
     closeSession()
     sink?(["type": "cancelled", "sessionId": id])
@@ -731,6 +877,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   private func closeSession() {
+    nativeLogs.log(800, "capture", "Capture panels closed: session=\(session ?? -1), panels=\(overlays.count).")
     session = nil
     colorDialog?.cancel(nil)
     colorDialog = nil
@@ -824,7 +971,11 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       bridge.emitActivation(key.id == 1 ? "picker" : key.id == 2 ? "rectangle" : "screenshot")
       return noErr
     }, 1, &spec, context, &hotkeyHandler)
-    guard status == noErr else { return }
+    guard status == noErr else {
+      nativeLogs.log(1000, "shortcuts", "Hotkey handler installation failed: status=\(status).")
+      return
+    }
+    nativeLogs.log(800, "shortcuts", "Hotkey handler installed.")
     updateMenuShortcuts()
   }
 
@@ -842,7 +993,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       var ref: EventHotKeyRef?
       let error = RegisterEventHotKey(chord.keyCode, chord.carbonModifiers,
         EventHotKeyID(signature: signature, id: id), GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &ref)
-      guard error == noErr, let value = ref else { unregisterHotkeys(); return false }
+      guard error == noErr, let value = ref else {
+        nativeLogs.log(900, "shortcuts", "Hotkey registration failed: id=\(id), status=\(error).")
+        unregisterHotkeys(); return false
+      }
       hotkeys.append(value)
     }
     hasShortcuts = hotkeys.count == 3
@@ -979,8 +1133,12 @@ private struct DisplaySnapshot {
     let pixelHeight = image.height
     width = pixelWidth
     height = pixelHeight
-    guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { throw CaptureFailure.unavailable }
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB) else {
+      nativeLogs.log(1000, "capture", "Snapshot unavailable: stage=color_space.")
+      throw CaptureFailure.unavailable
+    }
     guard let pixels = NativePixelBuffer(byteCount: pixelWidth * pixelHeight * 4) else {
+      nativeLogs.log(1000, "capture", "Snapshot unavailable: stage=pixel_allocation.")
       throw CaptureFailure.unavailable
     }
     self.pixels = pixels
@@ -988,14 +1146,20 @@ private struct DisplaySnapshot {
       guard let context = CGContext(data: pixels.data, width: pixelWidth, height: pixelHeight,
         bitsPerComponent: 8, bytesPerRow: pixelWidth * 4, space: space,
         bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
+        else {
+          nativeLogs.log(1000, "capture", "Snapshot unavailable: stage=bitmap_context.")
+          return nil
+        }
       context.interpolationQuality = .none
       context.setFillColor(CGColor(gray: 1, alpha: 1))
       context.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
       context.draw(image, in: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
       return context.makeImage()
     }()
-    guard let normalized = normalized else { throw CaptureFailure.unavailable }
+    guard let normalized = normalized else {
+      nativeLogs.log(1000, "capture", "Snapshot unavailable: stage=normalized_image.")
+      throw CaptureFailure.unavailable
+    }
     self.image = normalized
   }
 
@@ -1092,6 +1256,17 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   #if FRULER_INTEGRATION_TEST
   static let integrationEventNumber = 0x4652554C
   var integrationDriving = false
+  private(set) var integrationFirstMouseCount = 0
+  private(set) var integrationInputPhases: [String] = []
+
+  private func recordIntegrationPhase(_ phase: String, rejected: Bool) {
+    let entry = "\(phase):\(rejected ? "noise" : "received")"
+    if integrationInputPhases.last != entry {
+      integrationInputPhases.append(entry)
+      if integrationInputPhases.count > 8 { integrationInputPhases.removeFirst() }
+    }
+    NativeInputDiagnostics.record("overlay tool=\(tool) phase=\(phase) noise=\(rejected)")
+  }
   #endif
 
   private func ignoresIntegrationNoise(_ event: NSEvent) -> Bool {
@@ -1103,6 +1278,15 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   }
   override var isFlipped: Bool { true }
   override var acceptsFirstResponder: Bool { true }
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+    // 屏幕工具应立即响应首击，不能让窗口激活过程吞掉取色或选区的第一次点击。
+    #if FRULER_INTEGRATION_TEST
+    integrationFirstMouseCount += 1
+    NativeInputDiagnostics.record("firstMouse tool=\(tool) count=\(integrationFirstMouseCount) accepted=true active=\(NSApp.isActive) key=\(window?.isKeyWindow == true)")
+    #endif
+    return true
+  }
 
   override func updateTrackingAreas() {
     if let area = tracking { removeTrackingArea(area) }
@@ -1161,7 +1345,16 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     if pinDrag == nil { hoverLocation = nil; NSCursor.arrow.set() }
   }
   override func mouseMoved(with event: NSEvent) { send(event, phase: "move") }
-  override func mouseDown(with event: NSEvent) { if ignoresIntegrationNoise(event) { return }; window?.makeKey(); send(event, phase: "down") }
+  override func mouseDown(with event: NSEvent) {
+    if ignoresIntegrationNoise(event) {
+      #if FRULER_INTEGRATION_TEST
+      recordIntegrationPhase("down", rejected: true)
+      #endif
+      return
+    }
+    window?.makeKey()
+    send(event, phase: "down")
+  }
   override func mouseDragged(with event: NSEvent) { send(event, phase: "drag") }
   override func mouseUp(with event: NSEvent) { send(event, phase: "up") }
   override func rightMouseDown(with event: NSEvent) { if ignoresIntegrationNoise(event) { return }; if tool == "picker" { send(event,phase:"down") } else { onCancel?() } }
@@ -1214,6 +1407,9 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   }
 
   private func send(_ event: NSEvent, phase: String) {
+    #if FRULER_INTEGRATION_TEST
+    recordIntegrationPhase(phase, rejected: ignoresIntegrationNoise(event))
+    #endif
     if ignoresIntegrationNoise(event) { return }
     let location = convert(event.locationInWindow, from: nil)
     releaseCursor()

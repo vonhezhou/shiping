@@ -7,6 +7,7 @@ class AppDelegate: FlutterAppDelegate {
   private var reopenObserver: NSObjectProtocol?
   override func applicationDidFinishLaunching(_ notification: Notification) {
     super.applicationDidFinishLaunching(notification)
+    nativeLogs.log(800, "lifecycle", "Native application launch completed.")
     mainFlutterWindow?.orderOut(nil)
     reopenObserver = DistributedNotificationCenter.default().addObserver(
       forName: FrulerInstance.reopenNotification, object: nil, queue: .main
@@ -17,7 +18,9 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    (mainFlutterWindow as? MainFlutterWindow)?.requestQuitConfirmation() == true ? .terminateLater : .terminateNow
+    nativeLogs.log(800, "lifecycle", "Application termination requested.")
+    _ = (mainFlutterWindow as? MainFlutterWindow)?.requestQuitConfirmation()
+    return super.applicationShouldTerminate(sender)
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -52,7 +55,7 @@ enum FrulerInstance {
     if failure == EWOULDBLOCK { return nil }
     throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
   }
-  static func acquire() -> Bool {
+  static func acquire(logFailure: (String) -> Void) -> Bool {
     if descriptor >= 0 { return true }
     do {
       let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -79,6 +82,8 @@ enum FrulerInstance {
       DistributedNotificationCenter.default().postNotificationName(reopenNotification, object: nil, userInfo: nil, deliverImmediately: true)
       return false
     } catch {
+      let message = "Single instance initialization failed: errorType=\(String(reflecting: type(of: error)))."
+      logFailure(message)
       let alert = NSAlert()
       alert.messageText = "无法检查 fruler 的运行实例"
       alert.informativeText = "\(error.localizedDescription)\n请退出其他 fruler 后重试。"

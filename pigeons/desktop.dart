@@ -232,6 +232,17 @@ class NativeEvent {
   PixelBounds? suggestedRect;
 }
 
+class NativeLogEntry {
+  NativeLogEntry({
+    required this.level,
+    required this.category,
+    required this.message,
+  });
+  int level;
+  String category;
+  String message;
+}
+
 @HostApi()
 abstract class DesktopHostApi {
   @async
@@ -284,4 +295,5 @@ abstract class DesktopHostApi {
 @FlutterApi()
 abstract class DesktopFlutterApi {
   void onEvent(NativeEvent event);
+  void onLog(NativeLogEntry entry);
 }

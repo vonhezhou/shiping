@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 
 import '../core/core.dart';
 import 'desktop.g.dart' as wire;
@@ -78,6 +79,7 @@ class MacDesktopService implements DesktopService {
     wire.DesktopFlutterApi.setUp(_NativeCallbacks(_events));
   }
   final PixelFrame Function(wire.DisplayFrame) _readFrame;
+  static final _logger = Logger('platform.desktop');
   final _api = wire.DesktopHostApi();
   @override
   Future<int?> pickAnnotationColor(int initialColor) =>
@@ -119,12 +121,23 @@ class MacDesktopService implements DesktopService {
         for (final d in reply.displays)
           CapturedDisplay(id: d.id, name: d.name, frame: _readFrame(d)),
       ]);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _logger.warning(
+        'Capture frame acquisition failed: session=${reply.sessionId}, '
+        'errorType=${error.runtimeType}.',
+        null,
+        stackTrace,
+      );
       // Don't strand native overlays if decoding/acquiring any display fails.
       try {
         await _api.finish(reply.sessionId);
-      } catch (_) {
-        /* Keep original error. */
+      } catch (error, stackTrace) {
+        _logger.warning(
+          'Capture acquisition cleanup failed: session=${reply.sessionId}, '
+          'errorType=${error.runtimeType}.',
+          null,
+          stackTrace,
+        );
       }
       rethrow;
     }
@@ -189,6 +202,13 @@ class _NativeCallbacks implements wire.DesktopFlutterApi {
   final StreamController<Map<Object?, Object?>> events;
   @override
   void onEvent(wire.NativeEvent event) => events.add(eventFromWire(event));
+  @override
+  void onLog(wire.NativeLogEntry entry) {
+    final level =
+        Level.LEVELS.where((l) => l.value == entry.level).firstOrNull ??
+        Level('NATIVE', entry.level);
+    Logger('native.${entry.category}').log(level, entry.message);
+  }
 }
 
 class UnsupportedDesktopService extends DesktopService {

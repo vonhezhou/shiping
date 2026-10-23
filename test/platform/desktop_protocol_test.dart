@@ -5,11 +5,51 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/platform/desktop_service.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop.g.dart' as wire;
+import 'package:logging/logging.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+
+  test('原生日志按类型转入统一日志，不进入工具事件流', () async {
+    final previousLevel = Logger.root.level;
+    Logger.root.level = Level.ALL;
+    final records = <LogRecord>[];
+    final logs = Logger.root.onRecord.listen(records.add);
+    final service = MacDesktopService();
+    final events = <Map<Object?, Object?>>[];
+    final subscription = service.events.listen(events.add);
+    try {
+      final complete = Completer<void>();
+      final codec = wire.DesktopHostApi.pigeonChannelCodec;
+      await messenger.handlePlatformMessage(
+        'dev.flutter.pigeon.fruler.DesktopFlutterApi.onLog',
+        codec.encodeMessage([
+          wire.NativeLogEntry(
+            level: Level.WARNING.value,
+            category: 'capture',
+            message: 'Capture cancelled: session=7.',
+          ),
+        ]),
+        (reply) {
+          expect(codec.decodeMessage(reply), isEmpty);
+          complete.complete();
+        },
+      );
+      await complete.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(records.single.loggerName, 'native.capture');
+      expect(records.single.level, Level.WARNING);
+      expect(records.single.message, 'Capture cancelled: session=7.');
+      expect(events, isEmpty);
+    } finally {
+      await logs.cancel();
+      await subscription.cancel();
+      Logger.root.level = previousLevel;
+      wire.DesktopFlutterApi.setUp(null);
+    }
+  });
 
   test('原生调色盘保留 ARGB 透明度，取消返回 null', () async {
     final channel = BasicMessageChannel<Object?>(

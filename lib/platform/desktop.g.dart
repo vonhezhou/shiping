@@ -889,6 +889,56 @@ class NativeEvent {
   int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
 }
 
+class NativeLogEntry {
+  NativeLogEntry({
+    required this.level,
+    required this.category,
+    required this.message,
+  });
+
+  int level;
+
+  String category;
+
+  String message;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      level,
+      category,
+      message,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static NativeLogEntry decode(Object result) {
+    result as List<Object?>;
+    return NativeLogEntry(
+      level: result[0]! as int,
+      category: result[1]! as String,
+      message: result[2]! as String,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! NativeLogEntry || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(level, other.level) && _deepEquals(category, other.category) && _deepEquals(message, other.message);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
 
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
@@ -939,6 +989,9 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is NativeEvent) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
+    }    else if (value is NativeLogEntry) {
+      buffer.putUint8(143);
+      writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
     }
@@ -979,6 +1032,8 @@ class _PigeonCodec extends StandardMessageCodec {
         return OverlayState.decode(readValue(buffer)!);
       case 142:
         return NativeEvent.decode(readValue(buffer)!);
+      case 143:
+        return NativeLogEntry.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -1376,6 +1431,8 @@ abstract class DesktopFlutterApi {
 
   void onEvent(NativeEvent event);
 
+  void onLog(NativeLogEntry entry);
+
   static void setUp(DesktopFlutterApi? api, {BinaryMessenger? binaryMessenger, String messageChannelSuffix = '',}) {
     messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
     {
@@ -1390,6 +1447,27 @@ abstract class DesktopFlutterApi {
           final NativeEvent arg_event = args[0]! as NativeEvent;
           try {
             api.onEvent(arg_event);
+            return wrapResponse(empty: true);
+          } on PlatformException catch (e) {
+            return wrapResponse(error: e);
+          }          catch (e) {
+            return wrapResponse(error: PlatformException(code: 'error', message: e.toString()));
+          }
+        });
+      }
+    }
+    {
+      final pigeonVar_channel = BasicMessageChannel<Object?>(
+          'dev.flutter.pigeon.fruler.DesktopFlutterApi.onLog$messageChannelSuffix', pigeonChannelCodec,
+          binaryMessenger: binaryMessenger);
+      if (api == null) {
+        pigeonVar_channel.setMessageHandler(null);
+      } else {
+        pigeonVar_channel.setMessageHandler((Object? message) async {
+          final List<Object?> args = message! as List<Object?>;
+          final NativeLogEntry arg_entry = args[0]! as NativeLogEntry;
+          try {
+            api.onLog(arg_entry);
             return wrapResponse(empty: true);
           } on PlatformException catch (e) {
             return wrapResponse(error: e);

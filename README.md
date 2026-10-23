@@ -54,6 +54,12 @@ macOS 屏幕取色、测量与截图标注工具。Flutter 负责历史、设置
 
 每次工具会话冻结屏幕快照，退出后释放，不持续录屏、不上传。只有主动复制或保存才输出图片。颜色、测量历史及偏好保存在本机；截图历史仅存在内存中。Debug / Release 的应用标识不同、可分别运行；同一标识只允许一个实例。Windows / Linux 尚未实现。
 
+### 本机诊断日志
+
+Dart 与 Swift 的诊断统一写入沙盒 Application Support 下的 `fruler/logs/fruler.log`，每 10 MiB 轮转，保留 3 份旧日志。使用 `logging` / `logging_appenders`，Debug 同时输出控制台；Release 默认记录 INFO 及以上。启动、权限、工具会话、快捷键、配置加载保存、导出与失败恢复均有诊断，Flutter、平台和异步未处理异常保留错误类型及堆栈。日志不记录截图像素、剪贴板正文、完整偏好 JSON 或用户文件名。
+
+macOS 沙盒路径通常为 `~/Library/Containers/<应用标识>/Data/Library/Application Support/<应用目录>/fruler/logs/`；集成测试使用独立标识。Swift 通过类型化回调交给 Dart 单独写入和轮转，启动前暂存有界日志队列。日志目录不可写时应用继续启动；运行中写入失败则停用文件输出，避免错误递归。
+
 ## 开发与运行
 
 当前本机验证 Flutter 3.47.7 / Dart 3.13.4 和 Xcode，Apple Silicon；Intel 尚未实机验收。
@@ -104,15 +110,16 @@ python3 tool/test_macos_integration.py
 python3 tool/test_color_samples.py
 ```
 
-集成测试使用独立的 `dev.fruler.integration` 标识和沙盒，需要本机允许录屏。它实际调用 ScreenCaptureKit，向原生 NSPanel 发送 Cocoa 鼠标 / 键盘事件，检查：
+集成测试使用独立的 `dev.fruler.integration` 标识和沙盒，需要本机允许录屏并保持桌面解锁。锁屏时 ScreenCaptureKit 可能返回空的显示器列表，不能作为验收通过。它实际调用 ScreenCaptureKit，向原生 NSPanel 发送 Cocoa 鼠标 / 键盘事件，检查：
 
 - FFI 真实读取带行间填充的原生缓冲，原生注销 / 释放会话后旧像素视图仍有效，失效句柄和长度不符被拒绝；读取 isolate 退出后验证原生终结器释放最后一个引用。
 - 选区前后窗口编号不变，主窗口始终隐藏；标注后调整选区仍在本次会话中。
 - 九种标注工具、文字、撤销 / 重做，以及真实系统 PNG 剪贴板。
 - 取消保存面板继续标注；复制完成、Esc 取消、取色和测量结束后不重新打开主窗口。
+- Swift 与 Dart 日志落入同一沙盒文件、真实退出握手刷新日志，以及未激活浮层的首次点击仍立即取色。
 
 颜色样本回归通过真实系统鼠标拖放保存色块、点击恢复，并启动第二个应用进程验证自定义色块及画笔当前颜色仍在；夹具需要辅助功能权限，测试前后备份和恢复系统颜色样本文件。
 
-测试会备份和恢复剪贴板。没有录屏权限时，真实采集用例明确失败，不以跳过替代通过。输入驱动仅在 `FRULER_INTEGRATION_TEST` 条件下编译，普通 Debug / Release 不包含它。运行集成测试后，正常 `flutter run -d macos` 会重新构建普通应用。
+测试会备份和恢复剪贴板，外部 AppKit 夹具也会在退出时恢复启动前的剪贴板，以覆盖测试应用异常退出。没有录屏权限时，真实采集用例明确失败，不以跳过替代通过。输入驱动仅在 `FRULER_INTEGRATION_TEST` 条件下编译，普通 Debug / Release 不包含它。运行集成测试后，正常 `flutter run -d macos` 会重新构建普通应用。
 
 UI 回归覆盖默认 1100×760、最小 920×680 和鼠标输入。跨显示器混合缩放、不同全屏应用及真实物理快捷键还应进行额外实机验收。

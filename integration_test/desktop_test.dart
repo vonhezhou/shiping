@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:logging/logging.dart';
 import 'package:fruler/app/app_controller.dart';
+import 'package:fruler/app/logging/app_logging.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop_service.dart';
 import 'package:fruler/platform/annotation_renderer.dart';
@@ -70,35 +74,53 @@ Future<void> setParameterSlider(
   expect(tester.widget<Slider>(finder).value, closeTo(value, .5));
 }
 
+/// 只转发真实滚轮，避免临时开关真实设备输入丢失 Added/Removed 生命周期。
+class NativeScrollDispatcher implements HitTestDispatcher {
+  NativeScrollDispatcher(this.binding);
+  final IntegrationTestWidgetsFlutterBinding binding;
+  @override
+  void dispatchEvent(PointerEvent event, HitTestResult result) {
+    if (event is! PointerScrollEvent) return;
+    // integration_test 驱动预先创建了绑定，无法替换为子类；这里只桥接滚轮信号。
+    // ignore: invalid_use_of_protected_member
+    binding.withPointerEventSource(
+      TestBindingEventSource.test,
+      () => binding.dispatchEvent(event, result),
+    );
+  }
+}
+
 Future<void> nativeWheel(
   WidgetTester tester,
   Offset position,
   int delta,
   int expectedWidth,
 ) async {
-  final old = tester.binding.shouldPropagateDevicePointerEvents;
-  tester.binding.shouldPropagateDevicePointerEvents = true;
-  try {
-    await driver.invokeMethod<void>('scroll', {
-      'x': position.dx,
-      'y': position.dy,
-      'delta': delta,
-    });
-    // An unchanged width must still wait for the native event to arrive.
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 150)),
-    );
-    await tester.pump();
-    await waitFor(
-      tester,
-      () => find
-          .byTooltip('线宽 $expectedWidth pt · 滚轮 / 1、2 / [、]')
-          .evaluate()
-          .isNotEmpty,
-    );
-  } finally {
-    tester.binding.shouldPropagateDevicePointerEvents = old;
-  }
+  // WidgetTester 在每个用例开始时重置 dispatcher，需在真实滚轮验收前接入。
+  final binding = tester.binding as IntegrationTestWidgetsFlutterBinding;
+  binding.deviceEventDispatcher = NativeScrollDispatcher(binding);
+  // 桌面测试视口可能居中缩放，Cocoa 接收的是 FlutterView 的实际逻辑坐标。
+  final view = tester.binding.renderViews.firstWhere(
+    (view) => view.flutterView.viewId == tester.view.viewId,
+  );
+  final nativePosition = tester.binding.localToGlobal(position, view);
+  await driver.invokeMethod<void>('scroll', {
+    'x': nativePosition.dx,
+    'y': nativePosition.dy,
+    'delta': delta,
+  });
+  // 数值不变时也需等真实事件到达，不能把原有提示当作处理完成。
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 150)),
+  );
+  await tester.pump();
+  await waitFor(
+    tester,
+    () => find
+        .byTooltip('线宽 $expectedWidth pt · 滚轮 / 1、2 / [、]')
+        .evaluate()
+        .isNotEmpty,
+  );
 }
 
 /// Only global shortcut registration is suppressed to avoid taking shortcuts
@@ -107,14 +129,25 @@ class NativeDesktop extends MacDesktopService {
   CaptureSession? lastCapture;
   int captureCount = 0;
   Map<String, Object?>? overlay;
+  bool screenshotHosted = false;
   @override
   Future<void> updateOverlay(Map<String, Object?> data) async {
-    overlay = data;
     await super.updateOverlay(data);
+    // 回归断言只观察已经得到原生确认的选项，避免跨通道竞态。
+    if (data['sessionId'] == lastCapture?.id) overlay = data;
+  }
+
+  @override
+  Future<void> editScreenshot(int sessionId, int displayId) async {
+    await super.editScreenshot(sessionId, displayId);
+    if (sessionId == lastCapture?.id) screenshotHosted = true;
   }
 
   @override
   Future<CaptureSession> begin(String tool) async {
+    screenshotHosted = false;
+    overlay = null;
+    lastCapture = null;
     captureCount++;
     lastCapture = await super.begin(tool);
     return lastCapture!;
@@ -137,6 +170,7 @@ Future<void> waitFor(WidgetTester tester, bool Function() ready) async {
 }
 
 Future<void> click(WidgetTester tester, Finder finder) async {
+  await waitFor(tester, () => finder.evaluate().isNotEmpty);
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
   final gesture = mouse(tester);
@@ -212,7 +246,13 @@ void main() {
           });
           await tester.pump();
         }
-        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        await waitFor(
+          tester,
+          () =>
+              desktop.screenshotHosted &&
+              c.screenshotEditing &&
+              !c.imageLoading,
+        );
         await tester.pumpAndSettle();
         await click(
           tester,
@@ -333,6 +373,69 @@ void main() {
     expect(status['accessory'], true);
   });
 
+  testWidgets('真实原生日志与 Dart 诊断汇入同一沙盒文件', (tester) async {
+    final handle = await initializeAppLogging(
+      appVersion: 'integration-test',
+      isReleaseMode: true,
+    );
+    expect(handle, isNotNull, reason: '真实 Application Support 日志目录必须可写');
+    final desktop = NativeDesktop();
+    final controller = AppController(desktop);
+    final marker =
+        'Unified diagnostics marker ${DateTime.now().microsecondsSinceEpoch}';
+    final nativeRecords = <LogRecord>[];
+    final subscription = Logger.root.onRecord.listen((record) {
+      if (record.loggerName == 'native.desktop') nativeRecords.add(record);
+    });
+    try {
+      Logger('app.integration').info(marker);
+      await controller.initialize();
+      await waitFor(
+        tester,
+        () => nativeRecords.any(
+          (record) => record.message.contains('Desktop initialized:'),
+        ),
+      );
+      await handle!.flush();
+      final allContent = await File('${handle.directory.path}/$appLogFileName')
+          .readAsString();
+      final markerOffset = allContent.indexOf(marker);
+      expect(markerOffset, greaterThanOrEqualTo(0));
+      final content = allContent.substring(markerOffset);
+      expect(allContent, contains('app.integration'));
+      expect(content, contains('native.desktop'));
+      expect(content, contains('Desktop initialized:'));
+      final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      expect(status['bundleId'], 'dev.fruler.integration');
+      expect(handle.directory.path, contains('dev.fruler.integration'));
+      var exitRequested = false;
+      final exitMarker =
+          'Exit flush marker ${DateTime.now().microsecondsSinceEpoch}';
+      final listener = AppLifecycleListener(
+        onExitRequested: () async {
+          Logger('app.integration').info(exitMarker);
+          await handle.flush();
+          exitRequested = true;
+          // 验收真实退出握手，但保留测试进程继续执行截图回归。
+          return ui.AppExitResponse.cancel;
+        },
+      );
+      try {
+        await driver.invokeMethod<void>('requestExit');
+        await waitFor(tester, () => exitRequested);
+        final flushed = await File('${handle.directory.path}/$appLogFileName')
+            .readAsString();
+        expect(flushed, contains(exitMarker));
+      } finally {
+        listener.dispose();
+      }
+    } finally {
+      await subscription.cancel();
+      controller.dispose();
+      await handle?.dispose();
+    }
+  });
+
   testWidgets(
     'real external-data finalizer releases the last FFI reader (30 rounds)',
     (tester) async {
@@ -439,6 +542,71 @@ void main() {
     }
   });
 
+  testWidgets('未激活的取色浮层接受首次点击并立即复制', (tester) async {
+    final records = <String>[];
+    final logs = Logger.root.onRecord.listen(
+      (record) => records.add('${record.loggerName}: ${record.message}'),
+    );
+    final desktop = NativeDesktop();
+    final controller = AppController(desktop);
+    await controller.initialize();
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      await desktop.showMainWindow();
+      await tester.pumpWidget(FrulerApp(controller: controller));
+      await tester.pumpAndSettle();
+      controller.setContinuousPicker(false);
+      await controller.pickColor();
+      if (controller.error != null) debugPrint(records.join('\n'));
+      expect(controller.error, isNull);
+      final display = desktop.lastCapture!.displays.first;
+      final point = display.frame.logicalToPixel(180, 240);
+      final expected = controller.formatColor(
+        display.frame.pixelAt(point.x, point.y),
+      );
+      await driver.invokeMethod<void>('raiseRegionFixture');
+      var status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      final deadline = DateTime.now().add(const Duration(seconds: 20));
+      while (status['applicationActive'] != false &&
+          DateTime.now().isBefore(deadline)) {
+        await tester.pump(const Duration(milliseconds: 50));
+        status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      }
+      expect(status['applicationActive'], false, reason: '必须实际处于未激活状态才能验证首击');
+      for (final phase in ['down', 'up']) {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': display.id,
+          'x': 180.0,
+          'y': 240.0,
+          'phase': phase,
+        });
+      }
+      await waitFor(tester, () => !controller.busy);
+      expect((await Clipboard.getData(Clipboard.kTextPlain))?.text, expected);
+      final diagnostics = (await driver.invokeListMethod<String>(
+        'inputDiagnostics',
+      ))!.join('\n');
+      expect(
+        diagnostics,
+        contains(
+          'driver down session=${desktop.lastCapture!.id} before[active=false,key=false]',
+        ),
+      );
+      expect(diagnostics, contains('firstMouse tool=picker'));
+      expect(diagnostics, contains('accepted=true'));
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        false,
+      );
+    } finally {
+      await logs.cancel();
+      controller.dispose();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
   testWidgets(
     'real window hover suggests bounds and a click selects the same frozen capture',
     (tester) async {
@@ -494,7 +662,13 @@ void main() {
           });
           await tester.pump();
         }
-        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        await waitFor(
+          tester,
+          () =>
+              desktop.screenshotHosted &&
+              c.screenshotEditing &&
+              !c.imageLoading,
+        );
         expect(c.screenshotSelection!.toJson(), {
           'left': tl.x,
           'top': tl.y,
@@ -778,7 +952,10 @@ void main() {
         });
         await tester.pump();
       }
-      await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+      await waitFor(
+        tester,
+        () => d.screenshotHosted && c.screenshotEditing && !c.imageLoading,
+      );
       await tester.pumpAndSettle();
       await click(tester, find.byKey(const ValueKey('annotation-tool-text')));
       await click(tester, find.byKey(const ValueKey('annotation-canvas')));
@@ -988,7 +1165,13 @@ void main() {
           });
           await tester.pump();
         }
-        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        await waitFor(
+          tester,
+          () =>
+              desktop.screenshotHosted &&
+              c.screenshotEditing &&
+              !c.imageLoading,
+        );
         await tester.pumpAndSettle();
         // The editor receives the frozen selection's raw pixels directly.
         final rawSelection = c.screenshotSelection!;
@@ -1626,6 +1809,10 @@ void main() {
         );
         // Picker completes on-screen without reopening history.
         for (final tool in ['picker']) {
+          final inputEvents = <Map<Object?, Object?>>[];
+          final inputSubscription = desktop.events.listen((event) {
+            if (event['type'] == 'pointer') inputEvents.add(event);
+          });
           if (tool == 'picker') {
             c.setContinuousPicker(false);
             await c.pickColor();
@@ -1651,9 +1838,14 @@ void main() {
             await waitFor(tester, () => !c.busy);
           } catch (_) {
             debugPrint(
-              'picker completion: busy=${c.busy}, error=${c.error}, colors=${c.colors.length}, native=${await driver.invokeMethod<Object?>("status")}',
+              'picker completion: busy=${c.busy}, error=${c.error}, '
+              'events=${inputEvents.map((e) => '${e['phase']}/${e['sessionId']}').toList()}, '
+              'session=${desktop.lastCapture?.id}, behavior=${c.pickerBehavior.primary.name}, '
+              'input=${await driver.invokeMethod<Object?>('inputDiagnostics')}',
             );
             rethrow;
+          } finally {
+            await inputSubscription.cancel();
           }
           expect(
             (await driver.invokeMapMethod<String, Object?>(
@@ -1833,7 +2025,13 @@ void main() {
           });
           await tester.pump();
         }
-        await waitFor(tester, () => c.screenshotEditing && !c.imageLoading);
+        await waitFor(
+          tester,
+          () =>
+              desktop.screenshotHosted &&
+              c.screenshotEditing &&
+              !c.imageLoading,
+        );
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('annotation-tool-picker')),
