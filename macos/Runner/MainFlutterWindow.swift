@@ -363,9 +363,15 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
         result(panel.overlay.integrationLayout(width: width, height: height))
       case "pointer":
+        let button = args["button"] as? String ?? "primary"
+        let mouseTypes: [String: NSEvent.EventType] = button == "secondary"
+          ? ["down": .rightMouseDown, "drag": .rightMouseDragged, "up": .rightMouseUp, "move": .mouseMoved]
+          : button == "middle"
+          ? ["down": .otherMouseDown, "drag": .otherMouseDragged, "up": .otherMouseUp, "move": .mouseMoved]
+          : ["down": .leftMouseDown, "drag": .leftMouseDragged, "up": .leftMouseUp, "move": .mouseMoved]
         guard let id=args["displayId"] as? UInt32, let panel=self.overlays[id],
           let x=args["x"] as? Double, let y=args["y"] as? Double, let phase=args["phase"] as? String,
-          let type=["down":NSEvent.EventType.leftMouseDown,"drag":.leftMouseDragged,"up":.leftMouseUp,"move":.mouseMoved][phase] else {
+          let type=mouseTypes[phase] else {
           result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
         }
         // 测试驱动接管浮层鼠标，避免 CGWarpMouseCursorPosition 随后生成的
@@ -381,9 +387,17 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           CGWarpMouseCursorPosition(CGPoint(x: screenPoint.x,
             y: (NSScreen.screens.first?.frame.maxY ?? 0) - screenPoint.y))
         }
-        guard let event=NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],
+        guard var event=NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],
           timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
           context:nil,eventNumber:CaptureOverlayView.integrationEventNumber,clickCount:1,pressure:1) else {result(nil);return}
+        if button == "secondary" || button == "middle" {
+          // Cocoa 工厂即便创建右/中键事件也默认使用 0 号键，需还原真实按键编号。
+          guard let cg = event.cgEvent else { result(false); return }
+          cg.setIntegerValueField(.mouseEventButtonNumber, value: button == "secondary" ? 1 : 2)
+          cg.setIntegerValueField(.eventSourceUserData, value: Int64(CaptureOverlayView.integrationEventNumber))
+          guard let adjusted = NSEvent(cgEvent: cg) else { result(false); return }
+          event = adjusted
+        }
         let hit = panel.contentView?.hitTest(point)
         let target = hit.map { NSStringFromClass(Swift.type(of: $0)) } ?? "nil"
         panel.sendEvent(event)
@@ -1288,7 +1302,9 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
 
   private func ignoresIntegrationNoise(_ event: NSEvent) -> Bool {
     #if FRULER_INTEGRATION_TEST
-    return integrationDriving && event.eventNumber != Self.integrationEventNumber
+    // CGEvent 转回 NSEvent 时 eventNumber 会截成 16 位，另保留完整的驱动标记。
+    return integrationDriving && event.eventNumber != Self.integrationEventNumber &&
+      event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Int64(Self.integrationEventNumber)
     #else
     return false
     #endif

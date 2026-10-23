@@ -138,7 +138,7 @@ void main() {
     expect(d.clipboard, isNot(contains('010203')));
     expect(c.notice, '已复制 1 色的 Flutter 代码');
   });
-  test('收藏记录不被最近32条淘汰', () async {
+  test('收藏记录优先保留但仍计入32条总上限', () async {
     await pin();
     c.updateMeasurement(c.measurements.single, name: '保留', favorite: true);
     for (var i = 0; i < 35; i++) {
@@ -146,7 +146,7 @@ void main() {
       d.pointer(x: 1, y: 1, phase: 'up', keep: true);
       await tick();
     }
-    expect(c.measurements.length, 33);
+    expect(c.measurements.length, 32);
     expect(c.measurements.last.name, '保留');
   });
 }

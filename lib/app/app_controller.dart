@@ -446,6 +446,37 @@ class AppController extends ChangeNotifier {
   final List<MeasurementRecord> _measurements = [];
   List<RgbColor> get colors => List.unmodifiable(_colors);
   List<MeasurementRecord> get measurements => List.unmodifiable(_measurements);
+  static const historyLimitChoices = [16, 32, 64, 128, 256];
+  int _colorHistoryLimit = 64;
+  int _measurementHistoryLimit = 32;
+  int get colorHistoryLimit => _colorHistoryLimit;
+  int get measurementHistoryLimit => _measurementHistoryLimit;
+
+  void setColorHistoryLimit(int value) {
+    if (!historyLimitChoices.contains(value) || value == _colorHistoryLimit) {
+      return;
+    }
+    _colorHistoryLimit = value;
+    if (_colors.length > value) {
+      _colors.removeRange(value, _colors.length);
+    }
+    _logger.info('History limit changed: tool=picker, limit=$value.');
+    _persist();
+    _notify();
+  }
+
+  void setMeasurementHistoryLimit(int value) {
+    if (!historyLimitChoices.contains(value) ||
+        value == _measurementHistoryLimit) {
+      return;
+    }
+    _measurementHistoryLimit = value;
+    _trimMeasurements();
+    _logger.info('History limit changed: tool=ruler, limit=$value.');
+    _persist();
+    _notify();
+  }
+
   RulerMode mode = RulerMode.rectangle;
   ColorFormat format = ColorFormat.hex;
   final List<ColorOutput> _colorOutputs = List.of(ColorOutput.defaults);
@@ -516,6 +547,7 @@ class AppController extends ChangeNotifier {
         _colorOutputs[_colorOutputs.indexOf(old)] = value;
       }
       _persist();
+      _logger.info('Color output saved: created=${old == null}.');
       _notify();
       return true;
     } on FormatException catch (e, stackTrace) {
@@ -535,6 +567,7 @@ class AppController extends ChangeNotifier {
       return false;
     }
     _colorOutputs[index] = _colorOutputs[index].copyWith(enabled: enabled);
+    _logger.info('Color output enabled state changed: enabled=$enabled.');
     _ensureActiveOutput();
     _persist();
     _notify();
@@ -577,6 +610,9 @@ class AppController extends ChangeNotifier {
 
   void setPickerBehavior(PickerBehavior value) {
     pickerBehavior = value;
+    _logger.info(
+      'Picker mouse actions changed: primary=${value.primary.name}, middle=${value.middle.name}, secondary=${value.secondary.name}.',
+    );
     continuousPicker = value.primary == PickerMouseAction.pickAndContinue;
     _persist();
     if (_session != null) _redraw();
@@ -1802,7 +1838,7 @@ class AppController extends ChangeNotifier {
   void _rememberColor(RgbColor color) {
     _colors.remove(color);
     _colors.insert(0, color);
-    if (_colors.length > 64) _colors.removeLast();
+    if (_colors.length > colorHistoryLimit) _colors.removeLast();
   }
 
   void addEditedColor(RgbColor color) {
@@ -1957,8 +1993,10 @@ class AppController extends ChangeNotifier {
   }
 
   void _trimMeasurements() {
-    while (_measurements.where((r) => !r.favorite).length > 32) {
-      _measurements.removeAt(_measurements.lastIndexWhere((r) => !r.favorite));
+    while (_measurements.length > measurementHistoryLimit) {
+      // 始终保留最新测量，其余优先保留收藏；收藏不能绕过总量限制。
+      final index = _measurements.lastIndexWhere((r) => !r.favorite);
+      _measurements.removeAt(index <= 0 ? _measurements.length - 1 : index);
     }
   }
 
@@ -2054,6 +2092,8 @@ class AppController extends ChangeNotifier {
     final json = jsonEncode({
       'version': 1,
       'language': _language.name,
+      'colorHistoryLimit': colorHistoryLimit,
+      'measurementHistoryLimit': measurementHistoryLimit,
       'annotationColors': _annotationColors,
       'format': format.name,
       'colorOutputs': _colorOutputs.map((e) => e.toJson()).toList(),
@@ -2085,6 +2125,16 @@ class AppController extends ChangeNotifier {
       _language = AppLanguage.parse(data['language']);
       _localeNotifier.value = _language.resolve(_systemLocale);
       var ignoredRecords = 0;
+      var trimmedHistory = false;
+      final colorLimit = data['colorHistoryLimit'];
+      final measurementLimit = data['measurementHistoryLimit'];
+      if (colorLimit is int && historyLimitChoices.contains(colorLimit)) {
+        _colorHistoryLimit = colorLimit;
+      }
+      if (measurementLimit is int &&
+          historyLimitChoices.contains(measurementLimit)) {
+        _measurementHistoryLimit = measurementLimit;
+      }
       final annotationColors = data['annotationColors'];
       if (annotationColors is Map) {
         for (final tool in _annotationColorTools) {
@@ -2181,10 +2231,16 @@ class AppController extends ChangeNotifier {
       }
       final value = data['tolerance'];
       if (value is int) tolerance = value.clamp(0, 255);
-      for (final value in (data['colors'] as List? ?? []).take(64)) {
+      for (final value in (data['colors'] as List? ?? [])) {
         try {
           final c = RgbColor.fromJson(value);
-          if (!_colors.contains(c)) _colors.add(c);
+          if (!_colors.contains(c)) {
+            if (_colors.length < colorHistoryLimit) {
+              _colors.add(c);
+            } else {
+              trimmedHistory = true;
+            }
+          }
         } catch (_) {
           ignoredRecords++;
         }
@@ -2194,6 +2250,10 @@ class AppController extends ChangeNotifier {
           _measurements.add(
             MeasurementRecord.fromJson(value as Map<String, dynamic>),
           );
+          if (_measurements.length > measurementHistoryLimit) {
+            trimmedHistory = true;
+            _trimMeasurements();
+          }
         } catch (_) {
           ignoredRecords++;
         }
@@ -2204,6 +2264,10 @@ class AppController extends ChangeNotifier {
         );
       }
       if (_colors.isNotEmpty) selectedColor = _colors.first;
+      if (trimmedHistory) {
+        _logger.info('Restored history compacted to configured limits.');
+        _persist();
+      }
     } catch (e, stackTrace) {
       _logFailure('State restore', e, stackTrace);
       notice = strings.msgHistoryRestoreFailed;

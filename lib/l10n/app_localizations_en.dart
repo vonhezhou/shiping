@@ -125,7 +125,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get uiCancelTool => 'Cancel current tool';
 
   @override
-  String get uiCancelToolKeys => 'Esc / right-click';
+  String get uiCancelToolKeys => 'Esc (picker right-click is configurable)';
 
   @override
   String get uiShortcutsUnavailable =>
@@ -193,7 +193,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiNoMeasurementsDescription =>
-      'Measurements retain pixel size, logical size, and display scaling. Favorites are kept indefinitely.';
+      'Measurements retain pixel size, logical size, and display scaling. Favorites are kept first and count toward the history limit.';
 
   @override
   String get uiUnfavoriteMeasurement => 'Remove from favorites';
@@ -876,7 +876,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiColorHistoryStorage =>
-      'The 64 most recent colors are saved locally. Click a color to copy it again.';
+      'Recent colors are saved locally up to the configured limit. Click a color to copy it again.';
 
   @override
   String get uiAboutTitle => 'About';
@@ -906,4 +906,66 @@ class AppLocalizationsEn extends AppLocalizations {
   String uiScreenshotPreview(int index) {
     return 'Screenshot $index';
   }
+
+  @override
+  String get uiHistoryLimit => 'History limit';
+
+  @override
+  String get uiColorHistoryLimitHint =>
+      'The oldest colors are removed at the limit. Lowering it trims existing history immediately.';
+
+  @override
+  String get uiMeasurementHistoryLimitHint =>
+      'Keep the latest measurement and prefer favorites. When full, remove the oldest other non-favorite, or the oldest favorite if needed. Lowering the limit trims existing history immediately.';
+
+  @override
+  String get uiMouseActions => 'Mouse actions';
+
+  @override
+  String get uiMouseActionsHint =>
+      'Choose actions for the middle and right buttons. Keep picking controls the left button; Esc always exits.';
+
+  @override
+  String get uiMouseMiddle => 'Middle button';
+
+  @override
+  String get uiMouseRight => 'Right button';
+
+  @override
+  String get uiColorFormats => 'Color formats';
+
+  @override
+  String get uiColorFormatsHint =>
+      'Configure copy formats and templates. Keep at least one format enabled.';
+
+  @override
+  String get uiAddColorFormat => 'Add format';
+
+  @override
+  String get uiEditColorFormat => 'Edit color format';
+
+  @override
+  String get uiFormatTemplate => 'Format template';
+
+  @override
+  String get uiFormatTemplateHint =>
+      'RGB channels: %Re, %Gr, %Bl. Two-digit uppercase hex: %ReX, %GrX, %BlX. Use x for lowercase and %% for a percent sign.';
+
+  @override
+  String get uiFormatPreview => 'Copy preview';
+
+  @override
+  String get uiEdit => 'Edit';
+
+  @override
+  String get uiMoveUp => 'Move up';
+
+  @override
+  String get uiMoveDown => 'Move down';
+
+  @override
+  String get uiFormatActions => 'Format actions';
+
+  @override
+  String get uiDeleteColorFormat => 'Delete format';
 }

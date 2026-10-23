@@ -54,7 +54,13 @@ void main() {
         kind: ui.PointerDeviceKind.mouse,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Color history'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('color-history')),
+          matching: find.text('Color history'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('No colors yet'), findsOneWidget);
       await tester.tap(
         find.byKey(const ValueKey('nav-ruler')),

@@ -1,5 +1,69 @@
 part of 'fruler_app.dart';
 
+// 旧版的编辑器动作仍兼容读取，设置页统一呈现为屏幕上复制并完成。
+PickerMouseAction _visibleMouseAction(PickerMouseAction value) =>
+    value == PickerMouseAction.pickAndEdit
+    ? PickerMouseAction.pickAndClose
+    : value;
+
+class _HistoryLimitOptions extends StatelessWidget {
+  const _HistoryLimitOptions({required this.controller, required this.picker});
+  final AppController controller;
+  final bool picker;
+
+  @override
+  Widget build(BuildContext context) => _SettingsCard(
+    title: context.l10n.uiHistoryLimit,
+    icon: Icons.history,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                picker
+                    ? context.l10n.uiColorHistory
+                    : context.l10n.uiMeasurementRecords,
+              ),
+            ),
+            DropdownButton<int>(
+              key: ValueKey(
+                picker ? 'picker-history-limit' : 'ruler-history-limit',
+              ),
+              value: picker
+                  ? controller.colorHistoryLimit
+                  : controller.measurementHistoryLimit,
+              items: [
+                for (final limit in AppController.historyLimitChoices)
+                  DropdownMenuItem(
+                    value: limit,
+                    child: Text(context.l10n.uiHistoryItemCount(limit)),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                if (picker) {
+                  controller.setColorHistoryLimit(value);
+                } else {
+                  controller.setMeasurementHistoryLimit(value);
+                }
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          picker
+              ? context.l10n.uiColorHistoryLimitHint
+              : context.l10n.uiMeasurementHistoryLimitHint,
+          style: const TextStyle(color: _muted, fontSize: 11, height: 1.6),
+        ),
+      ],
+    ),
+  );
+}
+
 class _GeneralSettingsPage extends StatelessWidget {
   const _GeneralSettingsPage({required this.controller});
   final AppController controller;
@@ -186,14 +250,18 @@ class _GeneralSettingsPage extends StatelessWidget {
 
   Widget _shortcut(String label, String keys) => Row(
     children: [
-      Text(label, style: const TextStyle(fontSize: 12)),
-      const Spacer(),
-      Text(
-        keys,
-        style: const TextStyle(
-          color: _muted,
-          fontSize: 12,
-          fontFamily: 'Menlo',
+      Expanded(child: Text(label, style: const TextStyle(fontSize: 12))),
+      const SizedBox(width: 16),
+      Flexible(
+        flex: 2,
+        child: Text(
+          keys,
+          textAlign: TextAlign.right,
+          style: const TextStyle(
+            color: _muted,
+            fontSize: 12,
+            fontFamily: 'Menlo',
+          ),
         ),
       ),
     ],
@@ -275,6 +343,68 @@ class _PickerOptionsPage extends StatelessWidget {
           ],
         ),
       ),
+      const SizedBox(height: 16),
+      _SettingsCard(
+        title: context.l10n.uiMouseActions,
+        icon: Icons.mouse_outlined,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.uiMouseActionsHint,
+              style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
+            ),
+            const SizedBox(height: 12),
+            for (final middle in [true, false])
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      middle
+                          ? context.l10n.uiMouseMiddle
+                          : context.l10n.uiMouseRight,
+                    ),
+                  ),
+                  DropdownButton<PickerMouseAction>(
+                    key: ValueKey(
+                      middle ? 'picker-middle-action' : 'picker-right-action',
+                    ),
+                    value: _visibleMouseAction(
+                      middle
+                          ? controller.pickerBehavior.middle
+                          : controller.pickerBehavior.secondary,
+                    ),
+                    items: [
+                      for (final action in [
+                        PickerMouseAction.pickAndClose,
+                        PickerMouseAction.pickAndContinue,
+                        PickerMouseAction.cancel,
+                      ])
+                        DropdownMenuItem(
+                          value: action,
+                          child: Text(controller.pickerActionLabel(action)),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      controller.setPickerBehavior(
+                        middle
+                            ? controller.pickerBehavior.copyWith(middle: value)
+                            : controller.pickerBehavior.copyWith(
+                                secondary: value,
+                              ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      _ColorFormatSettings(controller: controller),
+      const SizedBox(height: 16),
+      _HistoryLimitOptions(controller: controller, picker: true),
       const SizedBox(height: 24),
       _ColorHistory(controller: controller),
     ],
@@ -363,6 +493,8 @@ class _RulerOptionsPage extends StatelessWidget {
           ],
         ),
       ),
+      const SizedBox(height: 16),
+      _HistoryLimitOptions(controller: controller, picker: false),
       const SizedBox(height: 24),
       _MeasurementHistory(controller: controller),
     ],

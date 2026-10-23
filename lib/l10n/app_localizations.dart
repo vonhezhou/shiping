@@ -317,7 +317,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiCancelToolKeys.
   ///
   /// In en, this message translates to:
-  /// **'Esc / right-click'**
+  /// **'Esc (picker right-click is configurable)'**
   String get uiCancelToolKeys;
 
   /// No description provided for @uiShortcutsUnavailable.
@@ -443,7 +443,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiNoMeasurementsDescription.
   ///
   /// In en, this message translates to:
-  /// **'Measurements retain pixel size, logical size, and display scaling. Favorites are kept indefinitely.'**
+  /// **'Measurements retain pixel size, logical size, and display scaling. Favorites are kept first and count toward the history limit.'**
   String get uiNoMeasurementsDescription;
 
   /// No description provided for @uiUnfavoriteMeasurement.
@@ -1494,7 +1494,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiColorHistoryStorage.
   ///
   /// In en, this message translates to:
-  /// **'The 64 most recent colors are saved locally. Click a color to copy it again.'**
+  /// **'Recent colors are saved locally up to the configured limit. Click a color to copy it again.'**
   String get uiColorHistoryStorage;
 
   /// No description provided for @uiAboutTitle.
@@ -1532,6 +1532,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Screenshot {index}'**
   String uiScreenshotPreview(int index);
+
+  /// No description provided for @uiHistoryLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'History limit'**
+  String get uiHistoryLimit;
+
+  /// No description provided for @uiColorHistoryLimitHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The oldest colors are removed at the limit. Lowering it trims existing history immediately.'**
+  String get uiColorHistoryLimitHint;
+
+  /// No description provided for @uiMeasurementHistoryLimitHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the latest measurement and prefer favorites. When full, remove the oldest other non-favorite, or the oldest favorite if needed. Lowering the limit trims existing history immediately.'**
+  String get uiMeasurementHistoryLimitHint;
+
+  /// No description provided for @uiMouseActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Mouse actions'**
+  String get uiMouseActions;
+
+  /// No description provided for @uiMouseActionsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose actions for the middle and right buttons. Keep picking controls the left button; Esc always exits.'**
+  String get uiMouseActionsHint;
+
+  /// No description provided for @uiMouseMiddle.
+  ///
+  /// In en, this message translates to:
+  /// **'Middle button'**
+  String get uiMouseMiddle;
+
+  /// No description provided for @uiMouseRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Right button'**
+  String get uiMouseRight;
+
+  /// No description provided for @uiColorFormats.
+  ///
+  /// In en, this message translates to:
+  /// **'Color formats'**
+  String get uiColorFormats;
+
+  /// No description provided for @uiColorFormatsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure copy formats and templates. Keep at least one format enabled.'**
+  String get uiColorFormatsHint;
+
+  /// No description provided for @uiAddColorFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Add format'**
+  String get uiAddColorFormat;
+
+  /// No description provided for @uiEditColorFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit color format'**
+  String get uiEditColorFormat;
+
+  /// No description provided for @uiFormatTemplate.
+  ///
+  /// In en, this message translates to:
+  /// **'Format template'**
+  String get uiFormatTemplate;
+
+  /// No description provided for @uiFormatTemplateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'RGB channels: %Re, %Gr, %Bl. Two-digit uppercase hex: %ReX, %GrX, %BlX. Use x for lowercase and %% for a percent sign.'**
+  String get uiFormatTemplateHint;
+
+  /// No description provided for @uiFormatPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy preview'**
+  String get uiFormatPreview;
+
+  /// No description provided for @uiEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get uiEdit;
+
+  /// No description provided for @uiMoveUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Move up'**
+  String get uiMoveUp;
+
+  /// No description provided for @uiMoveDown.
+  ///
+  /// In en, this message translates to:
+  /// **'Move down'**
+  String get uiMoveDown;
+
+  /// No description provided for @uiFormatActions.
+  ///
+  /// In en, this message translates to:
+  /// **'Format actions'**
+  String get uiFormatActions;
+
+  /// No description provided for @uiDeleteColorFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete format'**
+  String get uiDeleteColorFormat;
 }
 
 class _AppLocalizationsDelegate

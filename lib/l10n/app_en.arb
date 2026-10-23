@@ -36,7 +36,7 @@
   "uiToleranceLoose": "255 · Loose match",
   "uiKeyboardShortcuts": "Keyboard shortcuts",
   "uiCancelTool": "Cancel current tool",
-  "uiCancelToolKeys": "Esc / right-click",
+  "uiCancelToolKeys": "Esc (picker right-click is configurable)",
   "uiShortcutsUnavailable": "Some global shortcuts could not be registered. Another app may be using them. You can still start tools from this window or the menu bar.",
   "uiAbout": "fruler 0.10.0 · macOS 14+",
   "uiScreenshotAndAnnotate": "Screenshot and annotate",
@@ -57,7 +57,7 @@
   "uiMeasurementSearch": "Search name, size, display, or date",
   "uiFavoritesOnly": "Favorites only",
   "uiNoMeasurements": "No matching measurements",
-  "uiNoMeasurementsDescription": "Measurements retain pixel size, logical size, and display scaling. Favorites are kept indefinitely.",
+  "uiNoMeasurementsDescription": "Measurements retain pixel size, logical size, and display scaling. Favorites are kept first and count toward the history limit.",
   "uiUnfavoriteMeasurement": "Remove from favorites",
   "uiFavoriteMeasurement": "Add to favorites",
   "uiOriginalPixels": "Original pixels",
@@ -512,7 +512,7 @@
   "uiScreenshotAnnotate": "Annotate in place with shapes, drawing, text, or blur. You can keep adjusting the region.",
   "uiScreenshotFinish": "Return to your previous app after copying or saving. Canceling a save keeps annotation open.",
   "uiScreenshotHistoryStorage": "Keeps up to 12 recent screenshots and 64 MiB in this session. Screenshots are released when you quit.",
-  "uiColorHistoryStorage": "The 64 most recent colors are saved locally. Click a color to copy it again.",
+  "uiColorHistoryStorage": "Recent colors are saved locally up to the configured limit. Click a color to copy it again.",
   "uiAboutTitle": "About",
   "uiOptionsSidebarHint": "Start screen tools with a shortcut or the menu bar.",
   "uiCopyScreenshotFromHistory": "Copy screenshot again",
@@ -532,5 +532,24 @@
         "type": "int"
       }
     }
-  }
+  },
+  "uiHistoryLimit": "History limit",
+  "uiColorHistoryLimitHint": "The oldest colors are removed at the limit. Lowering it trims existing history immediately.",
+  "uiMeasurementHistoryLimitHint": "Keep the latest measurement and prefer favorites. When full, remove the oldest other non-favorite, or the oldest favorite if needed. Lowering the limit trims existing history immediately.",
+  "uiMouseActions": "Mouse actions",
+  "uiMouseActionsHint": "Choose actions for the middle and right buttons. Keep picking controls the left button; Esc always exits.",
+  "uiMouseMiddle": "Middle button",
+  "uiMouseRight": "Right button",
+  "uiColorFormats": "Color formats",
+  "uiColorFormatsHint": "Configure copy formats and templates. Keep at least one format enabled.",
+  "uiAddColorFormat": "Add format",
+  "uiEditColorFormat": "Edit color format",
+  "uiFormatTemplate": "Format template",
+  "uiFormatTemplateHint": "RGB channels: %Re, %Gr, %Bl. Two-digit uppercase hex: %ReX, %GrX, %BlX. Use x for lowercase and %% for a percent sign.",
+  "uiFormatPreview": "Copy preview",
+  "uiEdit": "Edit",
+  "uiMoveUp": "Move up",
+  "uiMoveDown": "Move down",
+  "uiFormatActions": "Format actions",
+  "uiDeleteColorFormat": "Delete format"
 }

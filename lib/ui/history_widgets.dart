@@ -214,7 +214,11 @@ class _ColorHistory extends StatelessWidget {
                   border: Border.all(color: Colors.white24),
                 ),
               ),
-              title: Text(c.formatColor(c.colors[i])),
+              title: Text(
+                c.formatColor(c.colors[i]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               subtitle: Text(
                 c.colors[i].hex,
                 style: const TextStyle(color: _muted),

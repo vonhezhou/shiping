@@ -752,6 +752,152 @@ void main() {
     }
   });
 
+  testWidgets('新增设置经原生存储恢复，右键连续取色使用自定义格式，中键取消', (tester) async {
+    final desktop = NativeDesktop();
+    final original = await desktop.loadState();
+    final controller = AppController(desktop);
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      final record = MeasurementRecord(
+        measurement: const RulerMeasurement(
+          rect: PixelRect(left: 0, top: 0, right: 10, bottom: 20),
+          logicalWidth: 10,
+          logicalHeight: 20,
+          mode: RulerMode.rectangle,
+        ),
+        createdAt: DateTime.utc(2026, 10, 23),
+        displayName: 'History fixture',
+        favorite: true,
+      );
+      await desktop.saveState(
+        jsonEncode({
+          'version': 1,
+          'language': 'zh',
+          'colors': [
+            for (var i = 0; i < 80; i++) [i, 1, 2],
+          ],
+          'measurements': [for (var i = 0; i < 80; i++) record.toJson()],
+        }),
+      );
+      await controller.initialize();
+      expect(controller.colors, hasLength(64));
+      expect(controller.measurements, hasLength(32));
+      final compacted = jsonDecode((await desktop.loadState())!) as Map;
+      expect(compacted['colors'], hasLength(64));
+      expect(compacted['measurements'], hasLength(32));
+      await desktop.showMainWindow();
+      await tester.pumpWidget(FrulerApp(controller: controller));
+      Future<void> select(String key, String label) async {
+        await click(tester, find.byKey(ValueKey(key)));
+        await click(tester, find.text(label).last);
+      }
+
+      await click(tester, find.byKey(const ValueKey('nav-picker')));
+      await select(
+        'picker-history-limit',
+        controller.strings.uiHistoryItemCount(16),
+      );
+      await select(
+        'picker-right-action',
+        controller.pickerActionLabel(PickerMouseAction.pickAndContinue),
+      );
+      await select(
+        'picker-middle-action',
+        controller.pickerActionLabel(PickerMouseAction.cancel),
+      );
+      await click(tester, find.byKey(const ValueKey('color-format-settings')));
+      await click(tester, find.byKey(const ValueKey('format-add')));
+      await tester.enterText(
+        find.byKey(const ValueKey('format-name')),
+        'Native channels',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('format-template')),
+        '%Re/%Gr/%Bl',
+      );
+      await click(tester, find.byKey(const ValueKey('format-save')));
+      await select('picker-format', 'Native channels');
+      await click(tester, find.byKey(const ValueKey('nav-ruler')));
+      await select(
+        'ruler-history-limit',
+        controller.strings.uiHistoryItemCount(16),
+      );
+      await click(tester, find.byKey(const ValueKey('nav-picker')));
+      await click(tester, find.byKey(const ValueKey('start-picker')));
+      await waitFor(tester, () => desktop.overlay?['tool'] == 'picker');
+      expect(desktop.overlay!['colorOutputName'], 'Native channels');
+      final display = desktop.lastCapture!.displays.first;
+      const x = 160.0, y = 220.0;
+      final point = display.frame.logicalToPixel(x, y);
+      final color = display.frame.pixelAt(point.x, point.y);
+      final expected = '${color.r}/${color.g}/${color.b}';
+      Future<void> nativeClick(String button) async {
+        for (final phase in ['down', 'up']) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': display.id,
+            'x': x,
+            'y': y,
+            'phase': phase,
+            'button': button,
+          });
+        }
+      }
+
+      Future<void> waitNative(bool Function() ready) async {
+        // 原生工具隐藏主窗口后不依赖 Flutter 重绘推进；只等待真实通道状态。
+        await tester.runAsync(() async {
+          final deadline = DateTime.now().add(const Duration(seconds: 20));
+          while (!ready() && DateTime.now().isBefore(deadline)) {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+          }
+        });
+        expect(ready(), true, reason: 'Native mouse action did not complete');
+      }
+
+      await nativeClick('secondary');
+      await waitNative(
+        () => desktop.overlay?['pickedCount'] == 1 || !controller.busy,
+      );
+      expect(desktop.overlay?['pickedCount'], 1);
+      expect(controller.busy, true);
+      expect(controller.error, isNull);
+      expect((await Clipboard.getData('text/plain'))!.text, expected);
+      expect(controller.colors, hasLength(16));
+      await nativeClick('middle');
+      await waitNative(() => !controller.busy);
+      expect((await Clipboard.getData('text/plain'))!.text, expected);
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        false,
+      );
+      final restored = AppController(desktop);
+      try {
+        await restored.initialize();
+        expect(restored.colorHistoryLimit, 16);
+        expect(restored.measurementHistoryLimit, 16);
+        expect(restored.measurements, hasLength(16));
+        expect(restored.colors, hasLength(16));
+        expect(
+          restored.pickerBehavior.secondary,
+          PickerMouseAction.pickAndContinue,
+        );
+        expect(restored.pickerBehavior.middle, PickerMouseAction.cancel);
+        expect(restored.activeColorOutput.template, '%Re/%Gr/%Bl');
+      } finally {
+        restored.dispose();
+      }
+    } finally {
+      await controller.cancelScreenshot();
+      await desktop.showMainWindow();
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      await desktop.saveState(original ?? '{}');
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
   testWidgets(
     'real window hover suggests bounds and a click selects the same frozen capture',
     (tester) async {

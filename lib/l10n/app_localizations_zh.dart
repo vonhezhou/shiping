@@ -119,7 +119,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiCancelTool => '取消当前工具';
 
   @override
-  String get uiCancelToolKeys => 'Esc / 鼠标右键';
+  String get uiCancelToolKeys => 'Esc（取色右键可自定义）';
 
   @override
   String get uiShortcutsUnavailable => '全局快捷键未全部注册，可能已被其他应用占用。仍可使用窗口或菜单栏入口。';
@@ -182,7 +182,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiNoMeasurements => '暂无匹配记录';
 
   @override
-  String get uiNoMeasurementsDescription => '测量后会保留像素、逻辑尺寸及显示器缩放；收藏可长期保留。';
+  String get uiNoMeasurementsDescription =>
+      '测量后保留像素、逻辑尺寸及显示器缩放；收藏优先保留，仍计入历史上限。';
 
   @override
   String get uiUnfavoriteMeasurement => '取消收藏测量';
@@ -782,7 +783,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '仅保留本次运行最近 12 张截图，总计不超过 64 MiB；退出应用后释放。';
 
   @override
-  String get uiColorHistoryStorage => '最近 64 个颜色保存在本机，点击即可再次复制。';
+  String get uiColorHistoryStorage => '最近颜色保存在本机，按配置的上限保留，点击即可再次复制。';
 
   @override
   String get uiAboutTitle => '关于';
@@ -805,4 +806,63 @@ class AppLocalizationsZh extends AppLocalizations {
   String uiScreenshotPreview(int index) {
     return '截图 $index';
   }
+
+  @override
+  String get uiHistoryLimit => '历史记录上限';
+
+  @override
+  String get uiColorHistoryLimitHint => '超过上限时自动移除最旧颜色；调低上限会立即精简已有历史。';
+
+  @override
+  String get uiMeasurementHistoryLimitHint =>
+      '始终保留最新测量，其余优先保留收藏；超限时先移除最旧未收藏记录，没有时移除最旧收藏。调低上限立即生效。';
+
+  @override
+  String get uiMouseActions => '鼠标动作';
+
+  @override
+  String get uiMouseActionsHint => '分别设置中键与右键的取色动作；左键由连续取色开关控制，Esc 始终可退出。';
+
+  @override
+  String get uiMouseMiddle => '鼠标中键';
+
+  @override
+  String get uiMouseRight => '鼠标右键';
+
+  @override
+  String get uiColorFormats => '颜色格式';
+
+  @override
+  String get uiColorFormatsHint => '配置可选的复制格式与模板。至少保留一种启用的格式。';
+
+  @override
+  String get uiAddColorFormat => '添加格式';
+
+  @override
+  String get uiEditColorFormat => '编辑颜色格式';
+
+  @override
+  String get uiFormatTemplate => '格式模板';
+
+  @override
+  String get uiFormatTemplateHint =>
+      'RGB 通道：%Re、%Gr、%Bl；两位大写十六进制：%ReX、%GrX、%BlX；小写使用 x，百分号使用 %% 。';
+
+  @override
+  String get uiFormatPreview => '复制预览';
+
+  @override
+  String get uiEdit => '编辑';
+
+  @override
+  String get uiMoveUp => '上移';
+
+  @override
+  String get uiMoveDown => '下移';
+
+  @override
+  String get uiFormatActions => '格式操作';
+
+  @override
+  String get uiDeleteColorFormat => '删除格式';
 }
