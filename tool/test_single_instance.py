@@ -2,6 +2,7 @@
 """Exercise the production advisory lock in separate processes, without launching UI."""
 import pathlib
 import subprocess
+import shutil
 import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -9,8 +10,10 @@ source = (root / "macos/Runner/AppDelegate.swift").read_text()
 production = source[source.index("enum FrulerInstance {"):]
 with tempfile.TemporaryDirectory(prefix="fruler-instance-") as directory:
     folder = pathlib.Path(directory)
+    for language in ['en', 'zh-Hans']:
+        shutil.copytree(root / 'macos/Runner' / f'{language}.lproj', folder / f'{language}.lproj')
     swift = folder / "main.swift"
-    swift.write_text("import Cocoa\nimport Darwin\n" + production + '''
+    swift.write_text("import Cocoa\nimport Darwin\n" + (root / "macos/Runner/NativeStrings.swift").read_text() + "\n" + production + '''
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 if let fd = try FrulerInstance.lock(at: url) {
   print("acquired"); fflush(stdout)

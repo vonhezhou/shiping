@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'color_value.dart';
+import 'validation_exception.dart';
 
 class PaletteEntry {
   const PaletteEntry({
@@ -31,7 +32,7 @@ class PaletteEntry {
     if (value is! Map ||
         value['name'] is! String ||
         value['favorite'] is! bool) {
-      throw const FormatException('Invalid palette entry');
+      throw const ValidationException('paletteEntry');
     }
     return PaletteEntry(
       color: RgbColor.fromJson(value['color']),
@@ -69,10 +70,10 @@ String exportPalette(List<PaletteEntry> entries, PaletteExport format) {
 List<PaletteEntry> importPalette(String text) {
   final data = jsonDecode(text);
   if (data is! Map || data['version'] != 1 || data['colors'] is! List) {
-    throw const FormatException('请选择 fruler 导出的 version 1 JSON 文件');
+    throw const ValidationException('paletteVersion');
   }
   final colors = data['colors'] as List;
-  if (colors.length > 4096) throw const FormatException('一次最多导入 4096 个颜色');
+  if (colors.length > 4096) throw const ValidationException('paletteLimit');
   final entries = <PaletteEntry>[];
   for (final item in colors) {
     if (item is! Map ||
@@ -82,15 +83,15 @@ List<PaletteEntry> importPalette(String text) {
         (item['group'] != null &&
             (item['group'] is! String ||
                 (item['group'] as String).trim().length > 60))) {
-      throw const FormatException('颜色条目的名称或收藏状态无效');
+      throw const ValidationException('paletteMetadata');
     }
     final color = RgbColor.fromJson(item['rgb']);
     if (RgbColor.parseHex(item['hex'] is String ? item['hex'] as String : '') !=
         color) {
-      throw const FormatException('HEX 与 RGB 不一致，未导入任何颜色');
+      throw const ValidationException('paletteChannels');
     }
     if (entries.any((e) => e.color == color)) {
-      throw const FormatException('文件含重复颜色，请先去重');
+      throw const ValidationException('paletteDuplicates');
     }
     entries.add(
       PaletteEntry(

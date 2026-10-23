@@ -13,6 +13,7 @@ import 'package:logging/logging.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/app/logging/app_logging.dart';
 import 'package:fruler/core/core.dart';
+import 'package:fruler/l10n/app_language.dart';
 import 'package:fruler/platform/desktop_service.dart';
 import 'package:fruler/platform/annotation_renderer.dart';
 import 'package:fruler/platform/desktop.g.dart' as wire;
@@ -126,6 +127,9 @@ Future<void> nativeWheel(
 /// Only global shortcut registration is suppressed to avoid taking shortcuts
 /// away from the interactive app. Capture, events, storage and clipboard are real.
 class NativeDesktop extends MacDesktopService {
+  @override
+  Locale get systemLocale => const Locale('zh');
+
   CaptureSession? lastCapture;
   int captureCount = 0;
   Map<String, Object?>? overlay;
@@ -603,6 +607,81 @@ void main() {
     } finally {
       await logs.cancel();
       controller.dispose();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
+  testWidgets('运行中切换语言同步 Flutter、原生菜单与现有浮层，并恢复偏好', (tester) async {
+    final desktop = NativeDesktop();
+    final original = await desktop.loadState();
+    final controller = AppController(desktop);
+    await controller.initialize();
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      await controller.setLanguage(AppLanguage.zh);
+      controller.selectSection(AppSection.settings);
+      await desktop.showMainWindow();
+      await tester.pumpWidget(FrulerApp(controller: controller));
+      await click(tester, find.byKey(const ValueKey('app-language')));
+      await click(tester, find.text('English').last);
+      await waitFor(tester, () => controller.locale.languageCode == 'en');
+      expect(find.text('Language'), findsOneWidget);
+      final saved = jsonDecode((await desktop.loadState())!) as Map;
+      expect(saved['language'], 'en');
+      final restored = AppController(desktop);
+      try {
+        await restored.initialize();
+        expect(restored.language, AppLanguage.en);
+        expect(restored.locale, const Locale('en'));
+      } finally {
+        restored.dispose();
+      }
+      Future<Map<String, Object?>> status() async =>
+          (await driver.invokeMapMethod<String, Object?>('status'))!;
+      expect(
+        ((await status())['menu'] as List)
+            .cast<Map>()
+            .where((item) => item['tool'] != '')
+            .map((item) => item['title']),
+        ['Screenshot', 'Color Picker', 'Screen Ruler'],
+      );
+      const sample = RgbColor(13, 127, 255);
+      await controller.copyColor(sample);
+      final englishCopy = (await Clipboard.getData('text/plain'))!.text;
+      await controller.startRuler(RulerMode.rectangle);
+      var view = ((await status())['rulerViews'] as List).cast<Map>().first;
+      expect(
+        ((view['modes'] as Map)['rectangle'] as Map)['tooltip'],
+        contains('Rectangle'),
+      );
+      await controller.setLanguage(AppLanguage.zh);
+      final chinese = await status();
+      view = (chinese['rulerViews'] as List).cast<Map>().first;
+      expect(
+        ((view['modes'] as Map)['rectangle'] as Map)['tooltip'],
+        contains('矩形'),
+      );
+      expect(
+        (chinese['menu'] as List)
+            .cast<Map>()
+            .where((item) => item['tool'] != '')
+            .map((item) => item['title']),
+        ['截图', '取色器', '尺子'],
+      );
+      expect(chinese['mainVisible'], false);
+      await controller.cancelScreenshot();
+      await controller.copyColor(sample);
+      expect((await Clipboard.getData('text/plain'))!.text, englishCopy);
+      controller.selectSection(AppSection.settings);
+      await desktop.showMainWindow();
+      await tester.pumpAndSettle();
+      expect(find.text('语言'), findsOneWidget);
+    } finally {
+      await controller.cancelScreenshot();
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      await desktop.saveState(original ?? '{}');
+      await desktop.configureLocale('zh');
       await driver.invokeMethod<void>('restoreClipboard');
     }
   });

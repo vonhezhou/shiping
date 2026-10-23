@@ -1053,6 +1053,24 @@ class DesktopHostApi {
 
   final String pigeonVar_messageChannelSuffix;
 
+  Future<void> configureLocale(String languageCode) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.configureLocale$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[languageCode]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
   Future<int?> pickAnnotationColor(int initialColor) async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.pickAnnotationColor$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(

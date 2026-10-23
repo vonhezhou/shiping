@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show Locale, PlatformDispatcher;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -45,6 +46,8 @@ abstract class DesktopService {
       : UnsupportedDesktopService();
 
   Stream<Map<Object?, Object?>> get events;
+  Locale get systemLocale => PlatformDispatcher.instance.locale;
+  Future<void> configureLocale(String languageCode) async {}
   Future<List<String>> availableFontFamilies() async => [];
   Future<int?> pickAnnotationColor(int initialColor) async => null;
   Future<DesktopStatus> initialize();
@@ -82,6 +85,11 @@ class MacDesktopService implements DesktopService {
   static final _logger = Logger('platform.desktop');
   final _api = wire.DesktopHostApi();
   @override
+  Locale get systemLocale => PlatformDispatcher.instance.locale;
+  @override
+  Future<void> configureLocale(String languageCode) =>
+      _api.configureLocale(languageCode);
+  @override
   Future<int?> pickAnnotationColor(int initialColor) =>
       _api.pickAnnotationColor(initialColor);
   @override
@@ -110,7 +118,7 @@ class MacDesktopService implements DesktopService {
         .where((value) => value.name == tool)
         .firstOrNull;
     if (nativeTool == null) {
-      throw PlatformException(code: 'invalid_tool', message: '未知工具');
+      throw PlatformException(code: 'invalid_tool');
     }
     final reply = await _api.begin(nativeTool);
     try {
@@ -243,7 +251,7 @@ class UnsupportedDesktopService extends DesktopService {
   );
   @override
   Future<CaptureSession> begin(String tool) async =>
-      throw UnsupportedError('当前版本仅支持 macOS 14 及以上');
+      throw UnsupportedError('platform_unsupported');
   @override
   Future<bool> requestPermission() async => false;
   @override

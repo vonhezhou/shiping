@@ -7,6 +7,7 @@ class AppDelegate: FlutterAppDelegate {
   private var reopenObserver: NSObjectProtocol?
   override func applicationDidFinishLaunching(_ notification: Notification) {
     super.applicationDidFinishLaunching(notification)
+    NativeStrings.localizeMenu(NSApp.mainMenu)
     nativeLogs.log(800, "lifecycle", "Native application launch completed.")
     mainFlutterWindow?.orderOut(nil)
     reopenObserver = DistributedNotificationCenter.default().addObserver(
@@ -85,8 +86,8 @@ enum FrulerInstance {
       let message = "Single instance initialization failed: errorType=\(String(reflecting: type(of: error)))."
       logFailure(message)
       let alert = NSAlert()
-      alert.messageText = "无法检查 fruler 的运行实例"
-      alert.informativeText = "\(error.localizedDescription)\n请退出其他 fruler 后重试。"
+      alert.messageText = NativeStrings.text("instance.failure_title")
+      alert.informativeText = NativeStrings.text("instance.failure_detail", error.localizedDescription)
       alert.runModal()
       return false
     }

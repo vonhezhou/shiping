@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
 import 'package:fruler/core/core.dart';
 import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
+  @override
+  Locale get systemLocale => const Locale('zh');
+
   Completer<int?>? colorChoice;
   final colorRequests = <int>[];
   @override

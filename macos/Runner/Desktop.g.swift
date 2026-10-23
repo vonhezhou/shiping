@@ -1036,6 +1036,7 @@ class DesktopPigeonCodec: FlutterStandardMessageCodec, @unchecked Sendable {
 
 /// Generated protocol from Pigeon that represents a handler of messages from Flutter.
 protocol DesktopHostApi {
+  func configureLocale(languageCode: String, completion: @escaping (Result<Void, Error>) -> Void)
   func pickAnnotationColor(initialColor: Int64, completion: @escaping (Result<Int64?, Error>) -> Void)
   func availableFontFamilies(completion: @escaping (Result<[String], Error>) -> Void)
   func initialize(completion: @escaping (Result<NativeStatus, Error>) -> Void)
@@ -1064,6 +1065,23 @@ class DesktopHostApiSetup {
   /// Sets up an instance of `DesktopHostApi` to handle messages through the `binaryMessenger`.
   static func setUp(binaryMessenger: FlutterBinaryMessenger, api: DesktopHostApi?, messageChannelSuffix: String = "") {
     let channelSuffix = messageChannelSuffix.count > 0 ? ".\(messageChannelSuffix)" : ""
+    let configureLocaleChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.configureLocale\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      configureLocaleChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let languageCodeArg = args[0] as! String
+        api.configureLocale(languageCode: languageCodeArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      configureLocaleChannel.setMessageHandler(nil)
+    }
     let pickAnnotationColorChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.pickAnnotationColor\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
       pickAnnotationColorChannel.setMessageHandler { message, reply in

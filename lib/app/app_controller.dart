@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Locale;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
 
 import '../core/core.dart';
+import '../l10n/app_language.dart';
+import '../l10n/app_localizations.dart';
 import '../platform/desktop_service.dart';
 import '../platform/image_document.dart';
 import '../platform/annotation_renderer.dart';
@@ -90,11 +93,88 @@ class MeasurementRecord {
 class AppController extends ChangeNotifier {
   AppController(this.desktop, {ImageDocumentCodec? imageCodec})
     : imageCodec = imageCodec ?? ImageDocumentCodec() {
+    _systemLocale = desktop.systemLocale;
+    _localeNotifier = ValueNotifier(AppLanguage.system.resolve(_systemLocale));
     markup.addListener(_notify);
   }
   static final _logger = Logger('app.controller');
   final DesktopService desktop;
   final ImageDocumentCodec imageCodec;
+  AppLanguage _language = AppLanguage.system;
+  late Locale _systemLocale;
+  late final ValueNotifier<Locale> _localeNotifier;
+  Future<void> _localeUpdate = Future<void>.value();
+  Future<void>? _initialization;
+  AppLanguage get language => _language;
+  Locale get locale => _localeNotifier.value;
+  ValueListenable<Locale> get localeChanges => _localeNotifier;
+  AppLocalizations get strings => lookupAppLocalizations(locale);
+
+  Future<void> setLanguage(AppLanguage language) =>
+      _queueLocaleUpdate(() => _changeLanguage(language, _systemLocale));
+
+  Future<void> updateSystemLocale(Locale systemLocale) =>
+      _queueLocaleUpdate(() => _changeLanguage(_language, systemLocale));
+
+  Future<void> _queueLocaleUpdate(Future<void> Function() action) {
+    // 快速切换或系统通知到达时按顺序配置，避免较早的原生回复覆盖新偏好。
+    final update = _localeUpdate.then((_) async {
+      if (!_disposed) await action();
+    });
+    _localeUpdate = update.catchError((Object error, StackTrace stackTrace) {
+      _logFailure('Language update', error, stackTrace);
+    });
+    return update;
+  }
+
+  Future<void> _changeLanguage(
+    AppLanguage nextLanguage,
+    Locale systemLocale,
+  ) async {
+    final nextLocale = nextLanguage.resolve(systemLocale);
+    if (nextLanguage == _language && nextLocale == locale) {
+      _systemLocale = systemLocale;
+      return;
+    }
+    error = null;
+    notice = null;
+    final previousLocale = locale;
+    try {
+      if (nextLocale != previousLocale) {
+        await desktop.configureLocale(nextLocale.languageCode);
+      }
+      if (_disposed) return;
+      _language = nextLanguage;
+      _systemLocale = systemLocale;
+      _localeNotifier.value = nextLocale;
+      _logger.info(
+        'Application language changed: preference=${_language.name}, locale=${locale.languageCode}.',
+      );
+      _persist();
+      if (_session != null) _redraw();
+    } catch (error, stackTrace) {
+      _logFailure('Native language configuration', error, stackTrace);
+      // 配置可能在部分原生控件更新后失败，显式恢复旧语言以保持两端一致。
+      try {
+        await desktop.configureLocale(previousLocale.languageCode);
+      } catch (restoreError, restoreStackTrace) {
+        _logFailure(
+          'Native language rollback',
+          restoreError,
+          restoreStackTrace,
+        );
+      }
+      if (!_disposed) this.error = strings.msgLocaleChangeFailed;
+    }
+    _notify();
+  }
+
+  String pickerActionLabel(PickerMouseAction action) => switch (action) {
+    PickerMouseAction.pickAndClose => strings.msgPickAndClose,
+    PickerMouseAction.pickAndEdit => strings.msgPickAndEdit,
+    PickerMouseAction.pickAndContinue => strings.msgPickAndContinue,
+    PickerMouseAction.cancel => strings.msgCancelPicking,
+  };
   final markup = AnnotationHistory();
   static const _annotationColorTools = {
     'rectangle',
@@ -176,7 +256,9 @@ class AppController extends ChangeNotifier {
       error = null;
     } catch (e, stackTrace) {
       _logFailure('Screenshot selection adjustment', e, stackTrace);
-      if (_session?.id == session.id) error = '截图区域调整失败：${_message(e)}';
+      if (_session?.id == session.id) {
+        error = strings.msgScreenshotSelectionFailed(describeError(e));
+      }
     } finally {
       if (_session?.id == session.id) imageLoading = false;
       _notify();
@@ -217,11 +299,11 @@ class AppController extends ChangeNotifier {
       }
       await desktop.finish(sessionId);
       _resetSession();
-      notice = save ? '截图已保存' : '截图已复制';
+      notice = save ? strings.msgScreenshotSaved : strings.msgScreenshotCopied;
       error = null;
     } catch (e, stackTrace) {
       _logFailure('Screenshot export', e, stackTrace);
-      _fail('截图导出失败：${_message(e)}');
+      _fail(strings.msgScreenshotExportFailed(describeError(e)));
     } finally {
       screenshotExporting = false;
       _notify();
@@ -232,11 +314,11 @@ class AppController extends ChangeNotifier {
     try {
       await desktop.exportImage(png, save: false);
       _logger.info('Screenshot clipboard write completed.');
-      notice = '已复制截图';
+      notice = strings.msgCopiedScreenshot;
       _notify();
     } catch (e, stackTrace) {
       _logFailure('Screenshot clipboard write', e, stackTrace);
-      _fail(_message(e));
+      _fail(describeError(e));
     }
   }
 
@@ -291,7 +373,7 @@ class AppController extends ChangeNotifier {
   bool createPaletteGroup(String name) {
     name = name.trim();
     if (name.isEmpty || name.length > 60 || _paletteGroups.contains(name)) {
-      _fail('分组名称需为 1–60 个字符，且不能重复');
+      _fail(strings.msgGroupNameInvalid);
       return false;
     }
     _paletteGroups.add(name);
@@ -307,7 +389,7 @@ class AppController extends ChangeNotifier {
         name.isEmpty ||
         name.length > 60 ||
         _paletteGroups.contains(name)) {
-      _fail('分组名称需为 1–60 个字符，且不能重复');
+      _fail(strings.msgGroupNameInvalid);
       return false;
     }
     _paletteGroups[_paletteGroups.indexOf(old)] = name;
@@ -407,13 +489,13 @@ class AppController extends ChangeNotifier {
   }) {
     try {
       if (id == null && _colorOutputs.length >= 24) {
-        throw const FormatException('最多保留 24 种颜色格式');
+        throw const ValidationException('outputLimit');
       }
       name = name.trim();
       if (_colorOutputs.any(
         (e) => e.id != id && e.name.toLowerCase() == name.toLowerCase(),
       )) {
-        throw const FormatException('格式名称不能重复');
+        throw const ValidationException('outputNameDuplicate');
       }
       var index = 1;
       while (_colorOutputs.any((e) => e.id == 'custom-$index')) {
@@ -438,7 +520,7 @@ class AppController extends ChangeNotifier {
       return true;
     } on FormatException catch (e, stackTrace) {
       _logFailure('Color output validation', e, stackTrace);
-      _fail(e.message);
+      _fail(describeError(e));
       return false;
     }
   }
@@ -449,7 +531,7 @@ class AppController extends ChangeNotifier {
     if (!enabled &&
         enabledColorOutputs.length == 1 &&
         _colorOutputs[index].enabled) {
-      _fail('至少保留一种启用的颜色格式');
+      _fail(strings.msgOutputRequired);
       return false;
     }
     _colorOutputs[index] = _colorOutputs[index].copyWith(enabled: enabled);
@@ -463,7 +545,7 @@ class AppController extends ChangeNotifier {
     final entry = _colorOutputs.where((e) => e.id == id).firstOrNull;
     if (entry == null) return false;
     if (entry.enabled && enabledColorOutputs.length == 1) {
-      _fail('至少保留一种启用的颜色格式');
+      _fail(strings.msgOutputRequired);
       return false;
     }
     _colorOutputs.remove(entry);
@@ -532,14 +614,17 @@ class AppController extends ChangeNotifier {
   bool _disposed = false;
   final List<Map<Object?, Object?>> _pending = [];
 
-  Future<void> initialize() async {
+  Future<void> initialize() =>
+      _initialization ??= _queueLocaleUpdate(_initialize);
+
+  Future<void> _initialize() async {
     if (_subscription != null) return;
     _logger.info('Controller initialization started.');
     _subscription = desktop.events.listen(
       _event,
       onError: (Object e, StackTrace stackTrace) {
         _logFailure('Desktop event stream', e, stackTrace);
-        _fail('系统工具连接中断，请重新打开 fruler。');
+        _fail(strings.msgDesktopDisconnected);
       },
     );
     try {
@@ -549,6 +634,25 @@ class AppController extends ChangeNotifier {
       supported = status.supported;
       final saved = await desktop.loadState();
       if (saved != null) _restore(saved);
+      try {
+        await desktop.configureLocale(locale.languageCode);
+      } catch (error, stackTrace) {
+        _logFailure('Initial language configuration', error, stackTrace);
+        _language = AppLanguage.system;
+        _localeNotifier.value = _language.resolve(_systemLocale);
+        try {
+          await desktop.configureLocale(locale.languageCode);
+        } catch (restoreError, restoreStackTrace) {
+          _logFailure(
+            'Initial language fallback',
+            restoreError,
+            restoreStackTrace,
+          );
+        }
+        this.error = strings.msgLocaleChangeFailed;
+        notice = null;
+        _persist();
+      }
       _logger.info('State loaded: present=${saved != null}.');
       if (supported) {
         try {
@@ -556,13 +660,13 @@ class AppController extends ChangeNotifier {
         } catch (e, stackTrace) {
           _logFailure('Initial shortcut registration', e, stackTrace);
           shortcutsAvailable = false;
-          error = _message(e);
+          error = describeError(e);
         }
       }
-      if (!supported) error = '当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。';
+      if (!supported) error = strings.msgPlatformUnsupported;
     } catch (e, stackTrace) {
       _logFailure('Controller initialization', e, stackTrace);
-      error = _message(e);
+      error = describeError(e);
     } finally {
       _logger.info(
         'Controller initialized: supported=$supported, permission=$permissionGranted, shortcuts=$shortcutsAvailable.',
@@ -611,13 +715,13 @@ class AppController extends ChangeNotifier {
       _logger.info('Screen permission requested: granted=$permissionGranted.');
       if (permissionGranted) screenshotPermissionRequired = false;
       notice = permissionGranted
-          ? '屏幕访问已授权，可以开始使用。'
-          : '请在系统设置中允许 fruler 录制屏幕，然后返回重试。';
+          ? strings.msgPermissionGranted
+          : strings.msgPermissionDenied;
       error = null;
       _notify();
     } catch (e, stackTrace) {
       _logFailure('Permission request', e, stackTrace);
-      _fail(_message(e));
+      _fail(describeError(e));
     }
   }
 
@@ -626,7 +730,7 @@ class AppController extends ChangeNotifier {
       await desktop.openPrivacySettings();
     } catch (e, stackTrace) {
       _logFailure('Privacy settings open', e, stackTrace);
-      _fail(_message(e));
+      _fail(describeError(e));
     }
   }
 
@@ -772,7 +876,7 @@ class AppController extends ChangeNotifier {
       _logFailure('Screenshot abort cleanup', e, stackTrace);
     }
     _resetSession();
-    _fail('截图失败：${_message(error)}');
+    _fail(strings.msgScreenshotFailed(describeError(error)));
     await desktop.showMainWindow();
   }
 
@@ -792,7 +896,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     if (!supported) {
-      _fail('当前版本仅支持 macOS 14 及以上。');
+      _fail(strings.msgMacOSRequired);
       return;
     }
     busy = true;
@@ -849,7 +953,7 @@ class AppController extends ChangeNotifier {
         permissionGranted = false;
         screenshotPermissionRequired = tool == 'screenshot';
       }
-      _fail(_message(e));
+      _fail(describeError(e));
     }
   }
 
@@ -907,7 +1011,9 @@ class AppController extends ChangeNotifier {
       _logger.info('Capture cancelled: session=${_session!.id}, tool=$_tool.');
       final count = _tool == 'picker' ? _pickedCount : 0;
       _resetSession();
-      notice = count > 0 ? '取色已结束，已采集 $count 次' : '已取消';
+      notice = count > 0
+          ? strings.msgPickingFinished(count)
+          : strings.msgCancelled;
       _notify();
       return;
     }
@@ -1082,11 +1188,17 @@ class AppController extends ChangeNotifier {
     'colorOutputName': activeColorOutput.name,
     'continuous': _contrastTarget == null && continuousPicker,
     'pickerActions': _contrastTarget == null
-        ? '左键：${pickerBehavior.primary.label} · 中键：${pickerBehavior.middle.label} · 右键：${pickerBehavior.secondary.label}'
-        : '左键 / Enter 确认 · 右键取消',
+        ? strings.msgPickerActions(
+            pickerActionLabel(pickerBehavior.primary),
+            pickerActionLabel(pickerBehavior.middle),
+            pickerActionLabel(pickerBehavior.secondary),
+          )
+        : strings.msgConfirmActions,
     'capturePurpose': _contrastTarget == null
         ? ''
-        : (_contrastTarget == 'foreground' ? '选取前景色' : '选取背景色'),
+        : (_contrastTarget == 'foreground'
+              ? strings.msgPickForeground
+              : strings.msgPickBackground),
     'pickedCount': _pickedCount,
     'selectedPin': _selectedPin,
     'editingPins': _editingPins,
@@ -1188,8 +1300,8 @@ class AppController extends ChangeNotifier {
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y}'
         : _tool == 'screenshot'
-        ? '${color.hex} · ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y} · ${measurement?.label ?? '拖动框选截图'}'
-        : measurement?.label ?? '按住并拖拽，测量矩形区域';
+        ? '${color.hex} · ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y} · ${measurement?.label ?? strings.msgDragScreenshot}'
+        : measurement?.label ?? strings.msgDragMeasurement;
     _updateOverlay({
       ..._overlayOptions,
       'displayId': display.id,
@@ -1235,11 +1347,11 @@ class AppController extends ChangeNotifier {
       _committing = true;
       try {
         await desktop.finish(sessionId);
-        notice = '已取消取色';
+        notice = strings.msgPickingCancelled;
         error = null;
       } catch (e, stackTrace) {
         _logFailure('Color picker finish', e, stackTrace);
-        _fail('无法关闭取色浮层：${_message(e)}');
+        _fail(strings.msgPickerFinishFailed(describeError(e)));
       } finally {
         if (_session?.id == sessionId) _resetSession();
         _notify();
@@ -1267,12 +1379,14 @@ class AppController extends ChangeNotifier {
         await desktop.writeClipboard(formatColor(color));
         _logger.info('Color clipboard write completed: session=$sessionId.');
         if (_session?.id == sessionId) {
-          notice = '已连续取色 $_pickedCount 次，Esc 结束';
+          notice = strings.msgPickingContinues(_pickedCount);
           error = null;
         }
       } catch (e, stackTrace) {
         _logFailure('Continuous color clipboard write', e, stackTrace);
-        if (_session?.id == sessionId) error = '颜色已保存，但复制失败：${_message(e)}';
+        if (_session?.id == sessionId) {
+          error = strings.msgColorClipboardFailed(describeError(e));
+        }
       } finally {
         if (_session?.id == sessionId) {
           _committing = false;
@@ -1321,11 +1435,13 @@ class AppController extends ChangeNotifier {
           'Measurement clipboard write completed: session=$sessionId.',
         );
         if (_session?.id == sessionId) {
-          notice = '已保留 ${_pins.length} 个测量框，并复制尺寸';
+          notice = strings.msgMeasurementsRetained(_pins.length);
         }
       } catch (e, stackTrace) {
         _logFailure('Measurement clipboard write', e, stackTrace);
-        if (_session?.id == sessionId) error = '标注已保留，但复制失败：${_message(e)}';
+        if (_session?.id == sessionId) {
+          error = strings.msgMeasurementClipboardFailed(describeError(e));
+        }
       } finally {
         if (_session?.id == sessionId) {
           _committing = false;
@@ -1360,12 +1476,14 @@ class AppController extends ChangeNotifier {
     try {
       await desktop.writeClipboard(result.label);
       if (_session?.id == session.id) {
-        notice = '已复制 ${result.label}';
+        notice = strings.msgCopied(result.label);
         error = null;
       }
     } catch (e, stackTrace) {
       _logFailure('Selected measurement clipboard write', e, stackTrace);
-      if (_session?.id == session.id) error = '尺寸复制失败：${_message(e)}';
+      if (_session?.id == session.id) {
+        error = strings.msgSizeClipboardFailed(describeError(e));
+      }
     } finally {
       if (_session?.id == session.id) _committing = false;
       _notify();
@@ -1497,12 +1615,16 @@ class AppController extends ChangeNotifier {
         save: save,
       );
       if (done && _session?.id == session.id) {
-        notice = save ? '标注图片已导出' : '标注图片已复制';
+        notice = save
+            ? strings.msgAnnotationImageExported
+            : strings.msgAnnotationImageCopied;
         error = null;
       }
     } catch (e, stackTrace) {
       _logFailure('Measurement image export', e, stackTrace);
-      if (_session?.id == session.id) _fail('标注图片导出失败：${_message(e)}');
+      if (_session?.id == session.id) {
+        _fail(strings.msgAnnotationImageExportFailed(describeError(e)));
+      }
     } finally {
       if (_session?.id == session.id) {
         _committing = false;
@@ -1517,16 +1639,20 @@ class AppController extends ChangeNotifier {
     try {
       await desktop.writeClipboard(text);
       _logger.info('Clipboard write completed.');
-      if (_session?.id == id) notice = '已复制 $text';
+      if (_session?.id == id) notice = strings.msgCopied(text);
     } catch (e, stackTrace) {
       _logFailure('Result clipboard write', e, stackTrace);
-      if (_session?.id == id) error = '结果已保存，但复制失败：${_message(e)}';
+      if (_session?.id == id) {
+        error = strings.msgResultClipboardFailed(describeError(e));
+      }
     } finally {
       try {
         if (id != null) await desktop.finish(id);
       } catch (e, stackTrace) {
         _logFailure('Capture finish', e, stackTrace);
-        if (_session?.id == id) error = '无法关闭测量浮层，请按 Esc：${_message(e)}';
+        if (_session?.id == id) {
+          error = strings.msgRulerFinishFailed(describeError(e));
+        }
       }
       if (_session?.id == id) _resetSession();
       _persist();
@@ -1545,7 +1671,7 @@ class AppController extends ChangeNotifier {
       /* Preserve original failure. */
     }
     _resetSession();
-    _fail(_message(e));
+    _fail(describeError(e));
   }
 
   void _resetSession() {
@@ -1596,7 +1722,7 @@ class AppController extends ChangeNotifier {
       return true;
     } catch (e, stackTrace) {
       _logFailure('Shortcut recording start', e, stackTrace);
-      _fail(_message(e));
+      _fail(describeError(e));
       return false;
     }
   }
@@ -1606,7 +1732,7 @@ class AppController extends ChangeNotifier {
       shortcutsAvailable = await desktop.setShortcutRecording(false);
     } catch (e, stackTrace) {
       _logFailure('Shortcut recording finish', e, stackTrace);
-      _fail(_message(e));
+      _fail(describeError(e));
     } finally {
       recordingShortcut = false;
       _notify();
@@ -1625,7 +1751,7 @@ class AppController extends ChangeNotifier {
       screenshot: screenshot ? chord : shortcuts.screenshot,
     );
     if (!candidate.isValid) {
-      _fail('快捷键需要字母或数字、至少一个主修饰键，且各工具不能重复。');
+      _fail(strings.msgShortcutInvalid);
       return false;
     }
     savingShortcuts = true;
@@ -1633,14 +1759,14 @@ class AppController extends ChangeNotifier {
     try {
       final registered = await desktop.configureShortcuts(candidate);
       if (!registered) {
-        _fail('快捷键注册失败，已保留原配置。');
+        _fail(strings.msgShortcutRegistrationFailed);
         return false;
       }
       _logger.info('Shortcut configuration completed.');
       shortcuts = candidate;
       shortcutsAvailable = true;
       error = null;
-      notice = '快捷键已更新';
+      notice = strings.msgShortcutsUpdated;
       _persist();
       return true;
     } catch (e, stackTrace) {
@@ -1649,7 +1775,7 @@ class AppController extends ChangeNotifier {
         final status = (e.details as Map)['shortcuts'];
         if (status is bool) shortcutsAvailable = status;
       }
-      _fail(_message(e));
+      _fail(describeError(e));
       return false;
     } finally {
       savingShortcuts = false;
@@ -1730,13 +1856,13 @@ class AppController extends ChangeNotifier {
         'fruler-${saved ? 'palette' : 'recent'}.${format.name}',
         exportPalette(entries, format),
       )) {
-        notice = '颜色已导出';
+        notice = strings.msgColorsExported;
         error = null;
         _notify();
       }
     } catch (e, stackTrace) {
       _logFailure('Palette export', e, stackTrace);
-      _fail('颜色导出失败：${_message(e)}');
+      _fail(strings.msgColorsExportFailed(describeError(e)));
     }
   }
 
@@ -1746,7 +1872,11 @@ class AppController extends ChangeNotifier {
       return text == null ? null : importPalette(text);
     } catch (e, stackTrace) {
       _logFailure('Palette import', e, stackTrace);
-      _fail(e is FormatException ? e.message : '无法读取调色板文件：${_message(e)}');
+      _fail(
+        e is FormatException
+            ? describeError(e)
+            : strings.msgPaletteReadFailed(describeError(e)),
+      );
       return null;
     }
   }
@@ -1761,7 +1891,7 @@ class AppController extends ChangeNotifier {
         _paletteGroups.add(e.group);
       }
     }
-    notice = '已合并 ${entries.length} 个颜色';
+    notice = strings.msgColorsMerged(entries.length);
     error = null;
     _persist();
     _notify();
@@ -1775,7 +1905,10 @@ class AppController extends ChangeNotifier {
     if (entries.isNotEmpty) {
       await _copy(
         copyPalette(entries, flutter: flutter),
-        message: '已复制 ${entries.length} 色的 ${flutter ? 'Flutter' : 'CSS'} 代码',
+        message: () => strings.msgPaletteCodeCopied(
+          entries.length,
+          flutter ? 'Flutter' : 'CSS',
+        ),
       );
     }
   }
@@ -1867,13 +2000,13 @@ class AppController extends ChangeNotifier {
         'fruler-measurements.${csv ? 'csv' : 'json'}',
         text,
       )) {
-        notice = '已导出 ${records.length} 条测量记录';
+        notice = strings.msgMeasurementsExported(records.length);
         error = null;
         _notify();
       }
     } catch (e, stackTrace) {
       _logFailure('Measurement history export', e, stackTrace);
-      _fail('测量记录导出失败：${_message(e)}');
+      _fail(strings.msgMeasurementsExportFailed(describeError(e)));
     }
   }
 
@@ -1884,16 +2017,16 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> copyMeasurement(MeasurementRecord record) => _copy(record.label);
-  Future<void> _copy(String text, {String? message}) async {
+  Future<void> _copy(String text, {String Function()? message}) async {
     try {
       await desktop.writeClipboard(text);
       _logger.info('Clipboard write completed.');
-      notice = message ?? '已复制 $text';
+      notice = message?.call() ?? strings.msgCopied(text);
       error = null;
       _notify();
     } catch (e, stackTrace) {
       _logFailure('Clipboard write', e, stackTrace);
-      _fail(_message(e));
+      _fail(describeError(e));
     }
   }
 
@@ -1912,6 +2045,7 @@ class AppController extends ChangeNotifier {
   void _persist() {
     final json = jsonEncode({
       'version': 1,
+      'language': _language.name,
       'annotationColors': _annotationColors,
       'format': format.name,
       'colorOutputs': _colorOutputs.map((e) => e.toJson()).toList(),
@@ -1932,7 +2066,7 @@ class AppController extends ChangeNotifier {
     unawaited(
       desktop.saveState(json).catchError((Object e, StackTrace stackTrace) {
         _logFailure('State save', e, stackTrace);
-        _fail('历史记录保存失败：${_message(e)}');
+        _fail(strings.msgHistorySaveFailed(describeError(e)));
       }),
     );
   }
@@ -1940,6 +2074,8 @@ class AppController extends ChangeNotifier {
   void _restore(String saved) {
     try {
       final data = jsonDecode(saved) as Map<String, dynamic>;
+      _language = AppLanguage.parse(data['language']);
+      _localeNotifier.value = _language.resolve(_systemLocale);
       var ignoredRecords = 0;
       final annotationColors = data['annotationColors'];
       if (annotationColors is Map) {
@@ -1964,7 +2100,7 @@ class AppController extends ChangeNotifier {
         }
       } catch (e, stackTrace) {
         _logFailure('Shortcut restore', e, stackTrace);
-        notice = '快捷键配置无效，已恢复默认值。';
+        notice = strings.msgShortcutsRestored;
       }
       continuousPicker = data['continuousPicker'] == true;
       selectedOutputId = format.name;
@@ -2062,7 +2198,7 @@ class AppController extends ChangeNotifier {
       if (_colors.isNotEmpty) selectedColor = _colors.first;
     } catch (e, stackTrace) {
       _logFailure('State restore', e, stackTrace);
-      notice = '历史记录无法读取，已使用默认设置。';
+      notice = strings.msgHistoryRestoreFailed;
     }
   }
 
@@ -2076,19 +2212,62 @@ class AppController extends ChangeNotifier {
     );
   }
 
-  String _message(Object e) {
-    if (e is PlatformException) {
+  String describeError(Object e) {
+    if (e is ValidationException) {
       return switch (e.code) {
-        'screen_permission' => '需要屏幕录制权限。请前往偏好设置授权，再重新打开工具。',
-        'capture_cancelled' => '屏幕状态发生变化，请重新开始。',
-        'shortcut_conflict' => '快捷键已被占用，已尝试恢复原配置。',
-        'shortcut_invalid' => e.message ?? '此快捷键不可用，请使用其他组合。',
-        'capture_busy' => '已有工具正在使用，请先按 Esc 退出。',
-        _ => e.message ?? '系统操作失败，请重试。',
+        'annotationCount' => strings.validationAnnotationCount,
+        'annotationInvalid' => strings.validationAnnotationInvalid,
+        'annotationStyle' => strings.validationAnnotationStyle,
+        'annotationPoints' => strings.validationAnnotationPoints,
+        'annotationCoordinates' => strings.validationAnnotationCoordinates,
+        'annotationBounds' => strings.validationAnnotationBounds,
+        'annotationEndpoints' => strings.validationAnnotationEndpoints,
+        'annotationLimit' => strings.validationAnnotationLimit,
+        'hexColor' => strings.validationHexColor,
+        'hslValue' => strings.validationHslValue,
+        'rgbValue' => strings.validationRgbValue,
+        'paletteEntry' => strings.validationPaletteEntry,
+        'paletteVersion' => strings.validationPaletteVersion,
+        'paletteLimit' => strings.validationPaletteLimit,
+        'paletteMetadata' => strings.validationPaletteMetadata,
+        'paletteChannels' => strings.validationPaletteChannels,
+        'paletteDuplicates' => strings.validationPaletteDuplicates,
+        'outputInvalid' => strings.validationOutputInvalid,
+        'outputName' => strings.validationOutputName,
+        'outputTemplate' => strings.validationOutputTemplate,
+        'outputSubstitution' => strings.validationOutputSubstitution,
+        'pickerBehavior' => strings.validationPickerBehavior,
+        'outputLimit' => strings.validationOutputLimit,
+        'outputNameDuplicate' => strings.validationOutputNameDuplicate,
+        'imageSize' => strings.validationImageSize,
+        'imageFormat' => strings.validationImageFormat,
+        'imageDecode' => strings.validationImageDecode,
+        'imageAnnotationsEmpty' => strings.validationImageAnnotationsEmpty,
+        'imageExport' => strings.validationImageExport,
+        'shortcut' => strings.validationShortcut,
+        'shortcutBindings' => strings.validationShortcutBindings,
+        'shortcutDuplicates' => strings.validationShortcutDuplicates,
+        'outputPlaceholder' => strings.validationOutputPlaceholder(
+          e.arguments['token'] as String,
+        ),
+        'imageFileLimit' => strings.validationImageFileLimit(
+          e.arguments['limit'] as int,
+        ),
+        _ => strings.msgOperationFailed,
       };
     }
-    if (e is UnsupportedError) return e.message?.toString() ?? '当前平台尚未支持';
-    return '操作失败，请重试。';
+    if (e is PlatformException) {
+      return switch (e.code) {
+        'screen_permission' => strings.msgScreenPermissionRequired,
+        'capture_cancelled' => strings.msgCaptureCancelled,
+        'shortcut_conflict' => strings.msgShortcutConflict,
+        'shortcut_invalid' => strings.msgShortcutUnavailable,
+        'capture_busy' => strings.msgCaptureBusy,
+        _ => strings.msgSystemOperationFailed,
+      };
+    }
+    if (e is UnsupportedError) return strings.msgUnsupportedPlatform;
+    return strings.msgOperationFailed;
   }
 
   void _fail(String message) {
@@ -2119,6 +2298,7 @@ class AppController extends ChangeNotifier {
     }
     markup.removeListener(_notify);
     markup.dispose();
+    _localeNotifier.dispose();
     super.dispose();
   }
 }

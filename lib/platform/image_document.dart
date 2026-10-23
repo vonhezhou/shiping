@@ -39,7 +39,7 @@ class ImageDocumentCodec {
     }
     _validateSize(rect.width, rect.height);
     return ImageDocument(
-      '截图.png',
+      'screenshot.png',
       source.view(
         left: rect.left,
         top: rect.top,
@@ -51,13 +51,15 @@ class ImageDocumentCodec {
 
   static void _validateSize(int width, int height) {
     if (width > 16384 || height > 16384 || width * height > 16000000) {
-      throw const FormatException('图片最多 1600 万像素，单边不超过 16384 像素');
+      throw const ValidationException('imageSize');
     }
   }
 
   Future<ImageDocument> _decode(ImageFileData file, int limit) async {
     if (file.bytes.length > limit) {
-      throw FormatException('图片文件不能超过 ${limit ~/ (1024 * 1024)} MB');
+      throw ValidationException('imageFileLimit', {
+        'limit': limit ~/ (1024 * 1024),
+      });
     }
     final b = file.bytes;
     final png =
@@ -69,7 +71,7 @@ class ImageDocumentCodec {
         String.fromCharCodes(b.sublist(0, 4)) == 'RIFF' &&
         String.fromCharCodes(b.sublist(8, 12)) == 'WEBP';
     if (!png && !jpeg && !webp) {
-      throw const FormatException('仅支持 PNG、JPEG 和 WebP 图片');
+      throw const ValidationException('imageFormat');
     }
     final buffer = await ui.ImmutableBuffer.fromUint8List(b);
     final codec = await ui.instantiateImageCodecWithSize(
@@ -95,7 +97,7 @@ class ImageDocumentCodec {
             format: ui.ImageByteFormat.rawRgba,
           );
           if (raw == null) {
-            throw const FormatException('无法解码图片');
+            throw const ValidationException('imageDecode');
           }
           return ImageDocument(
             file.name,
@@ -172,7 +174,7 @@ class ImageDocumentCodec {
     }
     if (union == null) {
       image.dispose();
-      throw const FormatException('没有可导出的图片标注');
+      throw const ValidationException('imageAnnotationsEmpty');
     }
     final crop = union.inflate(16);
     final recorder = ui.PictureRecorder();
@@ -212,7 +214,7 @@ class ImageDocumentCodec {
     image.dispose();
     try {
       final bytes = await output.toByteData(format: ui.ImageByteFormat.png);
-      if (bytes == null) throw const FormatException('图片导出失败');
+      if (bytes == null) throw const ValidationException('imageExport');
       return bytes.buffer.asUint8List();
     } finally {
       output.dispose();

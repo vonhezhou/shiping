@@ -1,0 +1,392 @@
+{
+  "@@locale": "zh",
+  "appTitle": "fruler",
+  "uiModeRectangle": "矩形",
+  "uiModeHorizontal": "水平",
+  "uiModeVertical": "垂直",
+  "uiModeCross": "交叉",
+  "uiBackToHistory": "返回历史",
+  "uiPreferences": "偏好设置",
+  "uiScreenWorkflow": "在屏幕上完成操作，复制或保存后回到原应用。",
+  "uiColorHistory": "取色历史",
+  "uiMeasurementHistory": "测量历史",
+  "uiScreenshotHistory": "截图历史",
+  "uiNoColors": "还没有取色记录",
+  "uiNoColorsDescription": "在屏幕上取色后自动复制，最近颜色显示在这里。",
+  "uiNoScreenshots": "还没有截图记录",
+  "uiNoScreenshotsDescription": "完成的截图暂存在本次运行中，点击即可重新复制。",
+  "uiPreferencesIndex": "03 / 偏好设置",
+  "uiPreferencesHeading": "按你的习惯工作",
+  "uiPreferencesDescription": "轻量常驻，随时就绪。",
+  "uiScreenAccess": "屏幕访问",
+  "uiScreenPermissionGranted": "已获得屏幕录制权限",
+  "uiScreenPermissionNeeded": "需要允许 fruler 录制屏幕",
+  "uiScreenPrivacy": "启动工具时冻结屏幕快照，退出后释放，不上传。仅在你复制或导出标注时，将局部图片写入剪贴板或所选文件。",
+  "uiRecheckPermission": "重新检查权限",
+  "uiRequestPermission": "请求屏幕授权",
+  "uiOpenSystemSettings": "打开系统设置 ↗",
+  "uiColorPicking": "取色",
+  "uiCopyFormat": "复制格式",
+  "uiContinuousPicker": "连续取色",
+  "uiContinuousPickerDescription": "每次取色立即复制，Esc 结束",
+  "uiEdgeDetection": "边界识别",
+  "uiColorTolerance": "颜色容差",
+  "uiToleranceDescription": "每个 RGB 通道与光标像素比较。容差越小，边界识别越严格。",
+  "uiToleranceExact": "0 · 精确匹配",
+  "uiToleranceLoose": "255 · 宽松匹配",
+  "uiKeyboardShortcuts": "快捷操作",
+  "uiCancelTool": "取消当前工具",
+  "uiCancelToolKeys": "Esc / 鼠标右键",
+  "uiShortcutsUnavailable": "全局快捷键未全部注册，可能已被其他应用占用。仍可使用窗口或菜单栏入口。",
+  "uiAbout": "fruler 0.10.0 · Flutter 界面与 Dart 测量核心 · macOS 14+",
+  "uiScreenshotAndAnnotate": "截图并标注",
+  "uiColorPicker": "取色器",
+  "uiRectangleMeasurement": "矩形测量",
+  "uiPermissionBanner": "首次使用需要屏幕录制权限，才能读取屏幕上的像素。",
+  "uiGoToPermission": "前往授权 →",
+  "uiDismissMessage": "关闭提示",
+  "uiClearHistory": "清空记录",
+  "uiShortcutInstructions": "按下修饰键与一个字母或数字的组合。需要包含 ⌘、⌃ 或 ⌥；支持附加 ⇧。",
+  "uiShortcutWaiting": "等待按键…",
+  "uiShortcutSaveHint": "按 Enter 保存，Esc 取消。系统保留或已占用的组合无法保存。",
+  "uiCancel": "取消",
+  "uiSave": "保存",
+  "uiName": "名称",
+  "uiSaveName": "保存名称",
+  "uiMeasurementRecords": "测量记录",
+  "uiMeasurementSearch": "搜索名称、尺寸、显示器或日期",
+  "uiFavoritesOnly": "只看收藏",
+  "uiNoMeasurements": "暂无匹配记录",
+  "uiNoMeasurementsDescription": "测量后会保留像素、逻辑尺寸及显示器缩放；收藏可长期保留。",
+  "uiUnfavoriteMeasurement": "取消收藏测量",
+  "uiFavoriteMeasurement": "收藏测量",
+  "uiOriginalPixels": "原图像素",
+  "uiMeasurementActions": "测量记录操作",
+  "uiNameMeasurement": "命名测量",
+  "uiCopyDimensions": "复制尺寸",
+  "uiDeleteRecord": "删除记录",
+  "uiSearchFonts": "搜索字体",
+  "uiNoMatchingFonts": "没有匹配的字体",
+  "uiFontLoadingFailed": "系统字体读取失败，请重新框选后重试",
+  "uiScreenshotLoadingFailed": "截图加载失败，请重新框选",
+  "uiNoSystemFonts": "暂无可用系统字体",
+  "uiFontSize": "字号",
+  "uiColorPanelFailed": "无法打开系统调色盘，请重试",
+  "uiCustomColor": "自定义颜色",
+  "uiMosaicSize": "色块大小",
+  "uiBlurStrength": "模糊程度",
+  "uiBrushWidth": "画笔宽度",
+  "uiRectangleEraser": "框选擦除",
+  "uiFillShape": "填充形状",
+  "uiEllipse": "椭圆",
+  "uiLineTooltip": "直线 / 折线 · Tab 切换箭头",
+  "uiArrowTooltip": "箭头 · Tab 切换直线",
+  "uiRectangleSelection": "框选",
+  "uiMosaic": "马赛克",
+  "uiGaussianBlur": "高斯模糊",
+  "uiBold": "粗体",
+  "uiItalic": "斜体",
+  "uiTextOutline": "文字描边（自动黑白对比色）",
+  "uiEditText": "编辑文字",
+  "uiShapeTools": "形状：矩形 / 椭圆",
+  "uiLineTools": "直线 / 折线 / 箭头",
+  "uiPencil": "画笔",
+  "uiMarker": "荧光笔",
+  "uiEffectTools": "马赛克 / 高斯模糊",
+  "uiText": "文字",
+  "uiEraserTools": "橡皮擦 · 框选 / 画笔局部擦除",
+  "uiUndo": "撤销 ⌘Z",
+  "uiRedo": "重做 ⌘Y / ⇧⌘Z",
+  "uiDeleteSelected": "删除选中 Delete",
+  "uiCancelScreenshot": "取消 Esc",
+  "uiSavePng": "保存 PNG ⌘S",
+  "uiCopyAndFinish": "复制并完成 ↵",
+  "uiCaptureCopyHint": "C 复制颜色 · M 复制尺寸",
+  "uiStartPicker": "取色器 · {shortcut}",
+  "uiStartRuler": "尺子 · {shortcut}",
+  "uiStartScreenshot": "截图 · {shortcut}",
+  "uiShortcutTitle": "设置{tool}快捷键",
+  "uiExportCurrentResults": "导出当前结果 {format}",
+  "uiMeasurementDetails": "{dimensions} · {mode} · {display}\n缩放 {scaleX} × {scaleY} · {date}",
+  "uiLineWidthTooltip": "线宽 {width} pt · 滚轮 / 1、2 / [、]",
+  "uiFontFamilyTooltip": "字体：{family}",
+  "uiCaptureRegion": "区域: {width} × {height} px",
+  "uiParameterTooltip": "{label} · {value}{unit}",
+  "uiParameterValue": "{label} {value}",
+  "uiLanguage": "语言",
+  "uiLanguageDescription": "选择窗口、工具和菜单的显示语言。",
+  "uiLanguageSystem": "跟随系统",
+  "uiLanguageChinese": "简体中文",
+  "uiLanguageEnglish": "English",
+  "msgScreenshotSelectionFailed": "截图区域调整失败：{detail}",
+  "@msgScreenshotSelectionFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgScreenshotSaved": "截图已保存",
+  "msgScreenshotCopied": "截图已复制",
+  "msgCopiedScreenshot": "已复制截图",
+  "msgScreenshotExportFailed": "截图导出失败：{detail}",
+  "@msgScreenshotExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgGroupNameInvalid": "分组名称需为 1–60 个字符，且不能重复",
+  "msgOutputRequired": "至少保留一种启用的颜色格式",
+  "msgDesktopDisconnected": "系统工具连接中断，请重新打开 fruler。",
+  "msgPlatformUnsupported": "当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。",
+  "msgPermissionGranted": "屏幕访问已授权，可以开始使用。",
+  "msgPermissionDenied": "请在系统设置中允许 fruler 录制屏幕，然后返回重试。",
+  "msgScreenshotFailed": "截图失败：{detail}",
+  "@msgScreenshotFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgMacOSRequired": "当前版本仅支持 macOS 14 及以上。",
+  "msgPickingFinished": "取色已结束，已采集 {count} 次",
+  "@msgPickingFinished": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgCancelled": "已取消",
+  "msgPickerActions": "左键：{primary} · 中键：{middle} · 右键：{secondary}",
+  "@msgPickerActions": {
+    "placeholders": {
+      "primary": {
+        "type": "String"
+      },
+      "middle": {
+        "type": "String"
+      },
+      "secondary": {
+        "type": "String"
+      }
+    }
+  },
+  "msgConfirmActions": "左键 / Enter 确认 · 右键取消",
+  "msgPickForeground": "选取前景色",
+  "msgPickBackground": "选取背景色",
+  "msgDragScreenshot": "拖动框选截图",
+  "msgDragMeasurement": "按住并拖拽，测量矩形区域",
+  "msgPickingCancelled": "已取消取色",
+  "msgPickerFinishFailed": "无法关闭取色浮层：{detail}",
+  "@msgPickerFinishFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgPickingContinues": "已连续取色 {count} 次，Esc 结束",
+  "@msgPickingContinues": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgColorClipboardFailed": "颜色已保存，但复制失败：{detail}",
+  "@msgColorClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgMeasurementsRetained": "已保留 {count} 个测量框，并复制尺寸",
+  "@msgMeasurementsRetained": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgMeasurementClipboardFailed": "标注已保留，但复制失败：{detail}",
+  "@msgMeasurementClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgCopied": "已复制 {text}",
+  "@msgCopied": {
+    "placeholders": {
+      "text": {
+        "type": "String"
+      }
+    }
+  },
+  "msgSizeClipboardFailed": "尺寸复制失败：{detail}",
+  "@msgSizeClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgAnnotationImageExported": "标注图片已导出",
+  "msgAnnotationImageCopied": "标注图片已复制",
+  "msgAnnotationImageExportFailed": "标注图片导出失败：{detail}",
+  "@msgAnnotationImageExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgResultClipboardFailed": "结果已保存，但复制失败：{detail}",
+  "@msgResultClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgRulerFinishFailed": "无法关闭测量浮层，请按 Esc：{detail}",
+  "@msgRulerFinishFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgShortcutInvalid": "快捷键需要字母或数字、至少一个主修饰键，且各工具不能重复。",
+  "msgShortcutRegistrationFailed": "快捷键注册失败，已保留原配置。",
+  "msgShortcutsUpdated": "快捷键已更新",
+  "msgColorsExported": "颜色已导出",
+  "msgColorsExportFailed": "颜色导出失败：{detail}",
+  "@msgColorsExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgPaletteReadFailed": "无法读取调色板文件：{detail}",
+  "@msgPaletteReadFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgColorsMerged": "已合并 {count} 个颜色",
+  "@msgColorsMerged": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgPaletteCodeCopied": "已复制 {count} 色的 {format} 代码",
+  "@msgPaletteCodeCopied": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "msgMeasurementsExported": "已导出 {count} 条测量记录",
+  "@msgMeasurementsExported": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgMeasurementsExportFailed": "测量记录导出失败：{detail}",
+  "@msgMeasurementsExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgHistorySaveFailed": "历史记录保存失败：{detail}",
+  "@msgHistorySaveFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgShortcutsRestored": "快捷键配置无效，已恢复默认值。",
+  "msgHistoryRestoreFailed": "历史记录无法读取，已使用默认设置。",
+  "msgScreenPermissionRequired": "需要屏幕录制权限。请前往偏好设置授权，再重新打开工具。",
+  "msgCaptureCancelled": "屏幕状态发生变化，请重新开始。",
+  "msgShortcutConflict": "快捷键已被占用，已尝试恢复原配置。",
+  "msgShortcutUnavailable": "此快捷键不可用，请使用其他组合。",
+  "msgCaptureBusy": "已有工具正在使用，请先按 Esc 退出。",
+  "msgSystemOperationFailed": "系统操作失败，请重试。",
+  "msgUnsupportedPlatform": "当前平台尚未支持",
+  "msgOperationFailed": "操作失败，请重试。",
+  "msgLocaleChangeFailed": "无法切换语言，已保留原设置。",
+  "msgPickAndClose": "取色并结束",
+  "msgPickAndEdit": "取色后打开编辑器",
+  "msgPickAndContinue": "取色并继续",
+  "msgCancelPicking": "取消取色",
+  "validationAnnotationCount": "通用标注数量无效",
+  "validationAnnotationInvalid": "通用标注无效",
+  "validationAnnotationStyle": "通用标注类型或样式无效",
+  "validationAnnotationPoints": "标注笔画过多",
+  "validationAnnotationCoordinates": "标注坐标无效",
+  "validationAnnotationBounds": "标注超出图片边界",
+  "validationAnnotationEndpoints": "标注端点数量无效",
+  "validationAnnotationLimit": "标注达到数量上限，请删除部分标注",
+  "validationHexColor": "请输入 3 位或 6 位 HEX 颜色",
+  "validationHslValue": "HSL 颜色值无效",
+  "validationRgbValue": "RGB 颜色值无效",
+  "validationPaletteEntry": "调色板颜色条目无效",
+  "validationPaletteVersion": "请选择 fruler 导出的 version 1 JSON 文件",
+  "validationPaletteLimit": "一次最多导入 4096 个颜色",
+  "validationPaletteMetadata": "颜色条目的名称或收藏状态无效",
+  "validationPaletteChannels": "HEX 与 RGB 不一致，未导入任何颜色",
+  "validationPaletteDuplicates": "文件含重复颜色，请先去重",
+  "validationOutputInvalid": "颜色格式数据无效",
+  "validationOutputName": "格式名称需为 1–40 个字符",
+  "validationOutputTemplate": "模板需为 1–1024 个字符，不能包含控制字符",
+  "validationOutputSubstitution": "模板至少需要一个颜色占位符",
+  "validationPickerBehavior": "取色动作数据无效",
+  "validationOutputLimit": "最多保留 24 种颜色格式",
+  "validationOutputNameDuplicate": "格式名称不能重复",
+  "validationImageSize": "图片最多 1600 万像素，单边不超过 16384 像素",
+  "validationImageFormat": "仅支持 PNG、JPEG 和 WebP 图片",
+  "validationImageDecode": "无法解码图片",
+  "validationImageAnnotationsEmpty": "没有可导出的图片标注",
+  "validationImageExport": "图片导出失败",
+  "validationShortcut": "快捷键无效",
+  "validationShortcutBindings": "快捷键配置无效",
+  "validationShortcutDuplicates": "各工具的快捷键不能重复",
+  "validationOutputPlaceholder": "未知占位符：%{token}",
+  "@validationOutputPlaceholder": {
+    "placeholders": {
+      "token": {
+        "type": "String"
+      }
+    }
+  },
+  "validationImageFileLimit": "图片文件不能超过 {limit} MB",
+  "@validationImageFileLimit": {
+    "placeholders": {
+      "limit": {
+        "type": "int"
+      }
+    }
+  }
+}

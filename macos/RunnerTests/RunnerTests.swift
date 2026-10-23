@@ -4,6 +4,33 @@ import XCTest
 @testable import fruler
 
 class RunnerTests: XCTestCase {
+  func testNativeLanguageResolutionPreservesExplicitChoiceAndSystemFallback() {
+    XCTAssertEqual(NativeStrings.resolve(savedLanguage: "en", preferredLanguages: ["zh-Hans-CN"]), "en")
+    XCTAssertEqual(NativeStrings.resolve(savedLanguage: "zh", preferredLanguages: ["en-US"]), "zh")
+    XCTAssertEqual(NativeStrings.resolve(savedLanguage: "system", preferredLanguages: ["zh-Hant-TW"]), "zh")
+    XCTAssertEqual(NativeStrings.resolve(savedLanguage: nil, preferredLanguages: ["fr-FR"]), "en")
+    XCTAssertEqual(NativeStrings.resolve(savedLanguage: "invalid", preferredLanguages: []), "en")
+  }
+
+  func testNativeStringsAndApplicationMenuUpdateInBothLanguages() {
+    let original = NativeStrings.languageCode
+    defer { NativeStrings.configure(original) }
+    let menu = NSMenu()
+    let item = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+    item.identifier = NSUserInterfaceItemIdentifier("l10n.menu.edit")
+    item.submenu = NSMenu(title: "Edit")
+    menu.addItem(item)
+    for (language, title, count) in [("en", "Edit", "Clear all measurement rectangles (3)"),
+                                     ("zh", "编辑", "清除全部测量框（3）")] {
+      NativeStrings.configure(language)
+      NativeStrings.localizeMenu(menu)
+      XCTAssertEqual(item.title, title)
+      XCTAssertEqual(item.submenu?.title, title)
+      XCTAssertEqual(NativeStrings.text("overlay.clear_count", 3), count)
+      XCTAssertNotEqual(NativeStrings.text("error.screen_permission"), "error.screen_permission")
+    }
+  }
+
   func testNativeLogsRetainLatestStartupEntriesAndDrainOnce() {
     let buffer = NativeLogBuffer(capacity: 2)
     buffer.log(800, "lifecycle", "first")

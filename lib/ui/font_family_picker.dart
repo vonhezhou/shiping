@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/localizations_context.dart';
+
 /// 仅构建可见字体项，搜索不会修改当前文字样式。
 class FontFamilyPicker extends StatefulWidget {
   const FontFamilyPicker({
@@ -45,8 +47,8 @@ class _FontFamilyPickerState extends State<FontFamilyPicker> {
               key: const ValueKey('annotation-font-search'),
               autofocus: true,
               style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: const InputDecoration(
-                hintText: '搜索字体',
+              decoration: InputDecoration(
+                hintText: context.l10n.uiSearchFonts,
                 prefixIcon: Icon(Icons.search, size: 18),
                 isDense: true,
                 border: OutlineInputBorder(),
@@ -59,7 +61,7 @@ class _FontFamilyPickerState extends State<FontFamilyPicker> {
           ),
           Expanded(
             child: families.isEmpty
-                ? const Center(child: Text('没有匹配的字体'))
+                ? Center(child: Text(context.l10n.uiNoMatchingFonts))
                 : Scrollbar(
                     controller: scroll,
                     child: ListView.builder(

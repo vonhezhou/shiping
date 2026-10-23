@@ -11,7 +11,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   final focus = FocusNode();
   ui.Image? image;
   Map<int, ui.Image> mosaics = {};
-  String? loadError;
+  bool loadFailed = false;
   String tool = 'select';
   Offset? screenPointer;
   String lastShape = 'rectangle', lastLine = 'arrow', lastEffect = 'mosaic';
@@ -50,7 +50,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   String fontFamily = Annotation.defaultFontFamily;
   List<String> fontFamilies = [];
   final fontMenuController = MenuController();
-  String? fontError;
+  bool fontLoadFailed = false;
   double get pixelWidth => width * c.screenshotScaleX;
   double get pixelFontSize => fontSize * c.screenshotScaleY;
   int? selected, pointerId;
@@ -110,7 +110,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         null,
         stackTrace,
       );
-      if (mounted) setState(() => fontError = '系统字体读取失败，请重新框选后重试');
+      if (mounted) setState(() => fontLoadFailed = true);
     }
   }
 
@@ -145,7 +145,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       for (final image in pixels.values) {
         image.dispose();
       }
-      if (mounted) setState(() => loadError = '截图加载失败，请重新框选');
+      if (mounted) {
+        setState(() => loadFailed = true);
+      }
     }
   }
 
@@ -166,7 +168,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       c.markup.commit(next);
     } on FormatException catch (e) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+          .showSnackBar(SnackBar(content: Text(c.describeError(e))));
     }
   }
 
@@ -1182,7 +1184,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     onPointerSignal: widthScroll,
     child: IconButton(
       key: const ValueKey('annotation-width'),
-      tooltip: '线宽 ${width.round()} pt · 滚轮 / 1、2 / [、]',
+      tooltip: context.l10n.uiLineWidthTooltip(width.round()),
       isSelected: strokeActive,
       mouseCursor: SystemMouseCursors.click,
       padding: EdgeInsets.zero,
@@ -1239,8 +1241,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       ),
     ],
     builder: (context, controller, child) => Tooltip(
-      message:
-          fontError ?? (fontFamilies.isEmpty ? '暂无可用系统字体' : '字体：$fontFamily'),
+      message: fontLoadFailed
+          ? context.l10n.uiFontLoadingFailed
+          : (fontFamilies.isEmpty
+                ? context.l10n.uiNoSystemFonts
+                : context.l10n.uiFontFamilyTooltip(fontFamily)),
       child: InkWell(
         key: const ValueKey('annotation-font-family'),
         onTap: fontFamilies.isEmpty
@@ -1268,7 +1273,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   );
 
   Widget fontMenu() => Tooltip(
-    message: '字号',
+    message: context.l10n.uiFontSize,
     child: PopupMenuButton<double>(
       key: const ValueKey('annotation-font'),
       padding: EdgeInsets.zero,
@@ -1360,8 +1365,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         stackTrace,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法打开系统调色盘，请重试')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.uiColorPanelFailed)),
+        );
       }
     } finally {
       if (mounted) {
@@ -1375,7 +1381,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     mainAxisSize: MainAxisSize.min,
     children: [
       Tooltip(
-        message: '自定义颜色',
+        message: context.l10n.uiCustomColor,
         child: InkWell(
           key: const ValueKey('annotation-color'),
           onTap: customColor,
@@ -1487,11 +1493,17 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
 
   Widget effectParameter({required bool strength}) {
     final label = strength
-        ? (propertyKind == 'mosaic' ? '色块大小' : '模糊程度')
-        : '画笔宽度';
+        ? (propertyKind == 'mosaic'
+              ? context.l10n.uiMosaicSize
+              : context.l10n.uiBlurStrength)
+        : context.l10n.uiBrushWidth;
     final value = strength ? effectStrength.toDouble() : width;
     return Tooltip(
-      message: '$label · ${value.round()}${strength ? "/5" : " pt"}',
+      message: context.l10n.uiParameterTooltip(
+        label,
+        value.round(),
+        strength ? '/5' : ' pt',
+      ),
       child: SizedBox(
         height: 28,
         child: Row(
@@ -1530,7 +1542,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   divisions: strength ? 4 : 79,
                   value: value,
                   mouseCursor: SystemMouseCursors.click,
-                  semanticFormatterCallback: (v) => '$label ${v.round()}',
+                  semanticFormatterCallback: (v) =>
+                      context.l10n.uiParameterValue(label, v.round()),
                   onChangeStart: (_) => beginParameter(),
                   onChanged: (v) => updateParameter(v, strength: strength),
                   onChangeEnd: (_) => finishParameter(),
@@ -1614,7 +1627,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             widthButton(modeKey: 'annotation-eraser-brush'),
             propertyButton(
               'annotation-eraser-rectangle',
-              '框选擦除',
+              context.l10n.uiRectangleEraser,
               Icons.rectangle_outlined,
               () => setEraserMode(false),
               active: !eraserBrush,
@@ -1624,7 +1637,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           if (shape) ...[
             propertyButton(
               'annotation-fill',
-              '填充形状',
+              context.l10n.uiFillShape,
               Icons.square,
               selectFill,
               active: filled,
@@ -1632,14 +1645,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             divider,
             propertyButton(
               'annotation-tool-rectangle',
-              '矩形',
+              context.l10n.uiModeRectangle,
               Icons.crop_square,
               () => selectTool('rectangle'),
               active: kind == 'rectangle',
             ),
             propertyButton(
               'annotation-tool-ellipse',
-              '椭圆',
+              context.l10n.uiEllipse,
               Icons.circle_outlined,
               () => selectTool('ellipse'),
               active: kind == 'ellipse',
@@ -1649,14 +1662,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           if (line) ...[
             propertyButton(
               'annotation-tool-line',
-              '直线 / 折线 · Tab 切换箭头',
+              context.l10n.uiLineTooltip,
               Icons.show_chart,
               () => selectTool('line'),
               active: kind == 'line',
             ),
             propertyButton(
               'annotation-tool-arrow',
-              '箭头 · Tab 切换直线',
+              context.l10n.uiArrowTooltip,
               Icons.north_east,
               () => selectTool('arrow'),
               active: kind == 'arrow',
@@ -1667,7 +1680,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             widthButton(modeKey: 'annotation-effect-brush'),
             propertyButton(
               'annotation-effect-rectangle',
-              '框选',
+              context.l10n.uiRectangleSelection,
               Icons.rectangle,
               () => setEffectMode(false),
               active: !effectBrush,
@@ -1675,14 +1688,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             divider,
             propertyButton(
               'annotation-tool-mosaic',
-              '马赛克',
+              context.l10n.uiMosaic,
               Icons.grid_view,
               () => selectTool('mosaic'),
               active: kind == 'mosaic',
             ),
             propertyButton(
               'annotation-tool-blur',
-              '高斯模糊',
+              context.l10n.uiGaussianBlur,
               Icons.blur_on,
               () => selectTool('blur'),
               active: kind == 'blur',
@@ -1693,21 +1706,21 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             if (kind == 'text') ...[
               propertyButton(
                 'annotation-bold',
-                '粗体',
+                context.l10n.uiBold,
                 Icons.format_bold,
                 () => style(nextBold: !bold),
                 active: bold,
               ),
               propertyButton(
                 'annotation-italic',
-                '斜体',
+                context.l10n.uiItalic,
                 Icons.format_italic,
                 () => style(nextItalic: !italic),
                 active: italic,
               ),
               propertyButton(
                 'annotation-text-outline',
-                '文字描边（自动黑白对比色）',
+                context.l10n.uiTextOutline,
                 Icons.format_color_text,
                 () => style(nextOutlined: !outlined),
                 active: outlined,
@@ -1717,7 +1730,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               if (selected != null && !textEditing)
                 propertyButton(
                   'annotation-edit-text',
-                  '编辑文字',
+                  context.l10n.uiEditText,
                   Icons.edit_note,
                   editText,
                 ),
@@ -1736,7 +1749,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       children: [
         toolbarButton(
           'annotation-group-shape',
-          '形状：矩形 / 椭圆',
+          context.l10n.uiShapeTools,
           Icons.interests_outlined,
           () => selectTool(
             ['rectangle', 'ellipse'].contains(tool) ? 'select' : lastShape,
@@ -1745,7 +1758,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         ),
         toolbarButton(
           'annotation-group-line',
-          '直线 / 折线 / 箭头',
+          context.l10n.uiLineTools,
           Icons.timeline,
           () => selectTool(
             ['line', 'arrow'].contains(tool) ? 'select' : lastLine,
@@ -1754,21 +1767,21 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         ),
         toolbarButton(
           'annotation-tool-pencil',
-          '画笔',
+          context.l10n.uiPencil,
           Icons.edit_outlined,
           () => selectTool(tool == 'pencil' ? 'select' : 'pencil'),
           active: tool == 'pencil',
         ),
         toolbarButton(
           'annotation-tool-marker',
-          '荧光笔',
+          context.l10n.uiMarker,
           Icons.border_color_outlined,
           () => selectTool(tool == 'marker' ? 'select' : 'marker'),
           active: tool == 'marker',
         ),
         toolbarButton(
           'annotation-group-effect',
-          '马赛克 / 高斯模糊',
+          context.l10n.uiEffectTools,
           Icons.grid_view,
           () => selectTool(
             ['mosaic', 'blur'].contains(tool) ? 'select' : lastEffect,
@@ -1777,14 +1790,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         ),
         toolbarButton(
           'annotation-tool-text',
-          '文字',
+          context.l10n.uiText,
           Icons.title,
           () => selectTool(tool == 'text' ? 'select' : 'text'),
           active: tool == 'text',
         ),
         toolbarButton(
           'annotation-tool-eraser',
-          '橡皮擦 · 框选 / 画笔局部擦除',
+          context.l10n.uiEraserTools,
           Icons.auto_fix_normal,
           () => selectTool(tool == 'eraser' ? 'select' : 'eraser'),
           active: tool == 'eraser',
@@ -1792,39 +1805,39 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         divider,
         toolbarButton(
           'annotation-undo',
-          '撤销 ⌘Z',
+          context.l10n.uiUndo,
           Icons.undo,
           c.markup.canUndo ? () => history(false) : null,
         ),
         toolbarButton(
           'annotation-redo',
-          '重做 ⌘Y / ⇧⌘Z',
+          context.l10n.uiRedo,
           Icons.redo,
           c.markup.canRedo ? () => history(true) : null,
         ),
         if (selected != null)
           toolbarButton(
             'annotation-delete',
-            '删除选中 Delete',
+            context.l10n.uiDeleteSelected,
             Icons.delete_outline,
             deleteSelected,
           ),
         divider,
         toolbarButton(
           'cancel-screenshot',
-          '取消 Esc',
+          context.l10n.uiCancelScreenshot,
           Icons.close,
           c.cancelScreenshot,
         ),
         toolbarButton(
           'save-screenshot',
-          '保存 PNG ⌘S',
+          context.l10n.uiSavePng,
           Icons.save_alt,
           image == null ? null : () => export(true),
         ),
         toolbarButton(
           'copy-screenshot',
-          '复制并完成 ↵',
+          context.l10n.uiCopyAndFinish,
           Icons.copy_all_outlined,
           image == null ? null : () => export(false),
         ),
@@ -1877,7 +1890,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 ),
               ),
             ],
-            if (loadError != null) Text(loadError!),
+            if (loadFailed) Text(context.l10n.uiScreenshotLoadingFailed),
             if (c.error != null)
               Text(c.error!, style: const TextStyle(color: Colors.orange)),
           ],
@@ -2029,8 +2042,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 ),
                 Text(sample?.rgb ?? ''),
                 Text('X: ${pixel.x}  Y: ${pixel.y}'),
-                Text('区域: ${selection.width} × ${selection.height} px'),
-                const Text('C 复制颜色 · M 复制尺寸'),
+                Text(
+                  context.l10n.uiCaptureRegion(
+                    selection.width,
+                    selection.height,
+                  ),
+                ),
+                Text(context.l10n.uiCaptureCopyHint),
               ],
             ),
           ),

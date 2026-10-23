@@ -12,6 +12,21 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
+  test('语言协议只传递已解析的语言代码', () async {
+    final channel = BasicMessageChannel<Object?>(
+      'dev.flutter.pigeon.fruler.DesktopHostApi.configureLocale',
+      wire.DesktopHostApi.pigeonChannelCodec,
+    );
+    addTearDown(
+      () => messenger.setMockDecodedMessageHandler<Object?>(channel, null),
+    );
+    messenger.setMockDecodedMessageHandler<Object?>(channel, (message) async {
+      expect(message, ['en']);
+      return [null];
+    });
+    await MacDesktopService().configureLocale('en');
+  });
+
   test('原生日志按类型转入统一日志，不进入工具事件流', () async {
     final previousLevel = Logger.root.level;
     Logger.root.level = Level.ALL;

@@ -16,18 +16,18 @@ Future<String?> _requestName(
           initialValue: initial,
           autofocus: true,
           maxLength: 60,
-          decoration: const InputDecoration(labelText: '名称'),
+          decoration: InputDecoration(labelText: context.l10n.uiName),
           onChanged: (v) => name = v,
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.l10n.uiCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, name),
-          child: const Text('保存名称'),
+          child: Text(context.l10n.uiSaveName),
         ),
       ],
     ),
@@ -52,15 +52,15 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionTitle(
-          title: '测量记录',
+          title: context.l10n.uiMeasurementRecords,
           subtitle: '${records.length} / ${c.measurements.length} · px / pt',
           onClear: c.measurements.isEmpty ? null : c.clearMeasurements,
         ),
         const SizedBox(height: 12),
         TextField(
           key: const ValueKey('measurement-search'),
-          decoration: const InputDecoration(
-            labelText: '搜索名称、尺寸、显示器或日期',
+          decoration: InputDecoration(
+            labelText: context.l10n.uiMeasurementSearch,
             prefixIcon: Icon(Icons.search),
           ),
           onChanged: (v) => setState(() => query = v),
@@ -70,7 +70,7 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             FilterChip(
-              label: const Text('只看收藏'),
+              label: Text(context.l10n.uiFavoritesOnly),
               selected: favorites,
               onSelected: (v) => setState(() => favorites = v),
             ),
@@ -79,16 +79,18 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
                 onPressed: records.isEmpty
                     ? null
                     : () => c.exportMeasurements(records, csv: csv),
-                child: Text('导出当前结果 ${csv ? 'CSV' : 'JSON'}'),
+                child: Text(
+                  context.l10n.uiExportCurrentResults(csv ? 'CSV' : 'JSON'),
+                ),
               ),
           ],
         ),
         const SizedBox(height: 12),
         if (records.isEmpty)
-          const _Empty(
+          _Empty(
             icon: Icons.square_foot_rounded,
-            title: '暂无匹配记录',
-            description: '测量后会保留像素、逻辑尺寸及显示器缩放；收藏可长期保留。',
+            title: context.l10n.uiNoMeasurements,
+            description: context.l10n.uiNoMeasurementsDescription,
           )
         else
           for (final r in records)
@@ -97,7 +99,9 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
               child: ListTile(
                 onTap: () => c.copyMeasurement(r),
                 leading: IconButton(
-                  tooltip: r.favorite ? '取消收藏测量' : '收藏测量',
+                  tooltip: r.favorite
+                      ? context.l10n.uiUnfavoriteMeasurement
+                      : context.l10n.uiFavoriteMeasurement,
                   icon: Icon(
                     r.favorite ? Icons.star : Icons.star_border,
                     color: _accent,
@@ -110,26 +114,50 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(
-                  '${r.imageSource ? '原图像素' : r.measurement.pointLabel} · ${_modeLabels[r.measurement.mode]} · ${r.displayName}\n缩放 ${r.scaleX.toStringAsFixed(2)} × ${r.scaleY.toStringAsFixed(2)} · ${r.createdAt.toLocal().toString().split('.').first}',
+                  context.l10n.uiMeasurementDetails(
+                    r.imageSource
+                        ? context.l10n.uiOriginalPixels
+                        : r.measurement.pointLabel,
+                    _modeLabel(context, r.measurement.mode),
+                    r.displayName,
+                    r.scaleX.toStringAsFixed(2),
+                    r.scaleY.toStringAsFixed(2),
+                    DateFormat.yMMMd(context.l10n.localeName)
+                        .add_Hms()
+                        .format(r.createdAt.toLocal()),
+                  ),
                   style: const TextStyle(fontSize: 11, color: _muted),
                 ),
                 isThreeLine: true,
                 trailing: PopupMenuButton<String>(
-                  tooltip: '测量记录操作',
+                  tooltip: context.l10n.uiMeasurementActions,
                   onSelected: (action) async {
                     if (action == 'delete') {
                       c.removeMeasurement(r);
                     } else if (action == 'copy') {
                       await c.copyMeasurement(r);
                     } else {
-                      final name = await _requestName(context, '命名测量', r.name);
+                      final name = await _requestName(
+                        context,
+                        context.l10n.uiNameMeasurement,
+                        r.name,
+                      );
                       if (name != null) c.updateMeasurement(r, name: name);
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'copy', child: Text('复制尺寸')),
-                    PopupMenuItem(value: 'name', child: Text('命名测量')),
-                    PopupMenuItem(value: 'delete', child: Text('删除记录')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'copy',
+                      child: Text(context.l10n.uiCopyDimensions),
+                    ),
+                    PopupMenuItem(
+                      value: 'name',
+                      child: Text(context.l10n.uiNameMeasurement),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(context.l10n.uiDeleteRecord),
+                    ),
                   ],
                 ),
               ),

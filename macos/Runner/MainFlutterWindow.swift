@@ -468,6 +468,20 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
   #endif
 
+  func configureLocale(languageCode: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    guard languageCode == "en" || languageCode == "zh" else {
+      completion(.failure(PigeonError(code: "locale_invalid", message: NativeStrings.text("error.locale_invalid"), details: nil)))
+      return
+    }
+    NativeStrings.configure(languageCode)
+    NativeStrings.localizeMenu(NSApp.mainMenu)
+    setupMenu()
+    for panel in overlays.values { panel.overlay.refreshLocalization() }
+    colorDialog?.refreshLocalization()
+    nativeLogs.log(800, "desktop", "Locale configured: language=\(languageCode).")
+    completion(.success(()))
+  }
+
   func initialize(completion: @escaping (Result<NativeStatus, Error>) -> Void) {
     nativeLogs.attach { [weak self] entry in
       guard let self = self else { nativeLogs.pauseAndRetain(entry); return }
@@ -487,7 +501,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     let args: [String: Any] = bindings.local
     guard let requested = NativeShortcutBindings(args), requested.isValid else {
       nativeLogs.log(900, "shortcuts", "Shortcut configuration rejected: invalid binding.")
-      completion(.failure(PigeonError(code: "shortcut_invalid", message: "请使用不同的字母或数字组合，并避开系统退出、编辑和截图快捷键。", details: nil)))
+      completion(.failure(PigeonError(code: "shortcut_invalid", message: NativeStrings.text("error.shortcut_invalid"), details: nil)))
       return
     }
     if requested == shortcuts && (hasShortcuts || shortcutRecording) { completion(.success(true)); return }
@@ -503,7 +517,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       if hadShortcuts { _ = registerHotkeys(previous) }
       updateMenuShortcuts()
       nativeLogs.log(900, "shortcuts", "Shortcut configuration failed: conflict, restored=\(hasShortcuts).")
-      completion(.failure(PigeonError(code: "shortcut_conflict", message: "快捷键已被占用", details: ["shortcuts": hasShortcuts])))
+      completion(.failure(PigeonError(code: "shortcut_conflict", message: NativeStrings.text("error.shortcut_conflict"), details: ["shortcuts": hasShortcuts])))
     }
   }
 
@@ -526,10 +540,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   func pickAnnotationColor(initialColor: Int64, completion: @escaping (Result<Int64?, Error>) -> Void) {
     guard initialColor >= 0, initialColor <= 0xFFFFFFFF else {
-      completion(.failure(PigeonError(code: "invalid_color", message: "颜色值无效", details: nil))); return
+      completion(.failure(PigeonError(code: "invalid_color", message: NativeStrings.text("error.invalid_color"), details: nil))); return
     }
     guard let host = screenshotHost, let captureID = session, colorDialog == nil else {
-      completion(.failure(PigeonError(code: "invalid_state", message: "当前无法打开调色盘", details: nil))); return
+      completion(.failure(PigeonError(code: "invalid_state", message: NativeStrings.text("error.color_unavailable"), details: nil))); return
     }
     let dialog = AnnotationColorDialog(initialColor: initialColor) { [weak self] color in
       guard let self = self else { completion(.success(nil)); return }
@@ -608,7 +622,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         completion(.success(true))
       } catch {
         nativeLogs.log(1000, "export", "Image file export failed: errorType=\(String(reflecting: type(of: error))).")
-        completion(.failure(PigeonError(code:"image_export_failed",message:error.localizedDescription,details:nil)))
+        completion(.failure(PigeonError(code:"image_export_failed",message:NativeStrings.text("error.image_export", error.localizedDescription),details:nil)))
       }
     } else {
       NSPasteboard.general.clearContents()
@@ -617,7 +631,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         completion(.success(true))
       } else {
         nativeLogs.log(1000, "export", "Image clipboard write failed.")
-        completion(.failure(PigeonError(code:"clipboard_failed",message:"无法写入图片剪贴板",details:nil)))
+        completion(.failure(PigeonError(code:"clipboard_failed",message:NativeStrings.text("error.clipboard_image"),details:nil)))
       }
     }
   }
@@ -635,17 +649,17 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     do {
       let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
       guard size <= 2 * 1024 * 1024 else {
-        completion(.failure(PigeonError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil))); return
+        completion(.failure(PigeonError(code: "import_failed", message: NativeStrings.text("error.import_size"), details: nil))); return
       }
       let text = try String(contentsOf: url, encoding: .utf8)
       guard text.utf8.count <= 2 * 1024 * 1024 else {
-        completion(.failure(PigeonError(code: "import_failed", message: "JSON 文件不能超过 2 MB", details: nil))); return
+        completion(.failure(PigeonError(code: "import_failed", message: NativeStrings.text("error.import_size"), details: nil))); return
       }
       nativeLogs.log(800, "storage", "Palette import read completed.")
       completion(.success(text))
     } catch {
       nativeLogs.log(1000, "storage", "Palette import read failed: errorType=\(String(reflecting: type(of: error))).")
-      completion(.failure(PigeonError(code: "import_failed", message: error.localizedDescription, details: nil)))
+      completion(.failure(PigeonError(code: "import_failed", message: NativeStrings.text("error.palette_import", error.localizedDescription), details: nil)))
     }
   }
 
@@ -665,7 +679,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       completion(.success(true))
     } catch {
       nativeLogs.log(1000, "export", "File export failed: errorType=\(String(reflecting: type(of: error))).")
-      completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil)))
+      completion(.failure(PigeonError(code: "export_failed", message: NativeStrings.text("error.file_export", error.localizedDescription), details: nil)))
     }
   }
 
@@ -674,7 +688,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     guard id == session, let display = UInt32(exactly: displayId),
           let overlay = overlays[display]?.overlay,
           let png = AnnotationRenderer.png(image: overlay.snapshot.image, annotations: annotations.map { $0.local }) else {
-      completion(.failure(PigeonError(code: "invalid_export", message: "没有可导出的标注", details: nil))); return
+      completion(.failure(PigeonError(code: "invalid_export", message: NativeStrings.text("error.invalid_export"), details: nil))); return
     }
     if save {
       for panel in overlays.values { panel.overlay.releaseCursor(); panel.orderOut(nil) }
@@ -699,7 +713,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         completion(.success(true))
       } catch {
         nativeLogs.log(1000, "export", "File export failed: errorType=\(String(reflecting: type(of: error))).")
-        completion(.failure(PigeonError(code: "export_failed", message: error.localizedDescription, details: nil)))
+        completion(.failure(PigeonError(code: "export_failed", message: NativeStrings.text("error.file_export", error.localizedDescription), details: nil)))
       }
     } else {
       NSPasteboard.general.clearContents()
@@ -708,7 +722,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         completion(.success(true))
       } else {
         nativeLogs.log(1000, "export", "Measurement image clipboard write failed.")
-        completion(.failure(PigeonError(code: "clipboard_failed", message: "无法写入图片剪贴板", details: nil)))
+        completion(.failure(PigeonError(code: "clipboard_failed", message: NativeStrings.text("error.clipboard_image"), details: nil)))
       }
     }
   }
@@ -735,7 +749,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     guard id == session,
           let display = UInt32(exactly: displayId), let panel = overlays[display],
           let controller = flutterController else {
-      completion(.failure(PigeonError(code:"capture_cancelled",message:"截图会话已结束",details:nil))); return
+      completion(.failure(PigeonError(code:"capture_cancelled",message:NativeStrings.text("error.capture_ended"),details:nil))); return
     }
     for overlay in overlays.values { overlay.overlay.setScreenshotEditing(true); overlay.overlay.releaseCursor() }
     mainWindow?.contentViewController = nil
@@ -769,16 +783,16 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   private func capture(tool: String, completion: @escaping (Result<CaptureReply, Error>) -> Void) {
     guard !preparing && session == nil else {
-      completion(.failure(PigeonError(code: "capture_busy", message: "已有工具正在使用", details: nil)))
+      completion(.failure(PigeonError(code: "capture_busy", message: NativeStrings.text("error.capture_busy"), details: nil)))
       return
     }
     guard CGPreflightScreenCaptureAccess() else {
       nativeLogs.log(900, "capture", "Capture rejected: screen permission required.")
-      completion(.failure(PigeonError(code: "screen_permission", message: "请先允许 fruler 录制屏幕", details: nil)))
+      completion(.failure(PigeonError(code: "screen_permission", message: NativeStrings.text("error.screen_permission"), details: nil)))
       return
     }
     guard sink != nil else {
-      completion(.failure(PigeonError(code: "no_listener", message: "工具尚未就绪", details: nil)))
+      completion(.failure(PigeonError(code: "no_listener", message: NativeStrings.text("error.no_listener"), details: nil)))
       return
     }
     preparing = true
@@ -855,7 +869,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         nativeLogs.log(cancelled ? 800 : 1000, "capture", "Capture failed: session=\(id), stage=\(captureStage), cancelled=\(cancelled), errorType=\(String(reflecting: type(of: error))).")
         if self.session == id { self.closeSession() }
         completion(.failure(PigeonError(code: cancelled ? "capture_cancelled" : "capture_failed",
-          message: cancelled ? "已取消截图" : "屏幕截图失败：\(error.localizedDescription)", details: nil)))
+          message: cancelled ? NativeStrings.text("error.capture_cancelled") : NativeStrings.text("error.capture_failed", error.localizedDescription), details: nil)))
       }
     }
   }
@@ -896,14 +910,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   private func setupMenu() {
-    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    let item = statusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.image = NSImage(systemSymbolName: "ruler", accessibilityDescription: "fruler")
     let menu = NSMenu()
     // 常用工具独立成组，快捷键靠右；管理入口和退出另起分组。
     for (title, tool, key, symbol) in [
-      ("截图", "screenshot", "X", "viewfinder"),
-      ("取色器", "picker", "C", "eyedropper"),
-      ("尺子", "rectangle", "R", "ruler")
+      (NativeStrings.text("tool.screenshot"), "screenshot", "X", "viewfinder"),
+      (NativeStrings.text("tool.picker"), "picker", "C", "eyedropper"),
+      (NativeStrings.text("tool.ruler"), "rectangle", "R", "ruler")
     ] {
       let entry = NSMenuItem(title: title, action: #selector(activateTool(_:)), keyEquivalent: key)
       entry.target = self
@@ -915,14 +929,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       menu.addItem(entry)
     }
     menu.addItem(.separator())
-    let history = menu.addItem(withTitle: "历史记录", action: #selector(openHistory), keyEquivalent: "")
+    let history = menu.addItem(withTitle: NativeStrings.text("menu.history"), action: #selector(openHistory), keyEquivalent: "")
     history.target = self
     history.identifier = NSUserInterfaceItemIdentifier("history")
-    let settings = menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
+    let settings = menu.addItem(withTitle: NativeStrings.text("menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
     settings.target = self
     settings.identifier = NSUserInterfaceItemIdentifier("settings")
     menu.addItem(.separator())
-    let quit = menu.addItem(withTitle: "退出 fruler", action: #selector(quitApp), keyEquivalent: "q")
+    let quit = menu.addItem(withTitle: NativeStrings.text("menu.quit"), action: #selector(quitApp), keyEquivalent: "q")
     quit.target = self
     item.menu = menu
     statusItem = item
@@ -1082,7 +1096,7 @@ private struct NativeShortcutBindings: Equatable {
 
 private enum CaptureFailure: LocalizedError {
   case unavailable
-  var errorDescription: String? { "没有可用的显示器或像素缓冲区。" }
+  var errorDescription: String? { NativeStrings.text("error.capture_unavailable") }
 }
 
 struct CaptureRegionGeometry {
@@ -1224,23 +1238,26 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   private var pins: [(id: Int, rect: NSRect, label: String)] = []
   private var continuous = false
   private var pickedCount = 0
-  private var pickerActions = "左键取色 · 右键取消"
+  private var pickerActions = NativeStrings.text("picker.default_actions")
   private var editingPins = false
   private var selectedPin: Int?
   private var pinDrag: (id: Int, start: NSPoint, handle: String)?
   private var capturePurpose = ""
   private let editbar = NSView()
-  private let continuousButton = CaptureButton(checkboxWithTitle: "连续取色", target: nil, action: nil)
-  private let copySizeButton = CaptureButton(title: "复制尺寸 ⌘C", target: nil, action: nil)
-  private let redoButton = CaptureButton(title:"重做",target:nil,action:nil)
-  private let undoButton = CaptureButton(title: "撤销", target: nil, action: nil)
-  private let deleteButton = CaptureButton(title: "删除测量框", target: nil, action: nil)
+  private let continuousButton = CaptureButton(checkboxWithTitle: NativeStrings.text("picker.continuous"), target: nil, action: nil)
+  private let copySizeButton = CaptureButton(title: NativeStrings.text("overlay.copy_size_title"), target: nil, action: nil)
+  private let redoButton = CaptureButton(title:NativeStrings.text("overlay.redo"),target:nil,action:nil)
+  private let undoButton = CaptureButton(title: NativeStrings.text("overlay.undo"), target: nil, action: nil)
+  private let deleteButton = CaptureButton(title: NativeStrings.text("overlay.delete"), target: nil, action: nil)
   private var modeButtons: [String: NSButton] = [:]
   private let toolbar = NSView()
   private let infoLabel = NSTextField(labelWithString: "")
   private let toleranceGroup = NSStackView()
+  private let toleranceLabel = NSTextField(labelWithString: NativeStrings.text("overlay.tolerance"))
+  private let closeButton = CaptureButton(title: "", target: nil, action: nil)
+  private var lastOptions: [String: Any] = [:]
   private let toleranceField = NSTextField(string: "16")
-  private let clearButton = CaptureButton(title: "清除标注", target: nil, action: nil)
+  private let clearButton = CaptureButton(title: NativeStrings.text("overlay.clear"), target: nil, action: nil)
   private let accent = NSColor(srgbRed: 38 / 255, green: 131 / 255, blue: 1, alpha: 1)
   private let toolbarSurface = NSColor(srgbRed: 41 / 255, green: 41 / 255, blue: 41 / 255, alpha: 1)
 
@@ -1566,6 +1583,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   }
 
   func updateOptions(_ data: [String: Any]) {
+    lastOptions = data
     if let value = data["tool"] as? String { tool = value }
     toolbar.isHidden = screenshotEditing || tool == "screenshot"
     capturePurpose = data["capturePurpose"] as? String ?? ""
@@ -1594,7 +1612,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
           width: Double(right - left) * sx, height: Double(bottom - top) * sy),
           "\(item["id"] as? Int ?? index + 1) · \(item["label"] as? String ?? "")")
       }
-      clearButton.toolTip = "清除全部测量框（\(values.count)）"
+      clearButton.toolTip = NativeStrings.text("overlay.clear_count", values.count)
       clearButton.isEnabled = !values.isEmpty
       deleteButton.isEnabled = pins.contains(where: { $0.id == selectedPin })
 
@@ -1605,18 +1623,42 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       button.isHidden = tool == "picker" || tool == "screenshot"
       button.layer?.backgroundColor = (selected ? accent : NSColor.clear).cgColor
       button.contentTintColor = .white
-      button.setAccessibilityValue(selected ? "已选中" : "")
+      button.setAccessibilityValue(selected ? NativeStrings.text("overlay.selected") : "")
     }
     clearButton.isHidden = tool == "picker" || tool == "screenshot"
-    infoLabel.stringValue = tool == "picker" ? "\(capturePurpose.isEmpty ? colorOutputName : capturePurpose) · \(zoom)× · 已采集 \(pickedCount)" :
-      tool == "screenshot" ? "单击吸附 · 拖动框选 · C 取色 · M 复制尺寸" : editingPins ? "拖动框/边角 · 方向键移动 · Shift 调尺寸" : tool == "rectangle" ? "空白处新增 · 拖框移动 / 边角缩放 · Enter 完成" : "容差 \(tolerance) · 滚轮调整"
-    infoLabel.toolTip = tool == "picker" ? "当前复制格式 · 滚轮调整放大倍率 · \(pickerActions)" : "滚轮调整自动测距容差 · 1–4 切换模式"
+    infoLabel.stringValue = tool == "picker" ? NativeStrings.text("overlay.picker_summary", capturePurpose.isEmpty ? colorOutputName : capturePurpose, zoom, pickedCount) :
+      tool == "screenshot" ? NativeStrings.text("overlay.screenshot_summary") : editingPins ? NativeStrings.text("overlay.editing_summary") : tool == "rectangle" ? NativeStrings.text("overlay.rectangle_summary") : NativeStrings.text("overlay.tolerance_summary", tolerance)
+    infoLabel.toolTip = tool == "picker" ? NativeStrings.text("overlay.picker_tooltip", pickerActions) : NativeStrings.text("overlay.ruler_tooltip")
     infoLabel.isHidden = tool != "picker"
     toleranceGroup.isHidden = !["horizontal", "vertical", "cross"].contains(tool)
     if toleranceField.currentEditor() == nil { toleranceField.stringValue = String(tolerance) }
     needsDisplay = true
     window?.invalidateCursorRects(for: self)
     if let location = hoverLocation { applyCursor(at: location) }
+  }
+
+  func refreshLocalization() {
+    continuousButton.title = NativeStrings.text("picker.continuous")
+    continuousButton.toolTip = NativeStrings.text("picker.continuous_tooltip")
+    toleranceLabel.stringValue = NativeStrings.text("overlay.tolerance")
+    toleranceField.toolTip = NativeStrings.text("overlay.tolerance_tooltip")
+    toleranceField.setAccessibilityLabel(NativeStrings.text("overlay.tolerance_accessibility"))
+    for (index, mode) in ["rectangle", "horizontal", "vertical", "cross"].enumerated() {
+      let title = NativeStrings.text("mode.shortcut", NativeStrings.text("mode.\(mode)"), index + 1)
+      modeButtons[mode]?.toolTip = title
+      modeButtons[mode]?.setAccessibilityLabel(title)
+    }
+    for (button, key) in [(copySizeButton, "overlay.copy_size_tooltip"),
+      (undoButton, "overlay.undo_tooltip"), (redoButton, "overlay.redo_tooltip"),
+      (deleteButton, "overlay.delete_selected_tooltip"), (clearButton, "overlay.clear_tooltip"),
+      (closeButton, "overlay.cancel_tooltip")] {
+      let title = NativeStrings.text(key)
+      button.toolTip = title
+      button.setAccessibilityLabel(title)
+    }
+    updateOptions(lastOptions)
+    needsLayout = true
+    needsDisplay = true
   }
 
   private func styleButton(_ button: NSButton, symbol: String, tooltip: String) {
@@ -1656,11 +1698,11 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     stack.alignment = .centerY
     toolbar.addSubview(stack)
     for (index, mode) in ["rectangle", "horizontal", "vertical", "cross"].enumerated() {
-      let names = ["手动矩形测量", "水平自动测距", "垂直自动测距", "交叉自动测距"]
+      let names = [NativeStrings.text("mode.rectangle"), NativeStrings.text("mode.horizontal"), NativeStrings.text("mode.vertical"), NativeStrings.text("mode.cross")]
       let symbols = ["rectangle.dashed", "arrow.left.and.right", "arrow.up.and.down", "arrow.up.and.down.and.arrow.left.and.right"]
       let button = CaptureButton(title: "", target: self, action: #selector(changeMode(_:)))
       button.identifier = NSUserInterfaceItemIdentifier(mode)
-      styleButton(button, symbol: symbols[index], tooltip: "\(names[index])（\(index + 1)）")
+      styleButton(button, symbol: symbols[index], tooltip: NativeStrings.text("mode.shortcut", names[index], index + 1))
       modeButtons[mode] = button
       stack.addArrangedSubview(button)
     }
@@ -1674,15 +1716,14 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     toleranceGroup.orientation = .horizontal
     toleranceGroup.spacing = 6
     toleranceGroup.alignment = .centerY
-    let toleranceLabel = NSTextField(labelWithString: "容差")
     toleranceLabel.font = .systemFont(ofSize: 11)
     toleranceLabel.textColor = .white
     toleranceGroup.addArrangedSubview(toleranceLabel)
     toleranceField.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
     toleranceField.alignment = .center
     toleranceField.widthAnchor.constraint(equalToConstant: 42).isActive = true
-    toleranceField.toolTip = "边界颜色容差（0–255），输入后按 Enter 确认"
-    toleranceField.setAccessibilityLabel("边界颜色容差")
+    toleranceField.toolTip = NativeStrings.text("overlay.tolerance_tooltip")
+    toleranceField.setAccessibilityLabel(NativeStrings.text("overlay.tolerance_accessibility"))
     toleranceField.target = self
     toleranceField.action = #selector(applyTolerance)
     toleranceField.delegate = self
@@ -1692,13 +1733,15 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     continuousButton.action = #selector(toggleContinuous)
     continuousButton.font = .systemFont(ofSize: 11)
     continuousButton.contentTintColor = .white
-    continuousButton.toolTip = "连续取色：每次取色立即复制，Esc 结束"
+    continuousButton.toolTip = NativeStrings.text("picker.continuous_tooltip")
     stack.addArrangedSubview(continuousButton)
     clearButton.target = self
     clearButton.action = #selector(clearPins)
-    styleButton(clearButton, symbol: "trash.slash", tooltip: "清除全部测量框")
-    let close = CaptureButton(title: "", target: self, action: #selector(cancelCapture))
-    styleButton(close, symbol: "xmark", tooltip: "取消（Esc）")
+    styleButton(clearButton, symbol: "trash.slash", tooltip: NativeStrings.text("overlay.clear_all_tooltip"))
+    let close = closeButton
+    close.target = self
+    close.action = #selector(cancelCapture)
+    styleButton(close, symbol: "xmark", tooltip: NativeStrings.text("overlay.cancel_tooltip"))
     stack.addArrangedSubview(close)
     NSLayoutConstraint.activate([
       toolbar.centerXAnchor.constraint(equalTo: centerXAnchor),
@@ -1725,14 +1768,14 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       (undoButton, #selector(undoPin)), (redoButton, #selector(redoPin)),
       (deleteButton, #selector(deletePin)), (clearButton, #selector(clearPins))]
     let symbols = ["doc.on.clipboard", "arrow.uturn.backward", "arrow.uturn.forward", "trash", "trash.slash"]
-    let tooltips = ["复制当前尺寸（⌘C），保留测量框", "撤销（⌘Z）", "重做（⇧⌘Z）", "删除当前测量框（Delete）", "清空测量框"]
+    let tooltips = [NativeStrings.text("overlay.copy_size_tooltip"), NativeStrings.text("overlay.undo_tooltip"), NativeStrings.text("overlay.redo_tooltip"), NativeStrings.text("overlay.delete_tooltip"), NativeStrings.text("overlay.clear_tooltip")]
     for (index, entry) in actions.enumerated() {
       let (button, action) = entry
       button.target = self; button.action = action
       styleButton(button, symbol: symbols[index], tooltip: tooltips[index])
       stack.addArrangedSubview(button)
     }
-    deleteButton.toolTip = "删除选中的测量框（Delete / Backspace），⌘Z 撤销"
+    deleteButton.toolTip = NativeStrings.text("overlay.delete_selected_tooltip")
     NSLayoutConstraint.activate([
       editbar.centerXAnchor.constraint(equalTo: centerXAnchor),
       editbar.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 4),
@@ -1917,16 +1960,16 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       if tool == "screenshot", let rect = measuredRect {
         let w = Int((rect.width / bounds.width * Double(snapshot.width)).rounded())
         let h = Int((rect.height / bounds.height * Double(snapshot.height)).rounded())
-        details += "\n区域: \(w) × \(h) px"
+        details += NativeStrings.text("loupe.area", w, h)
       }
       (details as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 18), withAttributes: attrs)
     } else {
       (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
         .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white])
     }
-    let hint = tool == "rectangle" ? (anchored ? "松手保留 · 方向键微调" : "拖拽新增 · 拖框移动 / 边角缩放 · Enter 复制并结束") :
-      (continuous && tool == "picker" ? "点击 / Enter 连续采集 · Esc 结束" : "点击 / Enter 复制 · 方向键微调 · Esc 取消")
-    let actionHint = tool == "screenshot" ? "C 复制颜色 · M 复制尺寸\nOption 暂停吸附" : tool == "picker" ? "\(pickerActions)\nEnter 按左键动作 · 方向键微调 · Esc 取消" : hint
+    let hint = tool == "rectangle" ? (anchored ? NativeStrings.text("loupe.anchored_hint") : NativeStrings.text("loupe.rectangle_hint")) :
+      (continuous && tool == "picker" ? NativeStrings.text("loupe.continuous_hint") : NativeStrings.text("loupe.copy_hint"))
+    let actionHint = tool == "screenshot" ? NativeStrings.text("loupe.screenshot_hint") : tool == "picker" ? NativeStrings.text("loupe.picker_hint", pickerActions) : hint
     (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y: sampling ? box.minY + 207 : labelY + 21,width:width-28,height:60),withAttributes:[
       .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }
@@ -2005,11 +2048,11 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
   init(initialColor: Int64, completion: @escaping (Int64?) -> Void) {
     panel = NSColorPanel(contentRect: NSRect(x: 0, y: 0, width: 266, height: 390),
       styleMask: [.titled, .closable], backing: .buffered, defer: false)
-    confirmButton = NSButton(title: "确定", target: nil, action: nil)
-    cancelButton = NSButton(title: "取消", target: nil, action: nil)
+    confirmButton = NSButton(title: NativeStrings.text("color.confirm"), target: nil, action: nil)
+    cancelButton = NSButton(title: NativeStrings.text("color.cancel"), target: nil, action: nil)
     self.completion = completion
     super.init()
-    panel.title = "颜色"
+    panel.title = NativeStrings.text("color.title")
     panel.toolbarStyle = .expanded
     panel.toolbar?.displayMode = .iconOnly
     panel.isReleasedWhenClosed = false
@@ -2053,6 +2096,12 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
     content.addSubview(footer)
     panel.contentView = content
     panel.setContentSize(size)
+  }
+
+  func refreshLocalization() {
+    panel.title = NativeStrings.text("color.title")
+    confirmButton.title = NativeStrings.text("color.confirm")
+    cancelButton.title = NativeStrings.text("color.cancel")
   }
 
   static func nsColor(_ argb: Int64) -> NSColor {

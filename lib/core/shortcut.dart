@@ -1,3 +1,5 @@
+import 'validation_exception.dart';
+
 class ShortcutChord {
   const ShortcutChord({
     required this.key,
@@ -30,7 +32,7 @@ class ShortcutChord {
   };
   factory ShortcutChord.fromJson(Object? json) {
     if (json is! Map || json['key'] is! String) {
-      throw const FormatException('Invalid shortcut');
+      throw const ValidationException('shortcut');
     }
     final chord = ShortcutChord(
       key: json['key'] as String,
@@ -39,7 +41,7 @@ class ShortcutChord {
       alt: json['alt'] == true,
       shift: json['shift'] == true,
     );
-    if (!chord.isValid) throw const FormatException('Invalid shortcut');
+    if (!chord.isValid) throw const ValidationException('shortcut');
     return chord;
   }
   @override
@@ -80,7 +82,7 @@ class ShortcutBindings {
     'screenshot': screenshot.toJson(),
   };
   factory ShortcutBindings.fromJson(Object? json) {
-    if (json is! Map) throw const FormatException('Invalid bindings');
+    if (json is! Map) throw const ValidationException('shortcutBindings');
     final picker = ShortcutChord.fromJson(json['picker']);
     final ruler = ShortcutChord.fromJson(json['ruler']);
     final fallback = ['X', 'A', 'T']
@@ -93,7 +95,7 @@ class ShortcutBindings {
           ? fallback
           : ShortcutChord.fromJson(json['screenshot']),
     );
-    if (!value.isValid) throw const FormatException('Duplicate shortcuts');
+    if (!value.isValid) throw const ValidationException('shortcutDuplicates');
     return value;
   }
 }

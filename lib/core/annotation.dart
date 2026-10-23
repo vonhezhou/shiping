@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 
+import 'validation_exception.dart';
+
 enum AnnotationKind {
   rectangle,
   ellipse,
@@ -13,20 +15,7 @@ enum AnnotationKind {
   text,
   mosaic,
   blur,
-  eraser;
-
-  String get label => const {
-    rectangle: '矩形',
-    ellipse: '椭圆',
-    line: '直线',
-    arrow: '箭头',
-    pencil: '画笔',
-    marker: '荧光笔',
-    text: '文字',
-    mosaic: '马赛克',
-    blur: '模糊',
-    eraser: '橡皮擦',
-  }[this]!;
+  eraser,
 }
 
 /// Immutable, image-pixel coordinates shared by preview, export and documents.
@@ -279,11 +268,11 @@ class Annotation {
   static List<Annotation> decodeList(Object? value, int width, int height) {
     if (value == null) return [];
     if (value is! List || value.length > 4096) {
-      throw const FormatException('通用标注数量无效');
+      throw const ValidationException('annotationCount');
     }
     var totalPoints = 0;
     return value.map((v) {
-      if (v is! Map) throw const FormatException('通用标注无效');
+      if (v is! Map) throw const ValidationException('annotationInvalid');
       final kind = AnnotationKind.values
           .where((k) => k.name == v['kind'])
           .firstOrNull;
@@ -325,13 +314,15 @@ class Annotation {
           text is! String ||
           text.length > 4096 ||
           (kind == AnnotationKind.text && text.trim().isEmpty)) {
-        throw const FormatException('通用标注类型或样式无效');
+        throw const ValidationException('annotationStyle');
       }
       totalPoints += raw.length;
-      if (totalPoints > 200000) throw const FormatException('标注笔画过多');
+      if (totalPoints > 200000) {
+        throw const ValidationException('annotationPoints');
+      }
       final points = raw.map((p) {
         if (p is! List || p.length != 2 || p[0] is! num || p[1] is! num) {
-          throw const FormatException('标注坐标无效');
+          throw const ValidationException('annotationCoordinates');
         }
         final x = (p[0] as num).toDouble(), y = (p[1] as num).toDouble();
         if (!x.isFinite ||
@@ -340,7 +331,7 @@ class Annotation {
             y < 0 ||
             x > width ||
             y > height) {
-          throw const FormatException('标注超出图片边界');
+          throw const ValidationException('annotationBounds');
         }
         return Offset(x, y);
       }).toList();
@@ -352,7 +343,7 @@ class Annotation {
                   kind == AnnotationKind.blur ||
                   kind == AnnotationKind.eraser)) &&
           points.length != 2) {
-        throw const FormatException('标注端点数量无效');
+        throw const ValidationException('annotationEndpoints');
       }
       return Annotation(
         kind: kind,
@@ -449,7 +440,7 @@ class AnnotationHistory extends ChangeNotifier {
     if (listEquals(items, _items)) return;
     if (items.length > 4096 ||
         items.fold<int>(0, (n, a) => n + a.points.length) > 200000) {
-      throw const FormatException('标注达到数量上限，请删除部分标注');
+      throw const ValidationException('annotationLimit');
     }
     _undo.add(_items);
     if (_undo.length > 64) _undo.removeAt(0);

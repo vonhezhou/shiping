@@ -6,6 +6,7 @@ import 'package:flutter/painting.dart';
 
 import '../core/annotation.dart';
 import '../core/pixel_frame.dart';
+import '../core/validation_exception.dart';
 import 'pixel_frame_image.dart';
 
 /// One renderer for both the editable preview and flattened PNG output.
@@ -267,7 +268,7 @@ class AnnotationRenderer {
       }
       try {
         final bytes = await output.toByteData(format: ui.ImageByteFormat.png);
-        if (bytes == null) throw const FormatException('PNG 编码失败');
+        if (bytes == null) throw const ValidationException('imageExport');
         return bytes.buffer.asUint8List(
           bytes.offsetInBytes,
           bytes.lengthInBytes,

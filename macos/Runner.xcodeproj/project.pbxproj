@@ -21,6 +21,9 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		F20000000000000000000003 /* NativeStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003; };
+		F20000000000000000000004 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000001; };
+		F20000000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000002; };
 		F20000000000000000000002 /* NativePixelBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000002; };
 		F20000000000000000000001 /* DesktopProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000001; };
 		F20000000000000000000000 /* Desktop.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000000; };
@@ -64,6 +67,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F10000000000000000000003 /* NativeStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeStrings.swift; sourceTree = "<group>"; };
+		F10000000000000000000004 /* en Localizable */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		F10000000000000000000005 /* zh-Hans Localizable */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		F10000000000000000000006 /* en InfoPlist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		F10000000000000000000007 /* zh-Hans InfoPlist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		F10000000000000000000002 /* NativePixelBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePixelBuffer.swift; sourceTree = "<group>"; };
 		F10000000000000000000001 /* DesktopProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopProtocol.swift; sourceTree = "<group>"; };
 		F10000000000000000000000 /* Desktop.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Desktop.g.swift; sourceTree = "<group>"; };
@@ -151,6 +159,8 @@
 			children = (
 				33CC10F22044A3C60003C045 /* Assets.xcassets */,
 				33CC10F42044A3C60003C045 /* MainMenu.xib */,
+				F30000000000000000000001 /* Localizable.strings */,
+				F30000000000000000000002 /* InfoPlist.strings */,
 				33CC10F72044A3C60003C045 /* Info.plist */,
 			);
 			name = Resources;
@@ -174,6 +184,7 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				F10000000000000000000003 /* NativeStrings.swift */,
 				F10000000000000000000002 /* NativePixelBuffer.swift */,
 				F10000000000000000000001 /* DesktopProtocol.swift */,
 				F10000000000000000000000 /* Desktop.g.swift */,
@@ -273,6 +284,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = 33CC10E42044A3C60003C045;
@@ -304,6 +316,8 @@
 			files = (
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
+				F20000000000000000000004 /* Localizable.strings in Resources */,
+				F20000000000000000000005 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -364,6 +378,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
+				F20000000000000000000003 /* NativeStrings.swift in Sources */,
 				F20000000000000000000002 /* NativePixelBuffer.swift in Sources */,
 				F20000000000000000000001 /* DesktopProtocol.swift in Sources */,
 				F20000000000000000000000 /* Desktop.g.swift in Sources */,
@@ -388,6 +403,20 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
+		F30000000000000000000001 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (F10000000000000000000004, F10000000000000000000005);
+			name = Localizable.strings;
+			path = Runner;
+			sourceTree = "<group>";
+		};
+		F30000000000000000000002 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (F10000000000000000000006, F10000000000000000000007);
+			name = InfoPlist.strings;
+			path = Runner;
+			sourceTree = "<group>";
+		};
 		33CC10F42044A3C60003C045 /* MainMenu.xib */ = {
 			isa = PBXVariantGroup;
 			children = (

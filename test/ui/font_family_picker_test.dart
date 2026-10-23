@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/ui/font_family_picker.dart';
+import 'package:fruler/l10n/app_localizations.dart';
 
 void main() {
   for (final size in [const Size(1100, 760), const Size(920, 680)]) {
@@ -19,6 +20,9 @@ void main() {
       final selections = <String>[];
       await tester.pumpWidget(
         MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           theme: ThemeData.dark(),
           home: Scaffold(
             body: Center(

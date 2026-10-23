@@ -2,6 +2,7 @@
 """Run the production AppKit PNG renderer against a synthetic frame, without screen access."""
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 
 root = Path(__file__).resolve().parent.parent
@@ -12,6 +13,8 @@ if source.count(marker) != 1:
 renderer = marker + source.split(marker, 1)[1]
 fixture = (root / "test/macos/annotation_export_fixture.swift").read_text()
 with tempfile.TemporaryDirectory(prefix="fruler-render-") as directory:
+    for language in ['en', 'zh-Hans']:
+        shutil.copytree(root / 'macos/Runner' / f'{language}.lproj', Path(directory) / f'{language}.lproj')
     script = Path(directory) / "main.swift"
-    script.write_text("import Cocoa\n" + renderer + "\n" + fixture)
+    script.write_text("import Cocoa\n" + (root / "macos/Runner/NativeStrings.swift").read_text() + "\n" + renderer + "\n" + fixture)
     raise SystemExit(subprocess.run(["swift", str(script)]).returncode)

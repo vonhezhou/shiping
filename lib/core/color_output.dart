@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'color_value.dart';
+import 'validation_exception.dart';
 
 /// A bounded, plain-text template. No expressions, file access or evaluation.
 class ColorOutput {
@@ -42,7 +43,7 @@ class ColorOutput {
         value['name'] is! String ||
         value['template'] is! String ||
         value['enabled'] is! bool) {
-      throw const FormatException('颜色格式数据无效');
+      throw const ValidationException('outputInvalid');
     }
     final result = ColorOutput(
       id: value['id'] as String,
@@ -57,7 +58,7 @@ class ColorOutput {
     if (!RegExp(r'^[a-zA-Z0-9_-]{1,80}$').hasMatch(id) ||
         name.trim().isEmpty ||
         name.length > 40) {
-      throw const FormatException('格式名称需为 1–40 个字符');
+      throw const ValidationException('outputName');
     }
     render(const RgbColor(13, 127, 255));
   }
@@ -66,7 +67,7 @@ class ColorOutput {
     if (template.trim().isEmpty ||
         template.length > 1024 ||
         template.contains(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]'))) {
-      throw const FormatException('模板需为 1–1024 个字符，不能包含控制字符');
+      throw const ValidationException('outputTemplate');
     }
     final out = StringBuffer();
     final hsl = color.hslValues;
@@ -124,10 +125,12 @@ class ColorOutput {
         out.write('%');
         i++;
       } else {
-        throw FormatException('未知占位符：%$token');
+        throw ValidationException('outputPlaceholder', {'token': token});
       }
     }
-    if (substitutions == 0) throw const FormatException('模板至少需要一个颜色占位符');
+    if (substitutions == 0) {
+      throw const ValidationException('outputSubstitution');
+    }
     return out.toString();
   }
 
@@ -141,19 +144,7 @@ class ColorOutput {
 
 enum PickerActivation { picker, editor }
 
-enum PickerMouseAction {
-  pickAndClose,
-  pickAndEdit,
-  pickAndContinue,
-  cancel;
-
-  String get label => switch (this) {
-    pickAndClose => '取色并结束',
-    pickAndEdit => '取色后打开编辑器',
-    pickAndContinue => '取色并继续',
-    cancel => '取消取色',
-  };
-}
+enum PickerMouseAction { pickAndClose, pickAndEdit, pickAndContinue, cancel }
 
 class PickerBehavior {
   const PickerBehavior({
@@ -187,7 +178,7 @@ class PickerBehavior {
     'secondary': secondary.name,
   };
   factory PickerBehavior.fromJson(Object? value) {
-    if (value is! Map) throw const FormatException('取色动作数据无效');
+    if (value is! Map) throw const ValidationException('pickerBehavior');
     return PickerBehavior(
       activation: PickerActivation.values.byName(value['activation'] as String),
       primary: PickerMouseAction.values.byName(value['primary'] as String),

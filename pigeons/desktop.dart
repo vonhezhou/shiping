@@ -246,6 +246,8 @@ class NativeLogEntry {
 @HostApi()
 abstract class DesktopHostApi {
   @async
+  void configureLocale(String languageCode);
+  @async
   int? pickAnnotationColor(int initialColor);
   @async
   List<String> availableFontFamilies();

@@ -38,6 +38,6 @@
 	<key>CFBundleDisplayName</key>
 	<string>fruler</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>fruler 需要读取屏幕像素，用于取色和测量。仅在你启动工具时截图，不上传；标注图片仅在你主动导出时保存到所选位置。</string>
+	<string>fruler reads screen pixels for screenshots, color picking, and measurement. Capture starts only when you launch a tool and is never uploaded. Annotated images are saved only when you choose to export them.</string>
 </dict>
 </plist>

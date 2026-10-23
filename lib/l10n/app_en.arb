@@ -1,0 +1,496 @@
+{
+  "@@locale": "en",
+  "appTitle": "fruler",
+  "uiModeRectangle": "Rectangle",
+  "uiModeHorizontal": "Horizontal",
+  "uiModeVertical": "Vertical",
+  "uiModeCross": "Cross",
+  "uiBackToHistory": "Back to history",
+  "uiPreferences": "Preferences",
+  "uiScreenWorkflow": "Work on screen. Copy or save to return to your previous app.",
+  "uiColorHistory": "Color history",
+  "uiMeasurementHistory": "Measurement history",
+  "uiScreenshotHistory": "Screenshot history",
+  "uiNoColors": "No colors yet",
+  "uiNoColorsDescription": "Pick a screen color to copy it. Recent colors appear here.",
+  "uiNoScreenshots": "No screenshots yet",
+  "uiNoScreenshotsDescription": "Completed screenshots stay here for this session. Click one to copy it again.",
+  "uiPreferencesIndex": "03 / PREFERENCES",
+  "uiPreferencesHeading": "Make it your own",
+  "uiPreferencesDescription": "Lightweight and ready when you need it.",
+  "uiScreenAccess": "Screen access",
+  "uiScreenPermissionGranted": "Screen recording access granted",
+  "uiScreenPermissionNeeded": "Allow fruler to record the screen",
+  "uiScreenPrivacy": "Starting a tool freezes a screen snapshot, which is released when you exit. Nothing is uploaded. Only copying or exporting writes the selected image to the clipboard or a file you choose.",
+  "uiRecheckPermission": "Check permission again",
+  "uiRequestPermission": "Request screen access",
+  "uiOpenSystemSettings": "Open System Settings ↗",
+  "uiColorPicking": "Color picking",
+  "uiCopyFormat": "Copy format",
+  "uiContinuousPicker": "Keep picking",
+  "uiContinuousPickerDescription": "Copy each color immediately; press Esc to finish",
+  "uiEdgeDetection": "Edge detection",
+  "uiColorTolerance": "Color tolerance",
+  "uiToleranceDescription": "Each RGB channel is compared with the pixel under the cursor. Lower tolerance produces stricter edges.",
+  "uiToleranceExact": "0 · Exact match",
+  "uiToleranceLoose": "255 · Loose match",
+  "uiKeyboardShortcuts": "Keyboard shortcuts",
+  "uiCancelTool": "Cancel current tool",
+  "uiCancelToolKeys": "Esc / right-click",
+  "uiShortcutsUnavailable": "Some global shortcuts could not be registered. Another app may be using them. You can still start tools from this window or the menu bar.",
+  "uiAbout": "fruler 0.10.0 · Flutter interface and Dart measurement engine · macOS 14+",
+  "uiScreenshotAndAnnotate": "Screenshot and annotate",
+  "uiColorPicker": "Color picker",
+  "uiRectangleMeasurement": "Rectangle measurement",
+  "uiPermissionBanner": "Screen recording permission is required to read screen pixels.",
+  "uiGoToPermission": "Grant access →",
+  "uiDismissMessage": "Dismiss message",
+  "uiClearHistory": "Clear history",
+  "uiShortcutInstructions": "Press a modifier and a letter or number. Include ⌘, ⌃, or ⌥; ⇧ is optional.",
+  "uiShortcutWaiting": "Waiting for keys…",
+  "uiShortcutSaveHint": "Press Enter to save or Esc to cancel. Reserved shortcuts and combinations already in use cannot be saved.",
+  "uiCancel": "Cancel",
+  "uiSave": "Save",
+  "uiName": "Name",
+  "uiSaveName": "Save name",
+  "uiMeasurementRecords": "Measurements",
+  "uiMeasurementSearch": "Search name, size, display, or date",
+  "uiFavoritesOnly": "Favorites only",
+  "uiNoMeasurements": "No matching measurements",
+  "uiNoMeasurementsDescription": "Measurements retain pixel size, logical size, and display scaling. Favorites are kept indefinitely.",
+  "uiUnfavoriteMeasurement": "Remove from favorites",
+  "uiFavoriteMeasurement": "Add to favorites",
+  "uiOriginalPixels": "Original pixels",
+  "uiMeasurementActions": "Measurement actions",
+  "uiNameMeasurement": "Name measurement",
+  "uiCopyDimensions": "Copy dimensions",
+  "uiDeleteRecord": "Delete record",
+  "uiSearchFonts": "Search fonts",
+  "uiNoMatchingFonts": "No matching fonts",
+  "uiFontLoadingFailed": "Could not load system fonts. Select a new screenshot region and try again.",
+  "uiScreenshotLoadingFailed": "Could not load the screenshot. Select a new region.",
+  "uiNoSystemFonts": "No system fonts available",
+  "uiFontSize": "Font size",
+  "uiColorPanelFailed": "Could not open the system color panel. Please try again.",
+  "uiCustomColor": "Custom color",
+  "uiMosaicSize": "Mosaic block size",
+  "uiBlurStrength": "Blur strength",
+  "uiBrushWidth": "Brush width",
+  "uiRectangleEraser": "Erase a rectangle",
+  "uiFillShape": "Fill shape",
+  "uiEllipse": "Ellipse",
+  "uiLineTooltip": "Line / polyline · Tab for arrow",
+  "uiArrowTooltip": "Arrow · Tab for line",
+  "uiRectangleSelection": "Rectangle selection",
+  "uiMosaic": "Mosaic",
+  "uiGaussianBlur": "Gaussian blur",
+  "uiBold": "Bold",
+  "uiItalic": "Italic",
+  "uiTextOutline": "Text outline (automatic black or white contrast)",
+  "uiEditText": "Edit text",
+  "uiShapeTools": "Shapes: rectangle / ellipse",
+  "uiLineTools": "Line / polyline / arrow",
+  "uiPencil": "Pencil",
+  "uiMarker": "Highlighter",
+  "uiEffectTools": "Mosaic / Gaussian blur",
+  "uiText": "Text",
+  "uiEraserTools": "Eraser · rectangle / brush",
+  "uiUndo": "Undo ⌘Z",
+  "uiRedo": "Redo ⌘Y / ⇧⌘Z",
+  "uiDeleteSelected": "Delete selected · Delete",
+  "uiCancelScreenshot": "Cancel · Esc",
+  "uiSavePng": "Save PNG ⌘S",
+  "uiCopyAndFinish": "Copy and finish ↵",
+  "uiCaptureCopyHint": "C Copy color · M Copy dimensions",
+  "uiStartPicker": "Color picker · {shortcut}",
+  "@uiStartPicker": {
+    "placeholders": {
+      "shortcut": {
+        "type": "String"
+      }
+    }
+  },
+  "uiStartRuler": "Ruler · {shortcut}",
+  "@uiStartRuler": {
+    "placeholders": {
+      "shortcut": {
+        "type": "String"
+      }
+    }
+  },
+  "uiStartScreenshot": "Screenshot · {shortcut}",
+  "@uiStartScreenshot": {
+    "placeholders": {
+      "shortcut": {
+        "type": "String"
+      }
+    }
+  },
+  "uiShortcutTitle": "Set {tool} shortcut",
+  "@uiShortcutTitle": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
+  "uiExportCurrentResults": "Export current results as {format}",
+  "@uiExportCurrentResults": {
+    "placeholders": {
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "uiMeasurementDetails": "{dimensions} · {mode} · {display}\nScale {scaleX} × {scaleY} · {date}",
+  "@uiMeasurementDetails": {
+    "placeholders": {
+      "dimensions": {
+        "type": "String"
+      },
+      "mode": {
+        "type": "String"
+      },
+      "display": {
+        "type": "String"
+      },
+      "scaleX": {
+        "type": "String"
+      },
+      "scaleY": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "uiLineWidthTooltip": "Line width {width} pt · Scroll / 1, 2 / [, ]",
+  "@uiLineWidthTooltip": {
+    "placeholders": {
+      "width": {
+        "type": "int"
+      }
+    }
+  },
+  "uiFontFamilyTooltip": "Font: {family}",
+  "@uiFontFamilyTooltip": {
+    "placeholders": {
+      "family": {
+        "type": "String"
+      }
+    }
+  },
+  "uiCaptureRegion": "Region: {width} × {height} px",
+  "@uiCaptureRegion": {
+    "placeholders": {
+      "width": {
+        "type": "int"
+      },
+      "height": {
+        "type": "int"
+      }
+    }
+  },
+  "uiParameterTooltip": "{label} · {value}{unit}",
+  "@uiParameterTooltip": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "value": {
+        "type": "int"
+      },
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "uiParameterValue": "{label} {value}",
+  "@uiParameterValue": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "value": {
+        "type": "int"
+      }
+    }
+  },
+  "uiLanguage": "Language",
+  "uiLanguageDescription": "Choose the language for windows, tools, and menus.",
+  "uiLanguageSystem": "System default",
+  "uiLanguageChinese": "简体中文",
+  "uiLanguageEnglish": "English",
+  "msgScreenshotSelectionFailed": "Unable to adjust the capture region: {detail}",
+  "@msgScreenshotSelectionFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgScreenshotSaved": "Screenshot saved",
+  "msgScreenshotCopied": "Screenshot copied",
+  "msgCopiedScreenshot": "Copied screenshot",
+  "msgScreenshotExportFailed": "Screenshot export failed: {detail}",
+  "@msgScreenshotExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgGroupNameInvalid": "Group names must contain 1–60 characters and be unique",
+  "msgOutputRequired": "Keep at least one color format enabled",
+  "msgDesktopDisconnected": "The system tools disconnected. Reopen fruler.",
+  "msgPlatformUnsupported": "This version supports macOS 14 and later. Other platforms are not available yet.",
+  "msgPermissionGranted": "Screen access granted. You can start using the tools.",
+  "msgPermissionDenied": "Allow fruler to record the screen in System Settings, then try again.",
+  "msgScreenshotFailed": "Screenshot failed: {detail}",
+  "@msgScreenshotFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgMacOSRequired": "This version requires macOS 14 or later.",
+  "msgPickingFinished": "{count, plural, one{Color picking finished. # sample collected} other{Color picking finished. # samples collected}}",
+  "@msgPickingFinished": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgCancelled": "Cancelled",
+  "msgPickerActions": "Left: {primary} · Middle: {middle} · Right: {secondary}",
+  "@msgPickerActions": {
+    "placeholders": {
+      "primary": {
+        "type": "String"
+      },
+      "middle": {
+        "type": "String"
+      },
+      "secondary": {
+        "type": "String"
+      }
+    }
+  },
+  "msgConfirmActions": "Left click / Enter to confirm · Right click to cancel",
+  "msgPickForeground": "Pick foreground color",
+  "msgPickBackground": "Pick background color",
+  "msgDragScreenshot": "Drag to select a capture region",
+  "msgDragMeasurement": "Click and drag to measure a rectangular region",
+  "msgPickingCancelled": "Color picking cancelled",
+  "msgPickerFinishFailed": "Unable to close the color picker: {detail}",
+  "@msgPickerFinishFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgPickingContinues": "{count, plural, one{# color picked · Esc to finish} other{# colors picked · Esc to finish}}",
+  "@msgPickingContinues": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgColorClipboardFailed": "Color saved, but copying failed: {detail}",
+  "@msgColorClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgMeasurementsRetained": "{count, plural, one{# measurement kept and its dimensions copied} other{# measurements kept and dimensions copied}}",
+  "@msgMeasurementsRetained": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgMeasurementClipboardFailed": "Annotation kept, but copying failed: {detail}",
+  "@msgMeasurementClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgCopied": "Copied {text}",
+  "@msgCopied": {
+    "placeholders": {
+      "text": {
+        "type": "String"
+      }
+    }
+  },
+  "msgSizeClipboardFailed": "Unable to copy dimensions: {detail}",
+  "@msgSizeClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgAnnotationImageExported": "Annotated image exported",
+  "msgAnnotationImageCopied": "Annotated image copied",
+  "msgAnnotationImageExportFailed": "Annotated image export failed: {detail}",
+  "@msgAnnotationImageExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgResultClipboardFailed": "Result saved, but copying failed: {detail}",
+  "@msgResultClipboardFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgRulerFinishFailed": "Unable to close the ruler. Press Esc: {detail}",
+  "@msgRulerFinishFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgShortcutInvalid": "Use a letter or digit with at least one main modifier. Each tool must have a different shortcut.",
+  "msgShortcutRegistrationFailed": "Unable to register the shortcut. Previous settings were kept.",
+  "msgShortcutsUpdated": "Shortcuts updated",
+  "msgColorsExported": "Colors exported",
+  "msgColorsExportFailed": "Color export failed: {detail}",
+  "@msgColorsExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgPaletteReadFailed": "Unable to read the palette file: {detail}",
+  "@msgPaletteReadFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgColorsMerged": "{count, plural, one{# color merged} other{# colors merged}}",
+  "@msgColorsMerged": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgPaletteCodeCopied": "{count, plural, one{Copied {format} code for # color} other{Copied {format} code for # colors}}",
+  "@msgPaletteCodeCopied": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "format": {
+        "type": "String"
+      }
+    }
+  },
+  "msgMeasurementsExported": "{count, plural, one{# measurement exported} other{# measurements exported}}",
+  "@msgMeasurementsExported": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "msgMeasurementsExportFailed": "Measurement export failed: {detail}",
+  "@msgMeasurementsExportFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgHistorySaveFailed": "Unable to save history: {detail}",
+  "@msgHistorySaveFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "msgShortcutsRestored": "Invalid shortcut settings. Defaults were restored.",
+  "msgHistoryRestoreFailed": "Unable to read history. Default settings are in use.",
+  "msgScreenPermissionRequired": "Screen recording permission is required. Allow access in Preferences, then reopen the tool.",
+  "msgCaptureCancelled": "The screen state changed. Start again.",
+  "msgShortcutConflict": "The shortcut is already in use. Tried to restore the previous settings.",
+  "msgShortcutUnavailable": "This shortcut is unavailable. Choose another combination.",
+  "msgCaptureBusy": "A tool is already active. Press Esc to exit it first.",
+  "msgSystemOperationFailed": "The system operation failed. Try again.",
+  "msgUnsupportedPlatform": "This platform is not supported yet",
+  "msgOperationFailed": "The operation failed. Try again.",
+  "msgLocaleChangeFailed": "Unable to change language. Previous settings were kept.",
+  "msgPickAndClose": "Pick and finish",
+  "msgPickAndEdit": "Pick and open editor",
+  "msgPickAndContinue": "Pick and continue",
+  "msgCancelPicking": "Cancel color picking",
+  "validationAnnotationCount": "Invalid annotation count",
+  "validationAnnotationInvalid": "Invalid annotation",
+  "validationAnnotationStyle": "Invalid annotation type or style",
+  "validationAnnotationPoints": "Too many annotation points",
+  "validationAnnotationCoordinates": "Invalid annotation coordinates",
+  "validationAnnotationBounds": "Annotations are outside the image bounds",
+  "validationAnnotationEndpoints": "Invalid annotation endpoint count",
+  "validationAnnotationLimit": "Annotation limit reached. Delete some annotations.",
+  "validationHexColor": "Enter a 3-digit or 6-digit HEX color",
+  "validationHslValue": "Invalid HSL value",
+  "validationRgbValue": "Invalid RGB value",
+  "validationPaletteEntry": "Invalid palette entry",
+  "validationPaletteVersion": "Choose a version 1 JSON file exported by fruler",
+  "validationPaletteLimit": "Import up to 4096 colors at a time",
+  "validationPaletteMetadata": "Invalid color entry name or favorite state",
+  "validationPaletteChannels": "HEX and RGB do not match. No colors were imported.",
+  "validationPaletteDuplicates": "The file contains duplicate colors. Remove duplicates first.",
+  "validationOutputInvalid": "Invalid color format data",
+  "validationOutputName": "Format names must contain 1–40 characters",
+  "validationOutputTemplate": "Templates must contain 1–1024 characters and no control characters",
+  "validationOutputSubstitution": "A template needs at least one color placeholder",
+  "validationPickerBehavior": "Invalid color picker action data",
+  "validationOutputLimit": "Keep up to 24 color formats",
+  "validationOutputNameDuplicate": "Format names must be unique",
+  "validationImageSize": "Images can have up to 16 million pixels and no side longer than 16384 pixels",
+  "validationImageFormat": "Only PNG, JPEG and WebP images are supported",
+  "validationImageDecode": "Unable to decode the image",
+  "validationImageAnnotationsEmpty": "There are no image annotations to export",
+  "validationImageExport": "Image export failed",
+  "validationShortcut": "Invalid shortcut",
+  "validationShortcutBindings": "Invalid shortcut settings",
+  "validationShortcutDuplicates": "Each tool must have a different shortcut",
+  "validationOutputPlaceholder": "Unknown placeholder: %{token}",
+  "@validationOutputPlaceholder": {
+    "placeholders": {
+      "token": {
+        "type": "String"
+      }
+    }
+  },
+  "validationImageFileLimit": "Image files cannot exceed {limit} MB",
+  "@validationImageFileLimit": {
+    "placeholders": {
+      "limit": {
+        "type": "int"
+      }
+    }
+  }
+}

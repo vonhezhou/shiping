@@ -6,9 +6,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../app/app_controller.dart';
 import '../core/core.dart';
+import '../l10n/app_language.dart';
+import '../l10n/app_localizations.dart';
+import '../l10n/localizations_context.dart';
 import '../platform/annotation_renderer.dart';
 import '../platform/pixel_frame_image.dart';
 
@@ -22,48 +26,79 @@ const _background = Color(0xFF111315),
     _line = Color(0xFF303438),
     _muted = Color(0xFF949B9F),
     _accent = Color(0xFFD7FA6B);
-const _modeLabels = {
-  RulerMode.rectangle: '矩形',
-  RulerMode.horizontal: '水平',
-  RulerMode.vertical: '垂直',
-  RulerMode.cross: '交叉',
+String _modeLabel(BuildContext context, RulerMode mode) => switch (mode) {
+  RulerMode.rectangle => context.l10n.uiModeRectangle,
+  RulerMode.horizontal => context.l10n.uiModeHorizontal,
+  RulerMode.vertical => context.l10n.uiModeVertical,
+  RulerMode.cross => context.l10n.uiModeCross,
 };
 
-class FrulerApp extends StatelessWidget {
+class FrulerApp extends StatefulWidget {
   const FrulerApp({super.key, required this.controller});
   final AppController controller;
+
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'fruler',
-    debugShowCheckedModeBanner: false,
-    color: Colors.transparent,
-    theme: ThemeData(
-      brightness: Brightness.dark,
-      useMaterial3: true,
-      scaffoldBackgroundColor: _background,
-      colorScheme: const ColorScheme.dark(
-        primary: _accent,
-        surface: _panel,
-        onPrimary: Color(0xFF182008),
-        onSurface: Color(0xFFF1F3EF),
-        outline: _line,
+  State<FrulerApp> createState() => _FrulerAppState();
+}
+
+class _FrulerAppState extends State<FrulerApp> with WidgetsBindingObserver {
+  AppController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    controller.updateSystemLocale(locales?.firstOrNull ?? const Locale('en'));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<Locale>(
+    valueListenable: controller.localeChanges,
+    builder: (context, locale, _) => MaterialApp(
+      onGenerateTitle: (context) => context.l10n.appTitle,
+      locale: locale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      debugShowCheckedModeBanner: false,
+      color: Colors.transparent,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        useMaterial3: true,
+        scaffoldBackgroundColor: _background,
+        colorScheme: const ColorScheme.dark(
+          primary: _accent,
+          surface: _panel,
+          onPrimary: Color(0xFF182008),
+          onSurface: Color(0xFFF1F3EF),
+          outline: _line,
+        ),
+        fontFamily: 'PingFang SC',
       ),
-      fontFamily: 'PingFang SC',
-    ),
-    home: AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        if (controller.screenshotEditing) {
-          return Material(
-            color: Colors.transparent,
-            child: _AnnotationEditor(
-              key: ObjectKey(controller.imageDocument),
-              controller: controller,
-            ),
-          );
-        }
-        return _HistoryHome(controller: controller);
-      },
+      home: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          if (controller.screenshotEditing) {
+            return Material(
+              color: Colors.transparent,
+              child: _AnnotationEditor(
+                key: ObjectKey(controller.imageDocument),
+                controller: controller,
+              ),
+            );
+          }
+          return _HistoryHome(controller: controller);
+        },
+      ),
     ),
   );
 }
@@ -83,12 +118,13 @@ class _HistoryHome extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Text(
-                    'fruler',
+                  Text(
+                    context.l10n.appTitle,
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
                   ),
                   const Spacer(),
                   TextButton.icon(
+                    key: const ValueKey('open-preferences'),
                     onPressed: () => c.selectSection(
                       c.section == AppSection.settings
                           ? AppSection.picker
@@ -96,7 +132,9 @@ class _HistoryHome extends StatelessWidget {
                     ),
                     icon: const Icon(Icons.settings_outlined),
                     label: Text(
-                      c.section == AppSection.settings ? '返回历史' : '偏好设置',
+                      c.section == AppSection.settings
+                          ? context.l10n.uiBackToHistory
+                          : context.l10n.uiPreferences,
                     ),
                   ),
                 ],
@@ -110,25 +148,33 @@ class _HistoryHome extends StatelessWidget {
                     key: const ValueKey('start-picker'),
                     onPressed: c.busy ? null : c.pickColor,
                     icon: const Icon(Icons.colorize),
-                    label: Text('取色器 · ${c.shortcuts.picker.label}'),
+                    label: Text(
+                      context.l10n.uiStartPicker(c.shortcuts.picker.label),
+                    ),
                   ),
                   FilledButton.icon(
                     key: const ValueKey('start-ruler'),
                     onPressed: c.busy ? null : c.startRuler,
                     icon: const Icon(Icons.straighten),
-                    label: Text('尺子 · ${c.shortcuts.ruler.label}'),
+                    label: Text(
+                      context.l10n.uiStartRuler(c.shortcuts.ruler.label),
+                    ),
                   ),
                   FilledButton.icon(
                     key: const ValueKey('start-screenshot'),
                     onPressed: c.busy ? null : c.startScreenshot,
                     icon: const Icon(Icons.screenshot_monitor),
-                    label: Text('截图 · ${c.shortcuts.screenshot.label}'),
+                    label: Text(
+                      context.l10n.uiStartScreenshot(
+                        c.shortcuts.screenshot.label,
+                      ),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              const Text(
-                '在屏幕上完成操作，复制或保存后回到原应用。',
+              Text(
+                context.l10n.uiScreenWorkflow,
                 style: TextStyle(color: _muted),
               ),
               const SizedBox(height: 16),
@@ -148,9 +194,11 @@ class _HistoryHome extends StatelessWidget {
                           spacing: 8,
                           children: [
                             for (final e in {
-                              AppSection.picker: '取色历史',
-                              AppSection.ruler: '测量历史',
-                              AppSection.image: '截图历史',
+                              AppSection.picker: context.l10n.uiColorHistory,
+                              AppSection.ruler:
+                                  context.l10n.uiMeasurementHistory,
+                              AppSection.image:
+                                  context.l10n.uiScreenshotHistory,
                             }.entries)
                               ChoiceChip(
                                 label: Text(e.value),
@@ -162,10 +210,10 @@ class _HistoryHome extends StatelessWidget {
                         const SizedBox(height: 16),
                         if (c.section == AppSection.picker) ...[
                           if (c.colors.isEmpty)
-                            const _Empty(
+                            _Empty(
                               icon: Icons.colorize,
-                              title: '还没有取色记录',
-                              description: '在屏幕上取色后自动复制，最近颜色显示在这里。',
+                              title: context.l10n.uiNoColors,
+                              description: context.l10n.uiNoColorsDescription,
                             ),
                           for (final color in c.colors)
                             ListTile(
@@ -188,10 +236,11 @@ class _HistoryHome extends StatelessWidget {
                           _MeasurementHistory(controller: c)
                         else ...[
                           if (c.screenshots.isEmpty)
-                            const _Empty(
+                            _Empty(
                               icon: Icons.image_outlined,
-                              title: '还没有截图记录',
-                              description: '完成的截图暂存在本次运行中，点击即可重新复制。',
+                              title: context.l10n.uiNoScreenshots,
+                              description:
+                                  context.l10n.uiNoScreenshotsDescription,
                             ),
                           Wrap(
                             spacing: 12,
@@ -230,24 +279,62 @@ class _SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      const _PageHeading(
-        index: '03 / PREFERENCES',
-        title: '按你的习惯工作',
-        description: '轻量常驻，随时就绪。',
+      _PageHeading(
+        index: context.l10n.uiPreferencesIndex,
+        title: context.l10n.uiPreferencesHeading,
+        description: context.l10n.uiPreferencesDescription,
       ),
       _SettingsCard(
-        title: '屏幕访问',
+        title: context.l10n.uiLanguage,
+        icon: Icons.language,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(context.l10n.uiLanguageDescription),
+            const SizedBox(height: 12),
+            DropdownButton<AppLanguage>(
+              key: const ValueKey('app-language'),
+              value: controller.language,
+              isExpanded: true,
+              items: [
+                DropdownMenuItem(
+                  value: AppLanguage.system,
+                  child: Text(context.l10n.uiLanguageSystem),
+                ),
+                DropdownMenuItem(
+                  value: AppLanguage.zh,
+                  child: Text(context.l10n.uiLanguageChinese),
+                ),
+                DropdownMenuItem(
+                  value: AppLanguage.en,
+                  child: Text(context.l10n.uiLanguageEnglish),
+                ),
+              ],
+              onChanged: controller.busy
+                  ? null
+                  : (value) {
+                      if (value != null) controller.setLanguage(value);
+                    },
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      _SettingsCard(
+        title: context.l10n.uiScreenAccess,
         icon: Icons.desktop_access_disabled_outlined,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              controller.permissionGranted ? '已获得屏幕录制权限' : '需要允许 fruler 录制屏幕',
+              controller.permissionGranted
+                  ? context.l10n.uiScreenPermissionGranted
+                  : context.l10n.uiScreenPermissionNeeded,
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '启动工具时冻结屏幕快照，退出后释放，不上传。仅在你复制或导出标注时，将局部图片写入剪贴板或所选文件。',
+            Text(
+              context.l10n.uiScreenPrivacy,
               style: TextStyle(fontSize: 11, color: _muted, height: 1.7),
             ),
             const SizedBox(height: 18),
@@ -258,12 +345,17 @@ class _SettingsPage extends StatelessWidget {
                 OutlinedButton(
                   onPressed: controller.requestPermission,
                   child: Text(
-                    controller.permissionGranted ? '重新检查权限' : '请求屏幕授权',
+                    controller.permissionGranted
+                        ? context.l10n.uiRecheckPermission
+                        : context.l10n.uiRequestPermission,
                   ),
                 ),
                 TextButton(
                   onPressed: controller.openPrivacySettings,
-                  child: const Text('打开系统设置 ↗', style: TextStyle(fontSize: 12)),
+                  child: Text(
+                    context.l10n.uiOpenSystemSettings,
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -272,13 +364,13 @@ class _SettingsPage extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       _SettingsCard(
-        title: '取色',
+        title: context.l10n.uiColorPicking,
         icon: Icons.colorize,
         child: Column(
           children: [
             Row(
               children: [
-                const Text('复制格式'),
+                Text(context.l10n.uiCopyFormat),
                 const Spacer(),
                 DropdownButton<String>(
                   value: controller.selectedOutputId,
@@ -296,8 +388,8 @@ class _SettingsPage extends StatelessWidget {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('连续取色'),
-              subtitle: const Text('每次取色立即复制，Esc 结束'),
+              title: Text(context.l10n.uiContinuousPicker),
+              subtitle: Text(context.l10n.uiContinuousPickerDescription),
               value: controller.continuousPicker,
               onChanged: controller.setContinuousPicker,
             ),
@@ -306,15 +398,18 @@ class _SettingsPage extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       _SettingsCard(
-        title: '边界识别',
+        title: context.l10n.uiEdgeDetection,
         icon: Icons.center_focus_strong_outlined,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Expanded(
-                  child: Text('颜色容差', style: TextStyle(fontSize: 13)),
+                Expanded(
+                  child: Text(
+                    context.l10n.uiColorTolerance,
+                    style: TextStyle(fontSize: 13),
+                  ),
                 ),
                 Text(
                   '${controller.tolerance}',
@@ -327,8 +422,8 @@ class _SettingsPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-            const Text(
-              '每个 RGB 通道与光标像素比较。容差越小，边界识别越严格。',
+            Text(
+              context.l10n.uiToleranceDescription,
               style: TextStyle(color: _muted, fontSize: 11),
             ),
             Slider(
@@ -339,12 +434,15 @@ class _SettingsPage extends StatelessWidget {
               label: '${controller.tolerance}',
               onChanged: (v) => controller.setTolerance(v.round()),
             ),
-            const Row(
+            Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('0 · 精确匹配', style: TextStyle(color: _muted, fontSize: 10)),
                 Text(
-                  '255 · 宽松匹配',
+                  context.l10n.uiToleranceExact,
+                  style: TextStyle(color: _muted, fontSize: 10),
+                ),
+                Text(
+                  context.l10n.uiToleranceLoose,
                   style: TextStyle(color: _muted, fontSize: 10),
                 ),
               ],
@@ -354,7 +452,7 @@ class _SettingsPage extends StatelessWidget {
       ),
       const SizedBox(height: 16),
       _SettingsCard(
-        title: '快捷操作',
+        title: context.l10n.uiKeyboardShortcuts,
         icon: Icons.keyboard_rounded,
         child: Column(
           children: [
@@ -364,12 +462,12 @@ class _SettingsPage extends StatelessWidget {
             const SizedBox(height: 10),
             _editableShortcut(context, false, screenshot: true),
             const SizedBox(height: 15),
-            _shortcut('取消当前工具', 'Esc / 鼠标右键'),
+            _shortcut(context.l10n.uiCancelTool, context.l10n.uiCancelToolKeys),
             if (!controller.shortcutsAvailable)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 16),
                 child: Text(
-                  '全局快捷键未全部注册，可能已被其他应用占用。仍可使用窗口或菜单栏入口。',
+                  context.l10n.uiShortcutsUnavailable,
                   style: TextStyle(color: Color(0xFFE7B56A), fontSize: 11),
                 ),
               ),
@@ -377,10 +475,7 @@ class _SettingsPage extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 20),
-      const _Hint(
-        icon: Icons.layers_outlined,
-        text: 'fruler 0.10.0 · Flutter 界面与 Dart 测量核心 · macOS 14+',
-      ),
+      _Hint(icon: Icons.layers_outlined, text: context.l10n.uiAbout),
     ],
   );
   Widget _editableShortcut(
@@ -391,10 +486,10 @@ class _SettingsPage extends StatelessWidget {
     children: [
       Text(
         screenshot
-            ? '截图并标注'
+            ? context.l10n.uiScreenshotAndAnnotate
             : picker
-            ? '取色器'
-            : '矩形测量',
+            ? context.l10n.uiColorPicker
+            : context.l10n.uiRectangleMeasurement,
         style: const TextStyle(fontSize: 12),
       ),
       const Spacer(),
@@ -431,10 +526,10 @@ class _SettingsPage extends StatelessWidget {
           context: context,
           builder: (_) => _ShortcutDialog(
             tool: screenshot
-                ? '截图并标注'
+                ? context.l10n.uiScreenshotAndAnnotate
                 : picker
-                ? '取色器'
-                : '矩形测量',
+                ? context.l10n.uiColorPicker
+                : context.l10n.uiRectangleMeasurement,
             controller: controller,
           ),
         );
@@ -527,17 +622,17 @@ class _PermissionBanner extends StatelessWidget {
           color: Color(0xFFE7B56A),
         ),
         const SizedBox(width: 11),
-        const Expanded(
+        Expanded(
           child: Text(
-            '首次使用需要屏幕录制权限，才能读取屏幕上的像素。',
+            context.l10n.uiPermissionBanner,
             style: TextStyle(color: Color(0xFFD8D1B3), fontSize: 11),
           ),
         ),
         const SizedBox(width: 12),
         TextButton(
           onPressed: () => controller.selectSection(AppSection.settings),
-          child: const Text(
-            '前往授权 →',
+          child: Text(
+            context.l10n.uiGoToPermission,
             style: TextStyle(color: Color(0xFFE7B56A), fontSize: 11),
           ),
         ),
@@ -576,7 +671,7 @@ class _Message extends StatelessWidget {
         ),
         IconButton(
           onPressed: controller.dismissMessage,
-          tooltip: '关闭提示',
+          tooltip: context.l10n.uiDismissMessage,
           icon: const Icon(Icons.close_rounded, size: 16),
         ),
       ],
@@ -605,9 +700,12 @@ class _SectionTitle extends StatelessWidget {
       if (onClear != null)
         InkWell(
           onTap: onClear,
-          child: const Padding(
+          child: Padding(
             padding: EdgeInsets.all(5),
-            child: Text('清空记录', style: TextStyle(color: _muted, fontSize: 10)),
+            child: Text(
+              context.l10n.uiClearHistory,
+              style: TextStyle(color: _muted, fontSize: 10),
+            ),
           ),
         ),
     ],
@@ -731,22 +829,22 @@ class _ShortcutDialogState extends State<_ShortcutDialog> {
     autofocus: true,
     onKeyEvent: _onKey,
     child: AlertDialog(
-      title: Text('设置${widget.tool}快捷键'),
+      title: Text(context.l10n.uiShortcutTitle(widget.tool)),
       content: SizedBox(
         width: 360,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('按下修饰键与一个字母或数字的组合。需要包含 ⌘、⌃ 或 ⌥；支持附加 ⇧。'),
+            Text(context.l10n.uiShortcutInstructions),
             const SizedBox(height: 20),
             Text(
-              candidate?.label ?? '等待按键…',
+              candidate?.label ?? context.l10n.uiShortcutWaiting,
               style: const TextStyle(fontSize: 24, color: _accent),
             ),
             const SizedBox(height: 16),
-            const Text(
-              '按 Enter 保存，Esc 取消。系统保留或已占用的组合无法保存。',
+            Text(
+              context.l10n.uiShortcutSaveHint,
               style: TextStyle(color: _muted, fontSize: 12),
             ),
           ],
@@ -755,13 +853,13 @@ class _ShortcutDialogState extends State<_ShortcutDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(context.l10n.uiCancel),
         ),
         FilledButton(
           onPressed: candidate == null
               ? null
               : () => Navigator.pop(context, candidate),
-          child: const Text('保存'),
+          child: Text(context.l10n.uiSave),
         ),
       ],
     ),

@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'validation_exception.dart';
+
 enum ColorFormat {
   hex,
   rgb,
@@ -63,7 +65,7 @@ class RgbColor {
       hex = hex.split('').map((c) => '$c$c').join();
     }
     if (!RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(hex)) {
-      throw const FormatException('请输入 3 位或 6 位 HEX 颜色');
+      throw const ValidationException('hexColor');
     }
     final value = int.parse(hex, radix: 16);
     return RgbColor((value >> 16) & 255, (value >> 8) & 255, value & 255);
@@ -76,7 +78,7 @@ class RgbColor {
         saturation > 1 ||
         lightness < 0 ||
         lightness > 1) {
-      throw const FormatException('Invalid HSL value');
+      throw const ValidationException('hslValue');
     }
     final h = (hue % 360) / 60;
     final c = (1 - (2 * lightness - 1).abs()) * saturation;
@@ -111,7 +113,7 @@ class RgbColor {
     if (value is! List ||
         value.length != 3 ||
         value.any((v) => v is! int || v < 0 || v > 255)) {
-      throw const FormatException('Invalid RGB value');
+      throw const ValidationException('rgbValue');
     }
     return RgbColor(value[0] as int, value[1] as int, value[2] as int);
   }

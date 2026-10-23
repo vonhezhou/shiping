@@ -8,6 +8,7 @@ import sys
 root = pathlib.Path(__file__).resolve().parents[1]
 flutter = os.environ.get('FRULER_FLUTTER', 'flutter')
 commands = [
+    [sys.executable, 'tool/check_localizations.py'],
     [sys.executable, 'tool/check_protocol.py'],
     [flutter, '--no-version-check', 'analyze', '--no-pub'],
     [flutter, '--no-version-check', 'test', '--no-pub', '--reporter', 'expanded'],
