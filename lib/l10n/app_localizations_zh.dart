@@ -125,7 +125,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiShortcutsUnavailable => '全局快捷键未全部注册，可能已被其他应用占用。仍可使用窗口或菜单栏入口。';
 
   @override
-  String get uiAbout => 'fruler 0.10.0 · Flutter 界面与 Dart 测量核心 · macOS 14+';
+  String get uiAbout => 'fruler 0.10.0 · macOS 14+';
 
   @override
   String get uiScreenshotAndAnnotate => '截图并标注';
@@ -721,5 +721,88 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String validationImageFileLimit(int limit) {
     return '图片文件不能超过 $limit MB';
+  }
+
+  @override
+  String get uiOptionsTitle => '选项';
+
+  @override
+  String get uiGeneral => '常规';
+
+  @override
+  String get uiGeneralDescription => '语言、全局快捷键和屏幕访问权限。';
+
+  @override
+  String get uiRuler => '尺子';
+
+  @override
+  String get uiScreenshot => '截图';
+
+  @override
+  String get uiPickerDescription => '在屏幕上取色并立即复制，按你的习惯设置复制格式与放大镜。';
+
+  @override
+  String get uiRulerDescription => '在屏幕上测量像素和逻辑尺寸，设置默认模式与边界识别容差。';
+
+  @override
+  String get uiScreenshotDescription => '在同一个全屏浮层框选、标注并复制或保存截图。';
+
+  @override
+  String get uiPickerOptions => '取色选项';
+
+  @override
+  String get uiMagnification => '放大倍率';
+
+  @override
+  String get uiMagnificationDescription => '使用工具时也可通过滚轮调整，支持 4×–32×。';
+
+  @override
+  String get uiRulerOptions => '测量选项';
+
+  @override
+  String get uiDefaultMode => '默认模式';
+
+  @override
+  String get uiDefaultModeDescription => '尺子启动时使用所选模式；工具内按 1–4 也可切换。';
+
+  @override
+  String get uiScreenshotWorkflow => '截图与标注';
+
+  @override
+  String get uiScreenshotSelect => '框选屏幕区域，可单击吸附窗口或拖动框选。';
+
+  @override
+  String get uiScreenshotAnnotate => '在原位添加形状、画笔、文字或模糊，选区可继续调整。';
+
+  @override
+  String get uiScreenshotFinish => '复制或保存成功后返回原应用；取消保存会继续标注。';
+
+  @override
+  String get uiScreenshotHistoryStorage =>
+      '仅保留本次运行最近 12 张截图，总计不超过 64 MiB；退出应用后释放。';
+
+  @override
+  String get uiColorHistoryStorage => '最近 64 个颜色保存在本机，点击即可再次复制。';
+
+  @override
+  String get uiAboutTitle => '关于';
+
+  @override
+  String get uiOptionsSidebarHint => '通过快捷键或菜单栏，在屏幕上启动工具。';
+
+  @override
+  String get uiCopyScreenshotFromHistory => '再次复制截图';
+
+  @override
+  String get uiScreenshotCurrentSession => '仅本次运行';
+
+  @override
+  String uiHistoryItemCount(int count) {
+    return '$count 条';
+  }
+
+  @override
+  String uiScreenshotPreview(int index) {
+    return '截图 $index';
   }
 }

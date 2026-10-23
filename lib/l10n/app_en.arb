@@ -38,7 +38,7 @@
   "uiCancelTool": "Cancel current tool",
   "uiCancelToolKeys": "Esc / right-click",
   "uiShortcutsUnavailable": "Some global shortcuts could not be registered. Another app may be using them. You can still start tools from this window or the menu bar.",
-  "uiAbout": "fruler 0.10.0 · Flutter interface and Dart measurement engine · macOS 14+",
+  "uiAbout": "fruler 0.10.0 · macOS 14+",
   "uiScreenshotAndAnnotate": "Screenshot and annotate",
   "uiColorPicker": "Color picker",
   "uiRectangleMeasurement": "Rectangle measurement",
@@ -256,7 +256,7 @@
     }
   },
   "msgMacOSRequired": "This version requires macOS 14 or later.",
-  "msgPickingFinished": "{count, plural, one{Color picking finished. # sample collected} other{Color picking finished. # samples collected}}",
+  "msgPickingFinished": "{count, plural, one{Color picking finished. {count} sample collected} other{Color picking finished. {count} samples collected}}",
   "@msgPickingFinished": {
     "placeholders": {
       "count": {
@@ -293,7 +293,7 @@
       }
     }
   },
-  "msgPickingContinues": "{count, plural, one{# color picked · Esc to finish} other{# colors picked · Esc to finish}}",
+  "msgPickingContinues": "{count, plural, one{{count} color picked · Esc to finish} other{{count} colors picked · Esc to finish}}",
   "@msgPickingContinues": {
     "placeholders": {
       "count": {
@@ -309,7 +309,7 @@
       }
     }
   },
-  "msgMeasurementsRetained": "{count, plural, one{# measurement kept and its dimensions copied} other{# measurements kept and dimensions copied}}",
+  "msgMeasurementsRetained": "{count, plural, one{{count} measurement kept and its dimensions copied} other{{count} measurements kept and dimensions copied}}",
   "@msgMeasurementsRetained": {
     "placeholders": {
       "count": {
@@ -387,7 +387,7 @@
       }
     }
   },
-  "msgColorsMerged": "{count, plural, one{# color merged} other{# colors merged}}",
+  "msgColorsMerged": "{count, plural, one{{count} color merged} other{{count} colors merged}}",
   "@msgColorsMerged": {
     "placeholders": {
       "count": {
@@ -395,7 +395,7 @@
       }
     }
   },
-  "msgPaletteCodeCopied": "{count, plural, one{Copied {format} code for # color} other{Copied {format} code for # colors}}",
+  "msgPaletteCodeCopied": "{count, plural, one{Copied {format} code for {count} color} other{Copied {format} code for {count} colors}}",
   "@msgPaletteCodeCopied": {
     "placeholders": {
       "count": {
@@ -406,7 +406,7 @@
       }
     }
   },
-  "msgMeasurementsExported": "{count, plural, one{# measurement exported} other{# measurements exported}}",
+  "msgMeasurementsExported": "{count, plural, one{{count} measurement exported} other{{count} measurements exported}}",
   "@msgMeasurementsExported": {
     "placeholders": {
       "count": {
@@ -489,6 +489,46 @@
   "@validationImageFileLimit": {
     "placeholders": {
       "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "uiOptionsTitle": "Options",
+  "uiGeneral": "General",
+  "uiGeneralDescription": "Language, global shortcuts, and screen access.",
+  "uiRuler": "Screen ruler",
+  "uiScreenshot": "Screenshot",
+  "uiPickerDescription": "Pick screen pixels and copy colors instantly. Choose the output format and magnification.",
+  "uiRulerDescription": "Measure pixels and logical dimensions on screen. Set the default mode and edge tolerance.",
+  "uiScreenshotDescription": "Select, annotate, and copy or save in one full-screen overlay.",
+  "uiPickerOptions": "Color picker options",
+  "uiMagnification": "Magnification",
+  "uiMagnificationDescription": "You can also use the scroll wheel while picking (4×–32×).",
+  "uiRulerOptions": "Ruler options",
+  "uiDefaultMode": "Default mode",
+  "uiDefaultModeDescription": "The ruler starts in the selected mode. Press 1–4 during use to switch.",
+  "uiScreenshotWorkflow": "Capture and annotation",
+  "uiScreenshotSelect": "Select a screen region. Click to snap to a window, or drag to draw a region.",
+  "uiScreenshotAnnotate": "Annotate in place with shapes, drawing, text, or blur. You can keep adjusting the region.",
+  "uiScreenshotFinish": "Return to your previous app after copying or saving. Canceling a save keeps annotation open.",
+  "uiScreenshotHistoryStorage": "Keeps up to 12 recent screenshots and 64 MiB in this session. Screenshots are released when you quit.",
+  "uiColorHistoryStorage": "The 64 most recent colors are saved locally. Click a color to copy it again.",
+  "uiAboutTitle": "About",
+  "uiOptionsSidebarHint": "Start screen tools with a shortcut or the menu bar.",
+  "uiCopyScreenshotFromHistory": "Copy screenshot again",
+  "uiScreenshotCurrentSession": "Current session",
+  "uiHistoryItemCount": "{count, plural, one{{count} item} other{{count} items}}",
+  "uiScreenshotPreview": "Screenshot {index}",
+  "@uiHistoryItemCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@uiScreenshotPreview": {
+    "placeholders": {
+      "index": {
         "type": "int"
       }
     }

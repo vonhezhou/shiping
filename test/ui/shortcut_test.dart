@@ -18,7 +18,7 @@ void main() {
     await controller.initialize();
     addTearDown(desktop.input.close);
     await tester.pumpWidget(ControllerTestHost(controller: controller));
-    await tester.tap(find.text('偏好设置').first);
+    await tester.tap(find.byKey(const ValueKey('nav-settings')));
     await tester.pumpAndSettle();
     final edit = find.widgetWithText(
       OutlinedButton,

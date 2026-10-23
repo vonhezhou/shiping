@@ -686,6 +686,72 @@ void main() {
     }
   });
 
+  testWidgets('选项窗口的取色和尺子配置通过真实通道应用到屏幕工具', (tester) async {
+    final desktop = NativeDesktop();
+    final original = await desktop.loadState();
+    final controller = AppController(desktop);
+    await controller.initialize();
+    try {
+      await controller.setLanguage(AppLanguage.zh);
+      await desktop.showMainWindow();
+      await tester.pumpWidget(FrulerApp(controller: controller));
+      await click(tester, find.byKey(const ValueKey('nav-picker')));
+      await click(tester, find.byKey(const ValueKey('picker-format')));
+      await click(tester, find.text('RGB').last);
+      await click(tester, find.byKey(const ValueKey('picker-zoom')));
+      await click(tester, find.text('24×').last);
+      if (!controller.continuousPicker) {
+        await click(tester, find.byKey(const ValueKey('picker-continuous')));
+      }
+      expect(controller.zoom, 24);
+      expect(controller.selectedOutputId, 'rgb');
+      expect(controller.continuousPicker, true);
+      await click(tester, find.byKey(const ValueKey('start-picker')));
+      await waitFor(tester, () => desktop.overlay?['tool'] == 'picker');
+      expect(desktop.overlay!['zoom'], 24);
+      expect(desktop.overlay!['continuous'], true);
+      expect(desktop.overlay!['colorOutputName'], 'RGB');
+      await controller.cancelScreenshot();
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        false,
+      );
+      await desktop.showMainWindow();
+      await click(tester, find.byKey(const ValueKey('nav-ruler')));
+      await click(tester, find.byKey(const ValueKey('ruler-mode')));
+      await click(tester, find.text(controller.strings.uiModeCross).last);
+      await setParameterSlider(tester, 'ruler-tolerance', 128);
+      await click(tester, find.byKey(const ValueKey('start-ruler')));
+      await waitFor(tester, () => desktop.overlay?['tool'] == 'cross');
+      expect(desktop.overlay!['tolerance'], 128);
+      await controller.cancelScreenshot();
+      expect(
+        (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!['mainVisible'],
+        false,
+      );
+      final restored = AppController(desktop);
+      try {
+        await restored.initialize();
+        expect(restored.zoom, 24);
+        expect(restored.selectedOutputId, 'rgb');
+        expect(restored.mode, RulerMode.cross);
+        expect(restored.tolerance, 128);
+      } finally {
+        restored.dispose();
+      }
+    } finally {
+      await controller.cancelScreenshot();
+      await desktop.showMainWindow();
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      await desktop.saveState(original ?? '{}');
+    }
+  });
+
   testWidgets(
     'real window hover suggests bounds and a click selects the same frozen capture',
     (tester) async {
@@ -1221,6 +1287,7 @@ void main() {
           reason: 'Real screen-recording permission is required',
         );
         expect(find.textContaining('项目'), findsNothing);
+        await click(tester, find.byKey(const ValueKey('nav-image')));
         await click(tester, find.byKey(const ValueKey('start-screenshot')));
         await waitFor(
           tester,

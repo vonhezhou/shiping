@@ -346,7 +346,7 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
-  AppSection section = AppSection.picker;
+  AppSection section = AppSection.settings;
   RgbColor selectedColor = const RgbColor(215, 250, 107);
   final List<RgbColor> _colors = [];
   final List<PaletteEntry> _palette = [];
@@ -696,6 +696,14 @@ class AppController extends ChangeNotifier {
     tolerance = value.clamp(0, 255);
     _notify();
     _persist();
+  }
+
+  void setZoom(int value) {
+    if (value == zoom || !CaptureControls.zoomLevels.contains(value)) return;
+    zoom = value;
+    _persist();
+    _redraw();
+    _notify();
   }
 
   void selectColor(RgbColor value) {

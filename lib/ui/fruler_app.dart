@@ -20,6 +20,7 @@ import 'font_family_picker.dart';
 
 part 'annotation_widgets.dart';
 part 'history_widgets.dart';
+part 'settings_widgets.dart';
 
 const _background = Color(0xFF111315),
     _panel = Color(0xFF1B1E21),
@@ -96,465 +97,200 @@ class _FrulerAppState extends State<FrulerApp> with WidgetsBindingObserver {
               ),
             );
           }
-          return _HistoryHome(controller: controller);
+          return _OptionsHome(controller: controller);
         },
       ),
     ),
   );
 }
 
-class _HistoryHome extends StatelessWidget {
-  const _HistoryHome({required this.controller});
+String _sectionLabel(BuildContext context, AppSection section) =>
+    switch (section) {
+      AppSection.settings => context.l10n.uiGeneral,
+      AppSection.picker => context.l10n.uiColorPicker,
+      AppSection.ruler => context.l10n.uiRuler,
+      AppSection.image => context.l10n.uiScreenshot,
+    };
+
+IconData _sectionIcon(AppSection section) => switch (section) {
+  AppSection.settings => Icons.settings_outlined,
+  AppSection.picker => Icons.colorize,
+  AppSection.ruler => Icons.straighten,
+  AppSection.image => Icons.screenshot_monitor,
+};
+
+class _OptionsHome extends StatelessWidget {
+  const _OptionsHome({required this.controller});
   final AppController controller;
+
   @override
   Widget build(BuildContext context) {
     final c = controller;
+    final canStart =
+        !c.busy &&
+        !c.initializing &&
+        !c.recordingShortcut &&
+        !c.savingShortcuts;
+    final action = switch (c.section) {
+      AppSection.settings => null,
+      AppSection.picker => FilledButton.icon(
+        key: const ValueKey('start-picker'),
+        onPressed: canStart ? c.pickColor : null,
+        icon: const Icon(Icons.colorize, size: 18),
+        label: Text(context.l10n.uiStartPicker(c.shortcuts.picker.label)),
+      ),
+      AppSection.ruler => FilledButton.icon(
+        key: const ValueKey('start-ruler'),
+        onPressed: canStart ? c.startRuler : null,
+        icon: const Icon(Icons.straighten, size: 18),
+        label: Text(context.l10n.uiStartRuler(c.shortcuts.ruler.label)),
+      ),
+      AppSection.image => FilledButton.icon(
+        key: const ValueKey('start-screenshot'),
+        onPressed: canStart ? c.startScreenshot : null,
+        icon: const Icon(Icons.screenshot_monitor, size: 18),
+        label: Text(
+          context.l10n.uiStartScreenshot(c.shortcuts.screenshot.label),
+        ),
+      ),
+    };
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    context.l10n.appTitle,
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    key: const ValueKey('open-preferences'),
-                    onPressed: () => c.selectSection(
-                      c.section == AppSection.settings
-                          ? AppSection.picker
-                          : AppSection.settings,
-                    ),
-                    icon: const Icon(Icons.settings_outlined),
-                    label: Text(
-                      c.section == AppSection.settings
-                          ? context.l10n.uiBackToHistory
-                          : context.l10n.uiPreferences,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  FilledButton.icon(
-                    key: const ValueKey('start-picker'),
-                    onPressed: c.busy ? null : c.pickColor,
-                    icon: const Icon(Icons.colorize),
-                    label: Text(
-                      context.l10n.uiStartPicker(c.shortcuts.picker.label),
-                    ),
-                  ),
-                  FilledButton.icon(
-                    key: const ValueKey('start-ruler'),
-                    onPressed: c.busy ? null : c.startRuler,
-                    icon: const Icon(Icons.straighten),
-                    label: Text(
-                      context.l10n.uiStartRuler(c.shortcuts.ruler.label),
-                    ),
-                  ),
-                  FilledButton.icon(
-                    key: const ValueKey('start-screenshot'),
-                    onPressed: c.busy ? null : c.startScreenshot,
-                    icon: const Icon(Icons.screenshot_monitor),
-                    label: Text(
-                      context.l10n.uiStartScreenshot(
-                        c.shortcuts.screenshot.label,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                context.l10n.uiScreenWorkflow,
-                style: TextStyle(color: _muted),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _OptionsNavigation(controller: c),
+            Expanded(
+              // 每个工具保留自己的滚动位置，切页时不把另一个工具的偏移带过来。
+              child: KeyedSubtree(
+                key: PageStorageKey(c.section),
                 child: SingleChildScrollView(
+                  key: ValueKey('options-scroll-${c.section.name}'),
+                  padding: const EdgeInsets.all(28),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (c.error != null || c.notice != null)
+                      _OptionsHeading(
+                        title: _sectionLabel(context, c.section),
+                        description: switch (c.section) {
+                          AppSection.settings =>
+                            context.l10n.uiGeneralDescription,
+                          AppSection.picker => context.l10n.uiPickerDescription,
+                          AppSection.ruler => context.l10n.uiRulerDescription,
+                          AppSection.image =>
+                            context.l10n.uiScreenshotDescription,
+                        },
+                        icon: _sectionIcon(c.section),
+                        action: action,
+                      ),
+                      if (c.error != null || c.notice != null) ...[
                         _Message(controller: c),
-                      if (!c.permissionGranted && !c.initializing)
-                        _PermissionBanner(controller: c),
-                      if (c.section == AppSection.settings)
-                        _SettingsPage(controller: c)
-                      else ...[
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            for (final e in {
-                              AppSection.picker: context.l10n.uiColorHistory,
-                              AppSection.ruler:
-                                  context.l10n.uiMeasurementHistory,
-                              AppSection.image:
-                                  context.l10n.uiScreenshotHistory,
-                            }.entries)
-                              ChoiceChip(
-                                label: Text(e.value),
-                                selected: c.section == e.key,
-                                onSelected: (_) => c.selectSection(e.key),
-                              ),
-                          ],
-                        ),
                         const SizedBox(height: 16),
-                        if (c.section == AppSection.picker) ...[
-                          if (c.colors.isEmpty)
-                            _Empty(
-                              icon: Icons.colorize,
-                              title: context.l10n.uiNoColors,
-                              description: context.l10n.uiNoColorsDescription,
-                            ),
-                          for (final color in c.colors)
-                            ListTile(
-                              leading: Container(
-                                width: 32,
-                                height: 32,
-                                color: Color.fromARGB(
-                                  255,
-                                  color.r,
-                                  color.g,
-                                  color.b,
-                                ),
-                              ),
-                              title: Text(c.formatColor(color)),
-                              subtitle: Text(color.hex),
-                              trailing: const Icon(Icons.copy, size: 18),
-                              onTap: () => c.copyColor(color),
-                            ),
-                        ] else if (c.section == AppSection.ruler)
-                          _MeasurementHistory(controller: c)
-                        else ...[
-                          if (c.screenshots.isEmpty)
-                            _Empty(
-                              icon: Icons.image_outlined,
-                              title: context.l10n.uiNoScreenshots,
-                              description:
-                                  context.l10n.uiNoScreenshotsDescription,
-                            ),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: [
-                              for (final png in c.screenshots)
-                                InkWell(
-                                  onTap: () => c.copyScreenshot(png),
-                                  child: Image.memory(
-                                    png,
-                                    width: 220,
-                                    height: 150,
-                                    fit: BoxFit.contain,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
                       ],
+                      if (c.section != AppSection.settings &&
+                          !c.permissionGranted &&
+                          !c.initializing) ...[
+                        _PermissionBanner(controller: c),
+                        const SizedBox(height: 16),
+                      ],
+                      switch (c.section) {
+                        AppSection.settings => _GeneralSettingsPage(
+                          controller: c,
+                        ),
+                        AppSection.picker => _PickerOptionsPage(controller: c),
+                        AppSection.ruler => _RulerOptionsPage(controller: c),
+                        AppSection.image => _ScreenshotOptionsPage(
+                          controller: c,
+                        ),
+                      },
                     ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _SettingsPage extends StatelessWidget {
-  const _SettingsPage({required this.controller});
+class _OptionsNavigation extends StatelessWidget {
+  const _OptionsNavigation({required this.controller});
   final AppController controller;
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _PageHeading(
-        index: context.l10n.uiPreferencesIndex,
-        title: context.l10n.uiPreferencesHeading,
-        description: context.l10n.uiPreferencesDescription,
+  Widget build(BuildContext context) => Material(
+    color: _panel,
+    child: Container(
+      key: const ValueKey('options-navigation'),
+      width: 200,
+      decoration: const BoxDecoration(
+        border: Border(right: BorderSide(color: _line)),
       ),
-      _SettingsCard(
-        title: context.l10n.uiLanguage,
-        icon: Icons.language,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(context.l10n.uiLanguageDescription),
-            const SizedBox(height: 12),
-            DropdownButton<AppLanguage>(
-              key: const ValueKey('app-language'),
-              value: controller.language,
-              isExpanded: true,
-              items: [
-                DropdownMenuItem(
-                  value: AppLanguage.system,
-                  child: Text(context.l10n.uiLanguageSystem),
-                ),
-                DropdownMenuItem(
-                  value: AppLanguage.zh,
-                  child: Text(context.l10n.uiLanguageChinese),
-                ),
-                DropdownMenuItem(
-                  value: AppLanguage.en,
-                  child: Text(context.l10n.uiLanguageEnglish),
-                ),
-              ],
-              onChanged: controller.busy
-                  ? null
-                  : (value) {
-                      if (value != null) controller.setLanguage(value);
-                    },
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      _SettingsCard(
-        title: context.l10n.uiScreenAccess,
-        icon: Icons.desktop_access_disabled_outlined,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              controller.permissionGranted
-                  ? context.l10n.uiScreenPermissionGranted
-                  : context.l10n.uiScreenPermissionNeeded,
-              style: const TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              context.l10n.uiScreenPrivacy,
-              style: TextStyle(fontSize: 11, color: _muted, height: 1.7),
-            ),
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 20, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                OutlinedButton(
-                  onPressed: controller.requestPermission,
-                  child: Text(
-                    controller.permissionGranted
-                        ? context.l10n.uiRecheckPermission
-                        : context.l10n.uiRequestPermission,
-                  ),
-                ),
-                TextButton(
-                  onPressed: controller.openPrivacySettings,
-                  child: Text(
-                    context.l10n.uiOpenSystemSettings,
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      _SettingsCard(
-        title: context.l10n.uiColorPicking,
-        icon: Icons.colorize,
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Text(context.l10n.uiCopyFormat),
-                const Spacer(),
-                DropdownButton<String>(
-                  value: controller.selectedOutputId,
-                  items: controller.enabledColorOutputs
-                      .map(
-                        (f) =>
-                            DropdownMenuItem(value: f.id, child: Text(f.name)),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) controller.selectColorOutput(value);
-                  },
-                ),
-              ],
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(context.l10n.uiContinuousPicker),
-              subtitle: Text(context.l10n.uiContinuousPickerDescription),
-              value: controller.continuousPicker,
-              onChanged: controller.setContinuousPicker,
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      _SettingsCard(
-        title: context.l10n.uiEdgeDetection,
-        icon: Icons.center_focus_strong_outlined,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    context.l10n.uiColorTolerance,
-                    style: TextStyle(fontSize: 13),
-                  ),
-                ),
                 Text(
-                  '${controller.tolerance}',
+                  context.l10n.appTitle,
                   style: const TextStyle(
-                    color: _accent,
-                    fontFamily: 'Menlo',
-                    fontSize: 16,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              context.l10n.uiToleranceDescription,
-              style: TextStyle(color: _muted, fontSize: 11),
-            ),
-            Slider(
-              value: controller.tolerance.toDouble(),
-              min: 0,
-              max: 255,
-              divisions: 255,
-              label: '${controller.tolerance}',
-              onChanged: (v) => controller.setTolerance(v.round()),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+                const SizedBox(height: 4),
                 Text(
-                  context.l10n.uiToleranceExact,
-                  style: TextStyle(color: _muted, fontSize: 10),
-                ),
-                Text(
-                  context.l10n.uiToleranceLoose,
-                  style: TextStyle(color: _muted, fontSize: 10),
+                  context.l10n.uiOptionsTitle,
+                  style: const TextStyle(color: _muted, fontSize: 12),
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      _SettingsCard(
-        title: context.l10n.uiKeyboardShortcuts,
-        icon: Icons.keyboard_rounded,
-        child: Column(
-          children: [
-            _editableShortcut(context, true),
-            const SizedBox(height: 15),
-            _editableShortcut(context, false),
-            const SizedBox(height: 10),
-            _editableShortcut(context, false, screenshot: true),
-            const SizedBox(height: 15),
-            _shortcut(context.l10n.uiCancelTool, context.l10n.uiCancelToolKeys),
-            if (!controller.shortcutsAvailable)
-              Padding(
-                padding: EdgeInsets.only(top: 16),
-                child: Text(
-                  context.l10n.uiShortcutsUnavailable,
-                  style: TextStyle(color: Color(0xFFE7B56A), fontSize: 11),
-                ),
-              ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 20),
-      _Hint(icon: Icons.layers_outlined, text: context.l10n.uiAbout),
-    ],
-  );
-  Widget _editableShortcut(
-    BuildContext context,
-    bool picker, {
-    bool screenshot = false,
-  }) => Row(
-    children: [
-      Text(
-        screenshot
-            ? context.l10n.uiScreenshotAndAnnotate
-            : picker
-            ? context.l10n.uiColorPicker
-            : context.l10n.uiRectangleMeasurement,
-        style: const TextStyle(fontSize: 12),
-      ),
-      const Spacer(),
-      OutlinedButton(
-        onPressed:
-            controller.busy ||
-                controller.initializing ||
-                controller.savingShortcuts ||
-                controller.recordingShortcut
-            ? null
-            : () => _recordShortcut(context, picker, screenshot: screenshot),
-        child: Text(
-          (screenshot
-                  ? controller.shortcuts.screenshot
-                  : picker
-                  ? controller.shortcuts.picker
-                  : controller.shortcuts.ruler)
-              .label,
-        ),
-      ),
-    ],
-  );
-
-  Future<void> _recordShortcut(
-    BuildContext context,
-    bool picker, {
-    bool screenshot = false,
-  }) async {
-    if (!await controller.beginShortcutRecording()) return;
-    ShortcutChord? chord;
-    try {
-      if (context.mounted) {
-        chord = await showDialog<ShortcutChord>(
-          context: context,
-          builder: (_) => _ShortcutDialog(
-            tool: screenshot
-                ? context.l10n.uiScreenshotAndAnnotate
-                : picker
-                ? context.l10n.uiColorPicker
-                : context.l10n.uiRectangleMeasurement,
-            controller: controller,
           ),
-        );
-      }
-    } finally {
-      await controller.endShortcutRecording();
-    }
-    if (chord != null) {
-      await controller.setShortcut(picker, chord, screenshot: screenshot);
-    }
-  }
-
-  Widget _shortcut(String label, String keys) => Row(
-    children: [
-      Text(label, style: const TextStyle(fontSize: 12)),
-      const Spacer(),
-      Text(
-        keys,
-        style: const TextStyle(
-          color: _muted,
-          fontSize: 12,
-          fontFamily: 'Menlo',
-        ),
+          for (final section in [
+            AppSection.settings,
+            AppSection.picker,
+            AppSection.ruler,
+            AppSection.image,
+          ])
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: ListTile(
+                key: ValueKey('nav-${section.name}'),
+                selected: controller.section == section,
+                selectedTileColor: _accent.withValues(alpha: .12),
+                selectedColor: _accent,
+                iconColor: _muted,
+                textColor: const Color(0xFFE0E4DE),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                minLeadingWidth: 20,
+                horizontalTitleGap: 10,
+                leading: Icon(_sectionIcon(section), size: 19),
+                title: Text(
+                  _sectionLabel(context, section),
+                  style: const TextStyle(fontSize: 13),
+                ),
+                onTap: () => controller.selectSection(section),
+              ),
+            ),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: _Hint(
+              icon: Icons.keyboard_outlined,
+              text: context.l10n.uiOptionsSidebarHint,
+            ),
+          ),
+        ],
       ),
-    ],
+    ),
   );
 }
 
@@ -866,48 +602,43 @@ class _ShortcutDialogState extends State<_ShortcutDialog> {
   );
 }
 
-class _PageHeading extends StatelessWidget {
-  const _PageHeading({
-    required this.index,
+class _OptionsHeading extends StatelessWidget {
+  const _OptionsHeading({
     required this.title,
     required this.description,
+    required this.icon,
+    this.action,
   });
-  final String index, title, description;
+  final String title, description;
+  final IconData icon;
+  final Widget? action;
+
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 27),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                index,
-                style: const TextStyle(
-                  color: _accent,
-                  fontSize: 10,
-                  letterSpacing: 1.8,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 9),
-              Text(
+        Row(
+          children: [
+            Icon(icon, size: 27, color: _accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
                 title,
                 style: const TextStyle(
-                  fontSize: 29,
+                  fontSize: 26,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: -1,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                description,
-                style: const TextStyle(fontSize: 12, color: _muted),
-              ),
-            ],
-          ),
+            ),
+            if (action != null) ...[const SizedBox(width: 16), action!],
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          description,
+          style: const TextStyle(fontSize: 12, color: _muted, height: 1.6),
         ),
       ],
     ),

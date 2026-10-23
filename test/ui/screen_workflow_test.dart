@@ -41,6 +41,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('项目'), findsNothing);
       expect(find.textContaining('工作区'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('nav-image')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('start-screenshot')));
       await tester.pumpAndSettle();
       d.pointer(x: 100, y: 100, phase: 'down');
@@ -309,6 +314,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('草稿'), findsNothing);
     expect(find.textContaining('项目'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('nav-image')),
+      kind: ui.PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('start-screenshot')));
     await tester.pumpAndSettle();
     expect(c.busy, false);

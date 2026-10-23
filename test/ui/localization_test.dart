@@ -27,9 +27,9 @@ void main() {
       addTearDown(desktop.input.close);
       await tester.pumpWidget(ControllerTestHost(controller: controller));
       await tester.pumpAndSettle();
-      expect(find.text('取色历史'), findsOneWidget);
+      expect(find.text('语言'), findsOneWidget);
 
-      final preferences = find.byKey(const ValueKey('open-preferences'));
+      final preferences = find.byKey(const ValueKey('nav-settings'));
       await tester.tap(preferences, kind: ui.PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
       final language = find.byKey(const ValueKey('app-language'));
@@ -43,15 +43,21 @@ void main() {
       expect(controller.language, AppLanguage.en);
       expect(controller.locale.languageCode, 'en');
       expect(find.text('Language'), findsOneWidget);
-      expect(find.text('Make it your own'), findsOneWidget);
-      expect(find.text('按你的习惯工作'), findsNothing);
+      expect(
+        find.text('Language, global shortcuts, and screen access.'),
+        findsOneWidget,
+      );
+      expect(find.text('语言、全局快捷键和屏幕访问权限。'), findsNothing);
 
-      await tester.tap(preferences, kind: ui.PointerDeviceKind.mouse);
+      await tester.tap(
+        find.byKey(const ValueKey('nav-picker')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
       await tester.pumpAndSettle();
       expect(find.text('Color history'), findsOneWidget);
       expect(find.text('No colors yet'), findsOneWidget);
       await tester.tap(
-        find.text('Measurement history'),
+        find.byKey(const ValueKey('nav-ruler')),
         kind: ui.PointerDeviceKind.mouse,
       );
       await tester.pumpAndSettle();
@@ -61,7 +67,7 @@ void main() {
         findsOneWidget,
       );
       await tester.tap(
-        find.text('Screenshot history'),
+        find.byKey(const ValueKey('nav-image')),
         kind: ui.PointerDeviceKind.mouse,
       );
       await tester.pumpAndSettle();
@@ -77,14 +83,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(controller.language, AppLanguage.zh);
-      expect(find.text('按你的习惯工作'), findsOneWidget);
+      expect(find.text('语言、全局快捷键和屏幕访问权限。'), findsOneWidget);
       expect(find.text('语言'), findsOneWidget);
 
       tester.binding.platformDispatcher.localesTestValue = [
         const Locale('en', 'GB'),
       ];
       await tester.pumpAndSettle();
-      expect(find.text('按你的习惯工作'), findsOneWidget);
+      expect(find.text('语言、全局快捷键和屏幕访问权限。'), findsOneWidget);
       await tester.tap(language, kind: ui.PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
       await tester.tap(
@@ -93,7 +99,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(controller.language, AppLanguage.system);
-      expect(find.text('Make it your own'), findsOneWidget);
+      expect(
+        find.text('Language, global shortcuts, and screen access.'),
+        findsOneWidget,
+      );
       expect(desktop.beginCalls, 0);
       expect(tester.takeException(), isNull);
     });

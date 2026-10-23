@@ -132,8 +132,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Some global shortcuts could not be registered. Another app may be using them. You can still start tools from this window or the menu bar.';
 
   @override
-  String get uiAbout =>
-      'fruler 0.10.0 · Flutter interface and Dart measurement engine · macOS 14+';
+  String get uiAbout => 'fruler 0.10.0 · macOS 14+';
 
   @override
   String get uiScreenshotAndAnnotate => 'Screenshot and annotate';
@@ -465,8 +464,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Color picking finished. # samples collected',
-      one: 'Color picking finished. # sample collected',
+      other: 'Color picking finished. $count samples collected',
+      one: 'Color picking finished. $count sample collected',
     );
     return '$_temp0';
   }
@@ -509,8 +508,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '# colors picked · Esc to finish',
-      one: '# color picked · Esc to finish',
+      other: '$count colors picked · Esc to finish',
+      one: '$count color picked · Esc to finish',
     );
     return '$_temp0';
   }
@@ -525,8 +524,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '# measurements kept and dimensions copied',
-      one: '# measurement kept and its dimensions copied',
+      other: '$count measurements kept and dimensions copied',
+      one: '$count measurement kept and its dimensions copied',
     );
     return '$_temp0';
   }
@@ -596,8 +595,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '# colors merged',
-      one: '# color merged',
+      other: '$count colors merged',
+      one: '$count color merged',
     );
     return '$_temp0';
   }
@@ -607,8 +606,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'Copied $format code for # colors',
-      one: 'Copied $format code for # color',
+      other: 'Copied $format code for $count colors',
+      one: 'Copied $format code for $count color',
     );
     return '$_temp0';
   }
@@ -618,8 +617,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: '# measurements exported',
-      one: '# measurement exported',
+      other: '$count measurements exported',
+      one: '$count measurement exported',
     );
     return '$_temp0';
   }
@@ -806,5 +805,105 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String validationImageFileLimit(int limit) {
     return 'Image files cannot exceed $limit MB';
+  }
+
+  @override
+  String get uiOptionsTitle => 'Options';
+
+  @override
+  String get uiGeneral => 'General';
+
+  @override
+  String get uiGeneralDescription =>
+      'Language, global shortcuts, and screen access.';
+
+  @override
+  String get uiRuler => 'Screen ruler';
+
+  @override
+  String get uiScreenshot => 'Screenshot';
+
+  @override
+  String get uiPickerDescription =>
+      'Pick screen pixels and copy colors instantly. Choose the output format and magnification.';
+
+  @override
+  String get uiRulerDescription =>
+      'Measure pixels and logical dimensions on screen. Set the default mode and edge tolerance.';
+
+  @override
+  String get uiScreenshotDescription =>
+      'Select, annotate, and copy or save in one full-screen overlay.';
+
+  @override
+  String get uiPickerOptions => 'Color picker options';
+
+  @override
+  String get uiMagnification => 'Magnification';
+
+  @override
+  String get uiMagnificationDescription =>
+      'You can also use the scroll wheel while picking (4×–32×).';
+
+  @override
+  String get uiRulerOptions => 'Ruler options';
+
+  @override
+  String get uiDefaultMode => 'Default mode';
+
+  @override
+  String get uiDefaultModeDescription =>
+      'The ruler starts in the selected mode. Press 1–4 during use to switch.';
+
+  @override
+  String get uiScreenshotWorkflow => 'Capture and annotation';
+
+  @override
+  String get uiScreenshotSelect =>
+      'Select a screen region. Click to snap to a window, or drag to draw a region.';
+
+  @override
+  String get uiScreenshotAnnotate =>
+      'Annotate in place with shapes, drawing, text, or blur. You can keep adjusting the region.';
+
+  @override
+  String get uiScreenshotFinish =>
+      'Return to your previous app after copying or saving. Canceling a save keeps annotation open.';
+
+  @override
+  String get uiScreenshotHistoryStorage =>
+      'Keeps up to 12 recent screenshots and 64 MiB in this session. Screenshots are released when you quit.';
+
+  @override
+  String get uiColorHistoryStorage =>
+      'The 64 most recent colors are saved locally. Click a color to copy it again.';
+
+  @override
+  String get uiAboutTitle => 'About';
+
+  @override
+  String get uiOptionsSidebarHint =>
+      'Start screen tools with a shortcut or the menu bar.';
+
+  @override
+  String get uiCopyScreenshotFromHistory => 'Copy screenshot again';
+
+  @override
+  String get uiScreenshotCurrentSession => 'Current session';
+
+  @override
+  String uiHistoryItemCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '$count item',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String uiScreenshotPreview(int index) {
+    return 'Screenshot $index';
   }
 }

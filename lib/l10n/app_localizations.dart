@@ -329,7 +329,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiAbout.
   ///
   /// In en, this message translates to:
-  /// **'fruler 0.10.0 · Flutter interface and Dart measurement engine · macOS 14+'**
+  /// **'fruler 0.10.0 · macOS 14+'**
   String get uiAbout;
 
   /// No description provided for @uiScreenshotAndAnnotate.
@@ -894,7 +894,7 @@ abstract class AppLocalizations {
   /// No description provided for @msgPickingFinished.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{Color picking finished. # sample collected} other{Color picking finished. # samples collected}}'**
+  /// **'{count, plural, one{Color picking finished. {count} sample collected} other{Color picking finished. {count} samples collected}}'**
   String msgPickingFinished(int count);
 
   /// No description provided for @msgCancelled.
@@ -954,7 +954,7 @@ abstract class AppLocalizations {
   /// No description provided for @msgPickingContinues.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{# color picked · Esc to finish} other{# colors picked · Esc to finish}}'**
+  /// **'{count, plural, one{{count} color picked · Esc to finish} other{{count} colors picked · Esc to finish}}'**
   String msgPickingContinues(int count);
 
   /// No description provided for @msgColorClipboardFailed.
@@ -966,7 +966,7 @@ abstract class AppLocalizations {
   /// No description provided for @msgMeasurementsRetained.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{# measurement kept and its dimensions copied} other{# measurements kept and dimensions copied}}'**
+  /// **'{count, plural, one{{count} measurement kept and its dimensions copied} other{{count} measurements kept and dimensions copied}}'**
   String msgMeasurementsRetained(int count);
 
   /// No description provided for @msgMeasurementClipboardFailed.
@@ -1056,19 +1056,19 @@ abstract class AppLocalizations {
   /// No description provided for @msgColorsMerged.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{# color merged} other{# colors merged}}'**
+  /// **'{count, plural, one{{count} color merged} other{{count} colors merged}}'**
   String msgColorsMerged(int count);
 
   /// No description provided for @msgPaletteCodeCopied.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{Copied {format} code for # color} other{Copied {format} code for # colors}}'**
+  /// **'{count, plural, one{Copied {format} code for {count} color} other{Copied {format} code for {count} colors}}'**
   String msgPaletteCodeCopied(int count, String format);
 
   /// No description provided for @msgMeasurementsExported.
   ///
   /// In en, this message translates to:
-  /// **'{count, plural, one{# measurement exported} other{# measurements exported}}'**
+  /// **'{count, plural, one{{count} measurement exported} other{{count} measurements exported}}'**
   String msgMeasurementsExported(int count);
 
   /// No description provided for @msgMeasurementsExportFailed.
@@ -1376,6 +1376,162 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Image files cannot exceed {limit} MB'**
   String validationImageFileLimit(int limit);
+
+  /// No description provided for @uiOptionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Options'**
+  String get uiOptionsTitle;
+
+  /// No description provided for @uiGeneral.
+  ///
+  /// In en, this message translates to:
+  /// **'General'**
+  String get uiGeneral;
+
+  /// No description provided for @uiGeneralDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Language, global shortcuts, and screen access.'**
+  String get uiGeneralDescription;
+
+  /// No description provided for @uiRuler.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen ruler'**
+  String get uiRuler;
+
+  /// No description provided for @uiScreenshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot'**
+  String get uiScreenshot;
+
+  /// No description provided for @uiPickerDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick screen pixels and copy colors instantly. Choose the output format and magnification.'**
+  String get uiPickerDescription;
+
+  /// No description provided for @uiRulerDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Measure pixels and logical dimensions on screen. Set the default mode and edge tolerance.'**
+  String get uiRulerDescription;
+
+  /// No description provided for @uiScreenshotDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Select, annotate, and copy or save in one full-screen overlay.'**
+  String get uiScreenshotDescription;
+
+  /// No description provided for @uiPickerOptions.
+  ///
+  /// In en, this message translates to:
+  /// **'Color picker options'**
+  String get uiPickerOptions;
+
+  /// No description provided for @uiMagnification.
+  ///
+  /// In en, this message translates to:
+  /// **'Magnification'**
+  String get uiMagnification;
+
+  /// No description provided for @uiMagnificationDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'You can also use the scroll wheel while picking (4×–32×).'**
+  String get uiMagnificationDescription;
+
+  /// No description provided for @uiRulerOptions.
+  ///
+  /// In en, this message translates to:
+  /// **'Ruler options'**
+  String get uiRulerOptions;
+
+  /// No description provided for @uiDefaultMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Default mode'**
+  String get uiDefaultMode;
+
+  /// No description provided for @uiDefaultModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'The ruler starts in the selected mode. Press 1–4 during use to switch.'**
+  String get uiDefaultModeDescription;
+
+  /// No description provided for @uiScreenshotWorkflow.
+  ///
+  /// In en, this message translates to:
+  /// **'Capture and annotation'**
+  String get uiScreenshotWorkflow;
+
+  /// No description provided for @uiScreenshotSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a screen region. Click to snap to a window, or drag to draw a region.'**
+  String get uiScreenshotSelect;
+
+  /// No description provided for @uiScreenshotAnnotate.
+  ///
+  /// In en, this message translates to:
+  /// **'Annotate in place with shapes, drawing, text, or blur. You can keep adjusting the region.'**
+  String get uiScreenshotAnnotate;
+
+  /// No description provided for @uiScreenshotFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Return to your previous app after copying or saving. Canceling a save keeps annotation open.'**
+  String get uiScreenshotFinish;
+
+  /// No description provided for @uiScreenshotHistoryStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'Keeps up to 12 recent screenshots and 64 MiB in this session. Screenshots are released when you quit.'**
+  String get uiScreenshotHistoryStorage;
+
+  /// No description provided for @uiColorHistoryStorage.
+  ///
+  /// In en, this message translates to:
+  /// **'The 64 most recent colors are saved locally. Click a color to copy it again.'**
+  String get uiColorHistoryStorage;
+
+  /// No description provided for @uiAboutTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get uiAboutTitle;
+
+  /// No description provided for @uiOptionsSidebarHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Start screen tools with a shortcut or the menu bar.'**
+  String get uiOptionsSidebarHint;
+
+  /// No description provided for @uiCopyScreenshotFromHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy screenshot again'**
+  String get uiCopyScreenshotFromHistory;
+
+  /// No description provided for @uiScreenshotCurrentSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Current session'**
+  String get uiScreenshotCurrentSession;
+
+  /// No description provided for @uiHistoryItemCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} item} other{{count} items}}'**
+  String uiHistoryItemCount(int count);
+
+  /// No description provided for @uiScreenshotPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot {index}'**
+  String uiScreenshotPreview(int index);
 }
 
 class _AppLocalizationsDelegate

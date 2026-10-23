@@ -166,3 +166,125 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
     );
   }
 }
+
+class _ColorHistory extends StatelessWidget {
+  const _ColorHistory({required this.controller});
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    return Column(
+      key: const ValueKey('color-history'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: context.l10n.uiColorHistory,
+          subtitle: context.l10n.uiHistoryItemCount(c.colors.length),
+          onClear: c.colors.isEmpty ? null : c.clearColors,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.l10n.uiColorHistoryStorage,
+          style: const TextStyle(color: _muted, fontSize: 11, height: 1.6),
+        ),
+        const SizedBox(height: 12),
+        if (c.colors.isEmpty)
+          _Empty(
+            icon: Icons.colorize,
+            title: context.l10n.uiNoColors,
+            description: context.l10n.uiNoColorsDescription,
+          ),
+        for (var i = 0; i < c.colors.length; i++)
+          Card(
+            color: _panel,
+            child: ListTile(
+              key: ValueKey('color-history-$i'),
+              leading: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Color.fromARGB(
+                    255,
+                    c.colors[i].r,
+                    c.colors[i].g,
+                    c.colors[i].b,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.white24),
+                ),
+              ),
+              title: Text(c.formatColor(c.colors[i])),
+              subtitle: Text(
+                c.colors[i].hex,
+                style: const TextStyle(color: _muted),
+              ),
+              trailing: const Icon(Icons.copy, size: 18),
+              onTap: () => c.copyColor(c.colors[i]),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ScreenshotHistory extends StatelessWidget {
+  const _ScreenshotHistory({required this.controller});
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenshots = controller.screenshots;
+    return Column(
+      key: const ValueKey('screenshot-history'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          title: context.l10n.uiScreenshotHistory,
+          subtitle: context.l10n.uiHistoryItemCount(screenshots.length),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.l10n.uiScreenshotHistoryStorage,
+          style: const TextStyle(color: _muted, fontSize: 11, height: 1.6),
+        ),
+        const SizedBox(height: 12),
+        if (screenshots.isEmpty)
+          _Empty(
+            icon: Icons.image_outlined,
+            title: context.l10n.uiNoScreenshots,
+            description: context.l10n.uiNoScreenshotsDescription,
+          ),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (var i = 0; i < screenshots.length; i++)
+              Tooltip(
+                message: context.l10n.uiCopyScreenshotFromHistory,
+                child: Material(
+                  color: _panel,
+                  borderRadius: BorderRadius.circular(8),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    key: ValueKey('screenshot-history-$i'),
+                    onTap: () => controller.copyScreenshot(screenshots[i]),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Image.memory(
+                        screenshots[i],
+                        width: 204,
+                        height: 134,
+                        fit: BoxFit.contain,
+                        semanticLabel: context.l10n.uiScreenshotPreview(i + 1),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
