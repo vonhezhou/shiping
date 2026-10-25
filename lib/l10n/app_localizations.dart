@@ -227,7 +227,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiScreenPrivacy.
   ///
   /// In en, this message translates to:
-  /// **'Starting a tool freezes a screen snapshot, which is released when you exit. Nothing is uploaded. Only copying or exporting writes the selected image to the clipboard or a file you choose.'**
+  /// **'Color, ruler and screenshot tools freeze a snapshot and release it when closed. Screen recording captures the selected region until you stop it. Nothing is uploaded; videos are saved only to a file you choose.'**
   String get uiScreenPrivacy;
 
   /// No description provided for @uiRecheckPermission.
@@ -1694,6 +1694,186 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Image pinned to screen'**
   String get msgImagePinned;
+
+  /// No description provided for @uiRecording.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen recording'**
+  String get uiRecording;
+
+  /// No description provided for @uiRecordingDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a screen region before recording. Stop from the menu bar or this page, then save an MP4 video.'**
+  String get uiRecordingDescription;
+
+  /// No description provided for @uiStartRecording.
+  ///
+  /// In en, this message translates to:
+  /// **'Select recording region'**
+  String get uiStartRecording;
+
+  /// No description provided for @uiStopRecording.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop and save'**
+  String get uiStopRecording;
+
+  /// No description provided for @uiRecordingOptions.
+  ///
+  /// In en, this message translates to:
+  /// **'Video settings'**
+  String get uiRecordingOptions;
+
+  /// No description provided for @uiRecordingCodec.
+  ///
+  /// In en, this message translates to:
+  /// **'Video codec'**
+  String get uiRecordingCodec;
+
+  /// No description provided for @uiRecordingH264.
+  ///
+  /// In en, this message translates to:
+  /// **'H.264 · compatible'**
+  String get uiRecordingH264;
+
+  /// No description provided for @uiRecordingHevc.
+  ///
+  /// In en, this message translates to:
+  /// **'HEVC · smaller files'**
+  String get uiRecordingHevc;
+
+  /// No description provided for @uiRecordingFrameRate.
+  ///
+  /// In en, this message translates to:
+  /// **'Frame rate'**
+  String get uiRecordingFrameRate;
+
+  /// No description provided for @uiRecordingQuality.
+  ///
+  /// In en, this message translates to:
+  /// **'Video quality'**
+  String get uiRecordingQuality;
+
+  /// No description provided for @uiRecordingQualityLow.
+  ///
+  /// In en, this message translates to:
+  /// **'Low · smaller files'**
+  String get uiRecordingQualityLow;
+
+  /// No description provided for @uiRecordingQualityMedium.
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get uiRecordingQualityMedium;
+
+  /// No description provided for @uiRecordingQualityHigh.
+  ///
+  /// In en, this message translates to:
+  /// **'High · clearer video'**
+  String get uiRecordingQualityHigh;
+
+  /// No description provided for @uiRecordingResolution.
+  ///
+  /// In en, this message translates to:
+  /// **'Output size'**
+  String get uiRecordingResolution;
+
+  /// No description provided for @uiRecordingOriginal.
+  ///
+  /// In en, this message translates to:
+  /// **'Original pixels'**
+  String get uiRecordingOriginal;
+
+  /// No description provided for @uiRecordingResolutionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'720p and 1080p fit the region inside 1280 × 720 or 1920 × 1080, preserving its aspect ratio without enlarging it.'**
+  String get uiRecordingResolutionHint;
+
+  /// No description provided for @uiRecordingCursor.
+  ///
+  /// In en, this message translates to:
+  /// **'Show mouse cursor'**
+  String get uiRecordingCursor;
+
+  /// No description provided for @uiRecordingAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Record system audio'**
+  String get uiRecordingAudio;
+
+  /// No description provided for @uiRecordingAudioHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Includes audio played by other apps. The microphone is not recorded.'**
+  String get uiRecordingAudioHint;
+
+  /// No description provided for @uiRecordingWorkflow.
+  ///
+  /// In en, this message translates to:
+  /// **'Record and save'**
+  String get uiRecordingWorkflow;
+
+  /// No description provided for @uiRecordingSelect.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to select a region on one display. Releasing the mouse starts recording; Esc cancels the selection.'**
+  String get uiRecordingSelect;
+
+  /// No description provided for @uiRecordingFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop from the menu bar or this page, then choose where to save the MP4. Cancelling the save dialog discards the recording.'**
+  String get uiRecordingFinish;
+
+  /// No description provided for @uiRecordingSettingsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings apply to the next recording and cannot be changed while recording.'**
+  String get uiRecordingSettingsHint;
+
+  /// No description provided for @uiRecordingActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording in progress'**
+  String get uiRecordingActive;
+
+  /// No description provided for @uiRecordingWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Processing recording…'**
+  String get uiRecordingWorking;
+
+  /// No description provided for @msgRecordingStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording started. Stop it from the menu bar.'**
+  String get msgRecordingStarted;
+
+  /// No description provided for @msgRecordingSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording saved'**
+  String get msgRecordingSaved;
+
+  /// No description provided for @msgRecordingDiscarded.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording discarded'**
+  String get msgRecordingDiscarded;
+
+  /// No description provided for @msgRecordingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen recording failed: {detail}'**
+  String msgRecordingFailed(String detail);
+
+  /// No description provided for @msgRecordingSelectRegion.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to select the recording region'**
+  String get msgRecordingSelectRegion;
 }
 
 class _AppLocalizationsDelegate

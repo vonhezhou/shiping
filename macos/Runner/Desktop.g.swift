@@ -185,6 +185,7 @@ enum CaptureTool: Int {
   case vertical = 3
   case cross = 4
   case screenshot = 5
+  case recording = 6
 }
 
 enum EventKind: Int {
@@ -215,6 +216,8 @@ enum EventKind: Int {
   case pinClipboard = 24
   case togglePinnedImages = 25
   case closePinnedImages = 26
+  case stopRecording = 27
+  case recordingFailed = 28
 }
 
 enum InputPhase: Int {
@@ -266,6 +269,62 @@ struct NativeStatus: Hashable {
     hasher.combine("NativeStatus")
     deepHashDesktop(value: permission, hasher: &hasher)
     deepHashDesktop(value: shortcuts, hasher: &hasher)
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
+struct RecordingConfiguration: Hashable {
+  var codec: String
+  var frameRate: Int64
+  var quality: String
+  var resolution: String
+  var showCursor: Bool
+  var systemAudio: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> RecordingConfiguration? {
+    let codec = pigeonVar_list[0] as! String
+    let frameRate = pigeonVar_list[1] as! Int64
+    let quality = pigeonVar_list[2] as! String
+    let resolution = pigeonVar_list[3] as! String
+    let showCursor = pigeonVar_list[4] as! Bool
+    let systemAudio = pigeonVar_list[5] as! Bool
+
+    return RecordingConfiguration(
+      codec: codec,
+      frameRate: frameRate,
+      quality: quality,
+      resolution: resolution,
+      showCursor: showCursor,
+      systemAudio: systemAudio
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      codec,
+      frameRate,
+      quality,
+      resolution,
+      showCursor,
+      systemAudio,
+    ]
+  }
+  static func == (lhs: RecordingConfiguration, rhs: RecordingConfiguration) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return deepEqualsDesktop(lhs.codec, rhs.codec) && deepEqualsDesktop(lhs.frameRate, rhs.frameRate) && deepEqualsDesktop(lhs.quality, rhs.quality) && deepEqualsDesktop(lhs.resolution, rhs.resolution) && deepEqualsDesktop(lhs.showCursor, rhs.showCursor) && deepEqualsDesktop(lhs.systemAudio, rhs.systemAudio)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("RecordingConfiguration")
+    deepHashDesktop(value: codec, hasher: &hasher)
+    deepHashDesktop(value: frameRate, hasher: &hasher)
+    deepHashDesktop(value: quality, hasher: &hasher)
+    deepHashDesktop(value: resolution, hasher: &hasher)
+    deepHashDesktop(value: showCursor, hasher: &hasher)
+    deepHashDesktop(value: systemAudio, hasher: &hasher)
   }
 }
 
@@ -771,6 +830,7 @@ struct NativeEvent: Hashable {
   var tolerance: Int64? = nil
   var save: Bool? = nil
   var suggestedRect: PixelBounds? = nil
+  var message: String? = nil
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -797,6 +857,7 @@ struct NativeEvent: Hashable {
     let tolerance: Int64? = nilOrValue(pigeonVar_list[19])
     let save: Bool? = nilOrValue(pigeonVar_list[20])
     let suggestedRect: PixelBounds? = nilOrValue(pigeonVar_list[21])
+    let message: String? = nilOrValue(pigeonVar_list[22])
 
     return NativeEvent(
       kind: kind,
@@ -820,7 +881,8 @@ struct NativeEvent: Hashable {
       steps: steps,
       tolerance: tolerance,
       save: save,
-      suggestedRect: suggestedRect
+      suggestedRect: suggestedRect,
+      message: message
     )
   }
   func toList() -> [Any?] {
@@ -847,13 +909,14 @@ struct NativeEvent: Hashable {
       tolerance,
       save,
       suggestedRect,
+      message,
     ]
   }
   static func == (lhs: NativeEvent, rhs: NativeEvent) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.kind, rhs.kind) && deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.permission, rhs.permission) && deepEqualsDesktop(lhs.chord, rhs.chord) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.phase, rhs.phase) && deepEqualsDesktop(lhs.button, rhs.button) && deepEqualsDesktop(lhs.keep, rhs.keep) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.enabled, rhs.enabled) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.handle, rhs.handle) && deepEqualsDesktop(lhs.dx, rhs.dx) && deepEqualsDesktop(lhs.dy, rhs.dy) && deepEqualsDesktop(lhs.resize, rhs.resize) && deepEqualsDesktop(lhs.steps, rhs.steps) && deepEqualsDesktop(lhs.tolerance, rhs.tolerance) && deepEqualsDesktop(lhs.save, rhs.save) && deepEqualsDesktop(lhs.suggestedRect, rhs.suggestedRect)
+    return deepEqualsDesktop(lhs.kind, rhs.kind) && deepEqualsDesktop(lhs.sessionId, rhs.sessionId) && deepEqualsDesktop(lhs.displayId, rhs.displayId) && deepEqualsDesktop(lhs.tool, rhs.tool) && deepEqualsDesktop(lhs.permission, rhs.permission) && deepEqualsDesktop(lhs.chord, rhs.chord) && deepEqualsDesktop(lhs.x, rhs.x) && deepEqualsDesktop(lhs.y, rhs.y) && deepEqualsDesktop(lhs.phase, rhs.phase) && deepEqualsDesktop(lhs.button, rhs.button) && deepEqualsDesktop(lhs.keep, rhs.keep) && deepEqualsDesktop(lhs.keyboard, rhs.keyboard) && deepEqualsDesktop(lhs.enabled, rhs.enabled) && deepEqualsDesktop(lhs.id, rhs.id) && deepEqualsDesktop(lhs.handle, rhs.handle) && deepEqualsDesktop(lhs.dx, rhs.dx) && deepEqualsDesktop(lhs.dy, rhs.dy) && deepEqualsDesktop(lhs.resize, rhs.resize) && deepEqualsDesktop(lhs.steps, rhs.steps) && deepEqualsDesktop(lhs.tolerance, rhs.tolerance) && deepEqualsDesktop(lhs.save, rhs.save) && deepEqualsDesktop(lhs.suggestedRect, rhs.suggestedRect) && deepEqualsDesktop(lhs.message, rhs.message)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -880,6 +943,7 @@ struct NativeEvent: Hashable {
     deepHashDesktop(value: tolerance, hasher: &hasher)
     deepHashDesktop(value: save, hasher: &hasher)
     deepHashDesktop(value: suggestedRect, hasher: &hasher)
+    deepHashDesktop(value: message, hasher: &hasher)
   }
 }
 
@@ -954,24 +1018,26 @@ private class DesktopPigeonCodecReader: FlutterStandardReader {
     case 133:
       return NativeStatus.fromList(self.readValue() as! [Any?])
     case 134:
-      return DisplayFrame.fromList(self.readValue() as! [Any?])
+      return RecordingConfiguration.fromList(self.readValue() as! [Any?])
     case 135:
-      return CaptureReply.fromList(self.readValue() as! [Any?])
+      return DisplayFrame.fromList(self.readValue() as! [Any?])
     case 136:
-      return PixelBounds.fromList(self.readValue() as! [Any?])
+      return CaptureReply.fromList(self.readValue() as! [Any?])
     case 137:
-      return NativeColor.fromList(self.readValue() as! [Any?])
+      return PixelBounds.fromList(self.readValue() as! [Any?])
     case 138:
-      return NativeChord.fromList(self.readValue() as! [Any?])
+      return NativeColor.fromList(self.readValue() as! [Any?])
     case 139:
-      return NativeBindings.fromList(self.readValue() as! [Any?])
+      return NativeChord.fromList(self.readValue() as! [Any?])
     case 140:
-      return MeasurementPin.fromList(self.readValue() as! [Any?])
+      return NativeBindings.fromList(self.readValue() as! [Any?])
     case 141:
-      return OverlayState.fromList(self.readValue() as! [Any?])
+      return MeasurementPin.fromList(self.readValue() as! [Any?])
     case 142:
-      return NativeEvent.fromList(self.readValue() as! [Any?])
+      return OverlayState.fromList(self.readValue() as! [Any?])
     case 143:
+      return NativeEvent.fromList(self.readValue() as! [Any?])
+    case 144:
       return NativeLogEntry.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -996,35 +1062,38 @@ private class DesktopPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? NativeStatus {
       super.writeByte(133)
       super.writeValue(value.toList())
-    } else if let value = value as? DisplayFrame {
+    } else if let value = value as? RecordingConfiguration {
       super.writeByte(134)
       super.writeValue(value.toList())
-    } else if let value = value as? CaptureReply {
+    } else if let value = value as? DisplayFrame {
       super.writeByte(135)
       super.writeValue(value.toList())
-    } else if let value = value as? PixelBounds {
+    } else if let value = value as? CaptureReply {
       super.writeByte(136)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeColor {
+    } else if let value = value as? PixelBounds {
       super.writeByte(137)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeChord {
+    } else if let value = value as? NativeColor {
       super.writeByte(138)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeBindings {
+    } else if let value = value as? NativeChord {
       super.writeByte(139)
       super.writeValue(value.toList())
-    } else if let value = value as? MeasurementPin {
+    } else if let value = value as? NativeBindings {
       super.writeByte(140)
       super.writeValue(value.toList())
-    } else if let value = value as? OverlayState {
+    } else if let value = value as? MeasurementPin {
       super.writeByte(141)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeEvent {
+    } else if let value = value as? OverlayState {
       super.writeByte(142)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeLogEntry {
+    } else if let value = value as? NativeEvent {
       super.writeByte(143)
+      super.writeValue(value.toList())
+    } else if let value = value as? NativeLogEntry {
+      super.writeByte(144)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1059,6 +1128,9 @@ protocol DesktopHostApi {
   func begin(tool: CaptureTool, completion: @escaping (Result<CaptureReply, Error>) -> Void)
   func updateOverlay(state: OverlayState, completion: @escaping (Result<Void, Error>) -> Void)
   func finish(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
+  func startRecording(sessionId: Int64, displayId: Int64, rect: PixelBounds, options: RecordingConfiguration, completion: @escaping (Result<Void, Error>) -> Void)
+  func stopRecording(completion: @escaping (Result<Bool, Error>) -> Void)
+  func cancelRecording(completion: @escaping (Result<Void, Error>) -> Void)
   func editScreenshot(sessionId: Int64, displayId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func reselectScreenshot(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func loadState(completion: @escaping (Result<String?, Error>) -> Void)
@@ -1241,6 +1313,56 @@ class DesktopHostApiSetup {
       }
     } else {
       finishChannel.setMessageHandler(nil)
+    }
+    let startRecordingChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.startRecording\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      startRecordingChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let sessionIdArg = args[0] as! Int64
+        let displayIdArg = args[1] as! Int64
+        let rectArg = args[2] as! PixelBounds
+        let optionsArg = args[3] as! RecordingConfiguration
+        api.startRecording(sessionId: sessionIdArg, displayId: displayIdArg, rect: rectArg, options: optionsArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      startRecordingChannel.setMessageHandler(nil)
+    }
+    let stopRecordingChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.stopRecording\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      stopRecordingChannel.setMessageHandler { _, reply in
+        api.stopRecording { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      stopRecordingChannel.setMessageHandler(nil)
+    }
+    let cancelRecordingChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.cancelRecording\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      cancelRecordingChannel.setMessageHandler { _, reply in
+        api.cancelRecording { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      cancelRecordingChannel.setMessageHandler(nil)
     }
     let editScreenshotChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.editScreenshot\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

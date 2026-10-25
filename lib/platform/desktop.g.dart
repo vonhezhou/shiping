@@ -114,6 +114,7 @@ enum CaptureTool {
   vertical,
   cross,
   screenshot,
+  recording,
 }
 
 enum EventKind {
@@ -144,6 +145,8 @@ enum EventKind {
   pinClipboard,
   togglePinnedImages,
   closePinnedImages,
+  stopRecording,
+  recordingFailed,
 }
 
 enum InputPhase {
@@ -200,6 +203,71 @@ class NativeStatus {
       return true;
     }
     return _deepEquals(permission, other.permission) && _deepEquals(shortcuts, other.shortcuts);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
+class RecordingConfiguration {
+  RecordingConfiguration({
+    required this.codec,
+    required this.frameRate,
+    required this.quality,
+    required this.resolution,
+    required this.showCursor,
+    required this.systemAudio,
+  });
+
+  String codec;
+
+  int frameRate;
+
+  String quality;
+
+  String resolution;
+
+  bool showCursor;
+
+  bool systemAudio;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      codec,
+      frameRate,
+      quality,
+      resolution,
+      showCursor,
+      systemAudio,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static RecordingConfiguration decode(Object result) {
+    result as List<Object?>;
+    return RecordingConfiguration(
+      codec: result[0]! as String,
+      frameRate: result[1]! as int,
+      quality: result[2]! as String,
+      resolution: result[3]! as String,
+      showCursor: result[4]! as bool,
+      systemAudio: result[5]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! RecordingConfiguration || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(codec, other.codec) && _deepEquals(frameRate, other.frameRate) && _deepEquals(quality, other.quality) && _deepEquals(resolution, other.resolution) && _deepEquals(showCursor, other.showCursor) && _deepEquals(systemAudio, other.systemAudio);
   }
 
   @override
@@ -781,6 +849,7 @@ class NativeEvent {
     this.tolerance,
     this.save,
     this.suggestedRect,
+    this.message,
   });
 
   EventKind kind;
@@ -827,6 +896,8 @@ class NativeEvent {
 
   PixelBounds? suggestedRect;
 
+  String? message;
+
   List<Object?> _toList() {
     return <Object?>[
       kind,
@@ -851,6 +922,7 @@ class NativeEvent {
       tolerance,
       save,
       suggestedRect,
+      message,
     ];
   }
 
@@ -882,6 +954,7 @@ class NativeEvent {
       tolerance: result[19] as int?,
       save: result[20] as bool?,
       suggestedRect: result[21] as PixelBounds?,
+      message: result[22] as String?,
     );
   }
 
@@ -894,7 +967,7 @@ class NativeEvent {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(kind, other.kind) && _deepEquals(sessionId, other.sessionId) && _deepEquals(displayId, other.displayId) && _deepEquals(tool, other.tool) && _deepEquals(permission, other.permission) && _deepEquals(chord, other.chord) && _deepEquals(x, other.x) && _deepEquals(y, other.y) && _deepEquals(phase, other.phase) && _deepEquals(button, other.button) && _deepEquals(keep, other.keep) && _deepEquals(keyboard, other.keyboard) && _deepEquals(enabled, other.enabled) && _deepEquals(id, other.id) && _deepEquals(handle, other.handle) && _deepEquals(dx, other.dx) && _deepEquals(dy, other.dy) && _deepEquals(resize, other.resize) && _deepEquals(steps, other.steps) && _deepEquals(tolerance, other.tolerance) && _deepEquals(save, other.save) && _deepEquals(suggestedRect, other.suggestedRect);
+    return _deepEquals(kind, other.kind) && _deepEquals(sessionId, other.sessionId) && _deepEquals(displayId, other.displayId) && _deepEquals(tool, other.tool) && _deepEquals(permission, other.permission) && _deepEquals(chord, other.chord) && _deepEquals(x, other.x) && _deepEquals(y, other.y) && _deepEquals(phase, other.phase) && _deepEquals(button, other.button) && _deepEquals(keep, other.keep) && _deepEquals(keyboard, other.keyboard) && _deepEquals(enabled, other.enabled) && _deepEquals(id, other.id) && _deepEquals(handle, other.handle) && _deepEquals(dx, other.dx) && _deepEquals(dy, other.dy) && _deepEquals(resize, other.resize) && _deepEquals(steps, other.steps) && _deepEquals(tolerance, other.tolerance) && _deepEquals(save, other.save) && _deepEquals(suggestedRect, other.suggestedRect) && _deepEquals(message, other.message);
   }
 
   @override
@@ -975,35 +1048,38 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is NativeStatus) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is DisplayFrame) {
+    }    else if (value is RecordingConfiguration) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is CaptureReply) {
+    }    else if (value is DisplayFrame) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    }    else if (value is PixelBounds) {
+    }    else if (value is CaptureReply) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeColor) {
+    }    else if (value is PixelBounds) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeChord) {
+    }    else if (value is NativeColor) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeBindings) {
+    }    else if (value is NativeChord) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    }    else if (value is MeasurementPin) {
+    }    else if (value is NativeBindings) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    }    else if (value is OverlayState) {
+    }    else if (value is MeasurementPin) {
       buffer.putUint8(141);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeEvent) {
+    }    else if (value is OverlayState) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeLogEntry) {
+    }    else if (value is NativeEvent) {
       buffer.putUint8(143);
+      writeValue(buffer, value.encode());
+    }    else if (value is NativeLogEntry) {
+      buffer.putUint8(144);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -1028,24 +1104,26 @@ class _PigeonCodec extends StandardMessageCodec {
       case 133:
         return NativeStatus.decode(readValue(buffer)!);
       case 134:
-        return DisplayFrame.decode(readValue(buffer)!);
+        return RecordingConfiguration.decode(readValue(buffer)!);
       case 135:
-        return CaptureReply.decode(readValue(buffer)!);
+        return DisplayFrame.decode(readValue(buffer)!);
       case 136:
-        return PixelBounds.decode(readValue(buffer)!);
+        return CaptureReply.decode(readValue(buffer)!);
       case 137:
-        return NativeColor.decode(readValue(buffer)!);
+        return PixelBounds.decode(readValue(buffer)!);
       case 138:
-        return NativeChord.decode(readValue(buffer)!);
+        return NativeColor.decode(readValue(buffer)!);
       case 139:
-        return NativeBindings.decode(readValue(buffer)!);
+        return NativeChord.decode(readValue(buffer)!);
       case 140:
-        return MeasurementPin.decode(readValue(buffer)!);
+        return NativeBindings.decode(readValue(buffer)!);
       case 141:
-        return OverlayState.decode(readValue(buffer)!);
+        return MeasurementPin.decode(readValue(buffer)!);
       case 142:
-        return NativeEvent.decode(readValue(buffer)!);
+        return OverlayState.decode(readValue(buffer)!);
       case 143:
+        return NativeEvent.decode(readValue(buffer)!);
+      case 144:
         return NativeLogEntry.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -1241,6 +1319,61 @@ class DesktopHostApi {
       binaryMessenger: pigeonVar_binaryMessenger,
     );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> startRecording(int sessionId, int displayId, PixelBounds rect, RecordingConfiguration options) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.startRecording$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, displayId, rect, options]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<bool> stopRecording() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.stopRecording$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
+  }
+
+  Future<void> cancelRecording() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.cancelRecording$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     _extractReplyValueOrThrow(

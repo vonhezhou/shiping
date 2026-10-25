@@ -78,7 +78,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiScreenPrivacy =>
-      'Starting a tool freezes a screen snapshot, which is released when you exit. Nothing is uploaded. Only copying or exporting writes the selected image to the clipboard or a file you choose.';
+      'Color, ruler and screenshot tools freeze a snapshot and release it when closed. Screen recording captures the selected region until you stop it. Nothing is uploaded; videos are saved only to a file you choose.';
 
   @override
   String get uiRecheckPermission => 'Check permission again';
@@ -993,4 +993,103 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get msgImagePinned => 'Image pinned to screen';
+
+  @override
+  String get uiRecording => 'Screen recording';
+
+  @override
+  String get uiRecordingDescription =>
+      'Choose a screen region before recording. Stop from the menu bar or this page, then save an MP4 video.';
+
+  @override
+  String get uiStartRecording => 'Select recording region';
+
+  @override
+  String get uiStopRecording => 'Stop and save';
+
+  @override
+  String get uiRecordingOptions => 'Video settings';
+
+  @override
+  String get uiRecordingCodec => 'Video codec';
+
+  @override
+  String get uiRecordingH264 => 'H.264 · compatible';
+
+  @override
+  String get uiRecordingHevc => 'HEVC · smaller files';
+
+  @override
+  String get uiRecordingFrameRate => 'Frame rate';
+
+  @override
+  String get uiRecordingQuality => 'Video quality';
+
+  @override
+  String get uiRecordingQualityLow => 'Low · smaller files';
+
+  @override
+  String get uiRecordingQualityMedium => 'Medium';
+
+  @override
+  String get uiRecordingQualityHigh => 'High · clearer video';
+
+  @override
+  String get uiRecordingResolution => 'Output size';
+
+  @override
+  String get uiRecordingOriginal => 'Original pixels';
+
+  @override
+  String get uiRecordingResolutionHint =>
+      '720p and 1080p fit the region inside 1280 × 720 or 1920 × 1080, preserving its aspect ratio without enlarging it.';
+
+  @override
+  String get uiRecordingCursor => 'Show mouse cursor';
+
+  @override
+  String get uiRecordingAudio => 'Record system audio';
+
+  @override
+  String get uiRecordingAudioHint =>
+      'Includes audio played by other apps. The microphone is not recorded.';
+
+  @override
+  String get uiRecordingWorkflow => 'Record and save';
+
+  @override
+  String get uiRecordingSelect =>
+      'Drag to select a region on one display. Releasing the mouse starts recording; Esc cancels the selection.';
+
+  @override
+  String get uiRecordingFinish =>
+      'Stop from the menu bar or this page, then choose where to save the MP4. Cancelling the save dialog discards the recording.';
+
+  @override
+  String get uiRecordingSettingsHint =>
+      'Settings apply to the next recording and cannot be changed while recording.';
+
+  @override
+  String get uiRecordingActive => 'Recording in progress';
+
+  @override
+  String get uiRecordingWorking => 'Processing recording…';
+
+  @override
+  String get msgRecordingStarted =>
+      'Recording started. Stop it from the menu bar.';
+
+  @override
+  String get msgRecordingSaved => 'Recording saved';
+
+  @override
+  String get msgRecordingDiscarded => 'Recording discarded';
+
+  @override
+  String msgRecordingFailed(String detail) {
+    return 'Screen recording failed: $detail';
+  }
+
+  @override
+  String get msgRecordingSelectRegion => 'Drag to select the recording region';
 }

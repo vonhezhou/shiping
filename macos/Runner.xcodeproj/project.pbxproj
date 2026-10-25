@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		F20000000000000000000008 /* ScreenRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1000000000000000000000A; };
 		F20000000000000000000006 /* PinnedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000008; };
 		F20000000000000000000007 /* PinnedImageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000009; };
 		F20000000000000000000003 /* NativeStrings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000003; };
@@ -69,6 +70,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F1000000000000000000000A /* ScreenRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRecorder.swift; sourceTree = "<group>"; };
 		F10000000000000000000008 /* PinnedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedImage.swift; sourceTree = "<group>"; };
 		F10000000000000000000009 /* PinnedImageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedImageTests.swift; sourceTree = "<group>"; };
 		F10000000000000000000003 /* NativeStrings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeStrings.swift; sourceTree = "<group>"; };
@@ -190,6 +192,7 @@
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				F10000000000000000000008 /* PinnedImage.swift */,
+				F1000000000000000000000A /* ScreenRecorder.swift */,
 				F10000000000000000000003 /* NativeStrings.swift */,
 				F10000000000000000000002 /* NativePixelBuffer.swift */,
 				F10000000000000000000001 /* DesktopProtocol.swift */,
@@ -386,6 +389,7 @@
 			files = (
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				F20000000000000000000006 /* PinnedImage.swift in Sources */,
+				F20000000000000000000008 /* ScreenRecorder.swift in Sources */,
 				F20000000000000000000003 /* NativeStrings.swift in Sources */,
 				F20000000000000000000002 /* NativePixelBuffer.swift in Sources */,
 				F20000000000000000000001 /* DesktopProtocol.swift in Sources */,

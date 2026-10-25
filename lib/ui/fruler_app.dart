@@ -22,6 +22,7 @@ part 'annotation_widgets.dart';
 part 'color_format_widgets.dart';
 part 'history_widgets.dart';
 part 'settings_widgets.dart';
+part 'recording_widgets.dart';
 
 const _background = Color(0xFF111315),
     _panel = Color(0xFF1B1E21),
@@ -111,6 +112,7 @@ String _sectionLabel(BuildContext context, AppSection section) =>
       AppSection.picker => context.l10n.uiColorPicker,
       AppSection.ruler => context.l10n.uiRuler,
       AppSection.image => context.l10n.uiScreenshot,
+      AppSection.recording => context.l10n.uiRecording,
     };
 
 IconData _sectionIcon(AppSection section) => switch (section) {
@@ -118,6 +120,7 @@ IconData _sectionIcon(AppSection section) => switch (section) {
   AppSection.picker => Icons.colorize,
   AppSection.ruler => Icons.straighten,
   AppSection.image => Icons.screenshot_monitor,
+  AppSection.recording => Icons.videocam_outlined,
 };
 
 class _OptionsHome extends StatelessWidget {
@@ -132,7 +135,9 @@ class _OptionsHome extends StatelessWidget {
         !c.pinningImage &&
         !c.initializing &&
         !c.recordingShortcut &&
-        !c.savingShortcuts;
+        !c.savingShortcuts &&
+        !c.screenRecording &&
+        !c.recordingTransition;
     final action = switch (c.section) {
       AppSection.settings => null,
       AppSection.picker => FilledButton.icon(
@@ -153,6 +158,25 @@ class _OptionsHome extends StatelessWidget {
         icon: const Icon(Icons.screenshot_monitor, size: 18),
         label: Text(
           context.l10n.uiStartScreenshot(c.shortcuts.screenshot.label),
+        ),
+      ),
+      AppSection.recording => FilledButton.icon(
+        key: ValueKey(c.screenRecording ? 'stop-recording' : 'start-recording'),
+        onPressed: c.recordingTransition
+            ? null
+            : c.screenRecording
+            ? c.stopRecording
+            : canStart
+            ? c.startRecording
+            : null,
+        icon: Icon(
+          c.screenRecording ? Icons.stop_rounded : Icons.videocam_outlined,
+          size: 18,
+        ),
+        label: Text(
+          c.screenRecording
+              ? context.l10n.uiStopRecording
+              : context.l10n.uiStartRecording,
         ),
       ),
     };
@@ -181,6 +205,8 @@ class _OptionsHome extends StatelessWidget {
                           AppSection.ruler => context.l10n.uiRulerDescription,
                           AppSection.image =>
                             context.l10n.uiScreenshotDescription,
+                          AppSection.recording =>
+                            context.l10n.uiRecordingDescription,
                         },
                         icon: _sectionIcon(c.section),
                         action: action,
@@ -202,6 +228,9 @@ class _OptionsHome extends StatelessWidget {
                         AppSection.picker => _PickerOptionsPage(controller: c),
                         AppSection.ruler => _RulerOptionsPage(controller: c),
                         AppSection.image => _ScreenshotOptionsPage(
+                          controller: c,
+                        ),
+                        AppSection.recording => _RecordingOptionsPage(
                           controller: c,
                         ),
                       },
@@ -258,6 +287,7 @@ class _OptionsNavigation extends StatelessWidget {
             AppSection.picker,
             AppSection.ruler,
             AppSection.image,
+            AppSection.recording,
           ])
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),

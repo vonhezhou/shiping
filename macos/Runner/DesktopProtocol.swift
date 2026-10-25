@@ -11,6 +11,7 @@ extension CaptureTool {
     case .vertical: return "vertical"
     case .cross: return "cross"
     case .screenshot: return "screenshot"
+    case .recording: return "recording"
     }
   }
   init?(name: String) {
@@ -21,6 +22,7 @@ extension CaptureTool {
     case "vertical": self = .vertical
     case "cross": self = .cross
     case "screenshot": self = .screenshot
+    case "recording": self = .recording
     default: return nil
     }
   }
@@ -55,6 +57,8 @@ extension EventKind {
     case .pinClipboard: return "pinClipboard"
     case .togglePinnedImages: return "togglePinnedImages"
     case .closePinnedImages: return "closePinnedImages"
+    case .stopRecording: return "stopRecording"
+    case .recordingFailed: return "recordingFailed"
     }
   }
   init?(name: String) {
@@ -86,6 +90,8 @@ extension EventKind {
     case "pinClipboard": self = .pinClipboard
     case "togglePinnedImages": self = .togglePinnedImages
     case "closePinnedImages": self = .closePinnedImages
+    case "stopRecording": self = .stopRecording
+    case "recordingFailed": self = .recordingFailed
     default: return nil
     }
   }
@@ -228,6 +234,7 @@ func nativeEvent(_ d: [String: Any]) -> NativeEvent {
   e.steps = (d["steps"] as? NSNumber)?.int64Value
   e.tolerance = (d["tolerance"] as? NSNumber)?.int64Value
   e.save = d["save"] as? Bool
+  e.message = d["message"] as? String
   if let r = d["suggestedRect"] as? [String: Int] {
     e.suggestedRect = PixelBounds(left: Int64(r["left"]!), top: Int64(r["top"]!),
       right: Int64(r["right"]!), bottom: Int64(r["bottom"]!))

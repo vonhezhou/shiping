@@ -57,6 +57,14 @@ abstract class DesktopService {
   Future<CaptureSession> begin(String tool);
   Future<void> updateOverlay(Map<String, Object?> data);
   Future<void> finish(int sessionId);
+  Future<void> startRecording(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+    RecordingOptions options,
+  ) async => throw UnsupportedError('platform_unsupported');
+  Future<bool> stopRecording() async => false;
+  Future<void> cancelRecording() async {}
   Future<void> editScreenshot(int sessionId, int displayId) async {}
   Future<void> reselectScreenshot(int sessionId) async {}
   Future<String?> loadState();
@@ -166,6 +174,29 @@ class MacDesktopService extends DesktopService {
       _api.updateOverlay(overlayToWire(data));
   @override
   Future<void> finish(int sessionId) => _api.finish(sessionId);
+  @override
+  Future<void> startRecording(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+    RecordingOptions options,
+  ) => _api.startRecording(
+    sessionId,
+    displayId,
+    boundsToWire(rect.toJson()),
+    wire.RecordingConfiguration(
+      codec: options.codec,
+      frameRate: options.frameRate,
+      quality: options.quality,
+      resolution: options.resolution,
+      showCursor: options.showCursor,
+      systemAudio: options.systemAudio,
+    ),
+  );
+  @override
+  Future<bool> stopRecording() => _api.stopRecording();
+  @override
+  Future<void> cancelRecording() => _api.cancelRecording();
   @override
   Future<void> editScreenshot(int sessionId, int displayId) =>
       _api.editScreenshot(sessionId, displayId);

@@ -3,6 +3,7 @@ import FlutterMacOS
 import ScreenCaptureKit
 import Carbon.HIToolbox
 import UniformTypeIdentifiers
+import AVFoundation
 
 /// 启动时 Dart 通道尚未就绪，保留有限条原生日志，由 Dart 统一落盘和轮转。
 final class NativeLogBuffer {
@@ -123,6 +124,13 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private var pausedMenuKeys: [(NSMenuItem, String)] = []
   private var toolMenuItems: [String: NSMenuItem] = [:]
   private let stateKey = "fruler.state.v1"
+  private let recorder = ScreenRecorder()
+  private var recordingTransition = false
+  private var discardingRecording = false
+  private var recordingTimer: Timer?
+  private var recordingStartedAt: Date?
+  private var recordingReturnApplication: NSRunningApplication?
+  private var recordingTemporaryURL: URL?
 
   private var flutterInputView: NSView? {
     func inputView(_ view: NSView) -> NSView? {
@@ -154,6 +162,16 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       }
     }
     setupMenu()
+    recorder.onFailure = { [weak self] error in
+      guard let self = self else { return }
+      self.recordingTransition = false
+      self.cleanupRecording()
+      let detail = self.recordingErrorMessage(error)
+      nativeLogs.log(1000, "recording", "Screen recording failed: errorType=\(String(reflecting: type(of: error))).")
+      self.sink?(["type": "recordingFailed", "message": detail])
+      self.presentRecordingError(detail)
+      self.restoreRecordingApplication()
+    }
     setupHotkeys()
     nativeLogs.log(800, "desktop", "Desktop bridge installed.")
     localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -214,12 +232,30 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   func requestQuitConfirmation() -> Bool {
     if session != nil {cancelSession()}
+    if recordingTransition {
+      DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: false) }
+      return true
+    }
+    if recorder.isRecording {
+      DispatchQueue.main.async { [weak self] in
+        self?.stopRecording { outcome in
+          if case .failure(let error) = outcome {
+            self?.sink?(["type": "recordingFailed", "message": self?.recordingErrorMessage(error) ?? error.localizedDescription])
+          }
+          NSApp.reply(toApplicationShouldTerminate: (try? outcome.get()) != nil)
+        }
+      }
+      return true
+    }
     return false
   }
 
   #if FRULER_INTEGRATION_TEST
   private var integrationDriver: FlutterMethodChannel?
   private var cancelNextSave = false
+  private var recordingSavePath: String?
+  private var recordingRetryPaths: [String] = []
+  private var recordingSaveFailureCount = 0
   private var clipboardBackup: [[NSPasteboard.PasteboardType: Data]]?
   private var pointerBackup: CGPoint?
   private var integrationPixelFixture: NativePixelBuffer?
@@ -230,6 +266,49 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard let self = self else { return }
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
+      case "recordingState":
+        let temporaryFiles = (try? FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)) ?? []
+        result(["active": self.recorder.isRecording, "transitioning": self.recordingTransition,
+          "saveFailureCount": self.recordingSaveFailureCount,
+          "temporaryFileCount": temporaryFiles.filter {
+            $0.hasPrefix("fruler-recording-") && ($0.hasSuffix(".mp4") || $0.contains(".mp4.sb-"))
+          }.count])
+      case "setRecordingSavePath":
+        self.recordingSavePath = args["path"] as? String
+        self.recordingRetryPaths = args["retryPaths"] as? [String] ?? []
+        self.recordingSaveFailureCount = 0
+        result(nil)
+      case "recordingMetadata":
+        guard let path = args["path"] as? String else { result(nil); return }
+        let asset = AVURLAsset(url: URL(fileURLWithPath: path))
+        Task { @MainActor in
+          do {
+            guard let track = try await asset.loadTracks(withMediaType: .video).first else { result(nil); return }
+            let size = try await track.load(.naturalSize)
+            let duration = try await asset.load(.duration)
+            let fps = try await track.load(.nominalFrameRate)
+            let formats = try await track.load(.formatDescriptions)
+            let audio = try await asset.loadTracks(withMediaType: .audio)
+            let code = formats.first.map { CMFormatDescriptionGetMediaSubType($0) } ?? 0
+            let codec = String(bytes: [UInt8((code >> 24) & 255), UInt8((code >> 16) & 255), UInt8((code >> 8) & 255), UInt8(code & 255)], encoding: .ascii) ?? ""
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            let image = try await generator.image(at: CMTime(seconds: min(0.4, duration.seconds / 2), preferredTimescale: 600)).image
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+            guard let context = CGContext(data: &pixels, width: image.width, height: image.height,
+              bitsPerComponent: 8, bytesPerRow: image.width * 4, space: colorSpace,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { result(nil); return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            func rgb(_ y: Int) -> [Int] {
+              let index = (y * image.width + image.width / 2) * 4
+              return (0..<3).map { Int(pixels[index + $0]) }
+            }
+            result(["width": Int(size.width), "height": Int(size.height), "duration": duration.seconds,
+              "codec": codec, "frameRate": Double(fps), "audioTracks": audio.count,
+              "topRGB": rgb(image.height / 4), "bottomRGB": rgb(image.height * 3 / 4)])
+          } catch { result(FlutterError(code: "test_recording_metadata", message: error.localizedDescription, details: nil)) }
+        }
       case "pinState": result(self.pinnedImages.integrationState)
       case "pinClipboardFixture":
         let kind = args["kind"] as? String ?? "image"
@@ -938,8 +1017,176 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     completion(.success(()))
   }
 
+  func startRecording(sessionId: Int64, displayId: Int64, rect: PixelBounds,
+    options: RecordingConfiguration, completion: @escaping (Result<Void, Error>) -> Void) {
+    guard !recordingTransition, !recorder.busy, Int(sessionId) == session,
+      let display = UInt32(exactly: displayId), let snapshot = overlays[display]?.overlay.snapshot,
+      overlays[display]?.overlay.isRecordingSelection == true,
+      rect.left >= 0, rect.top >= 0, rect.right <= snapshot.width, rect.bottom <= snapshot.height,
+      rect.right > rect.left, rect.bottom > rect.top else {
+      completion(.failure(PigeonError(code: "recording_region", message: NativeStrings.text("recording.invalid_region"), details: nil))); return
+    }
+    do {
+      let configuration = try ScreenRecordingOptions(data: ["codec": options.codec,
+        "frameRate": Int(options.frameRate), "quality": options.quality, "resolution": options.resolution,
+        "showCursor": options.showCursor, "systemAudio": options.systemAudio])
+      let region = CGRect(x: CGFloat(rect.left) * snapshot.frame.width / CGFloat(snapshot.width),
+        y: CGFloat(rect.top) * snapshot.frame.height / CGFloat(snapshot.height),
+        width: CGFloat(rect.right - rect.left) * snapshot.frame.width / CGFloat(snapshot.width),
+        height: CGFloat(rect.bottom - rect.top) * snapshot.frame.height / CGFloat(snapshot.height))
+      recordingTransition = true
+      recordingReturnApplication = previousApplication
+      // 先移除冻结快照与选区，再开始实时采集；不将浮层写进视频。
+      closeSession()
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("fruler-recording-\(UUID().uuidString).mp4")
+      recordingTemporaryURL = url
+      recorder.start(displayID: display, region: region, options: configuration, outputURL: url) { [weak self] outcome in
+        guard let self = self else { completion(outcome); return }
+        self.recordingTransition = false
+        switch outcome {
+        case .success:
+          nativeLogs.log(800, "recording", "Screen recording started: codec=\(options.codec), fps=\(options.frameRate), resolution=\(options.resolution), audio=\(options.systemAudio).")
+          self.recordingStartedAt = Date()
+          self.recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateRecordingStatus() }
+          self.setupMenu()
+          self.updateRecordingStatus()
+          completion(.success(()))
+        case .failure(let error):
+          self.cleanupRecording()
+          let detail = self.recordingErrorMessage(error)
+          completion(.failure(PigeonError(code: "recording_failed", message: detail, details: nil)))
+          if !self.discardingRecording {
+            self.presentRecordingError(detail)
+            self.restoreRecordingApplication()
+          }
+        }
+      }
+    } catch {
+      completion(.failure(PigeonError(code: "recording_options", message: recordingErrorMessage(error), details: nil)))
+    }
+  }
+
+  func stopRecording(completion: @escaping (Result<Bool, Error>) -> Void) {
+    guard recorder.isRecording, !recordingTransition else {
+      completion(.failure(PigeonError(code: "recording_busy", message: NativeStrings.text("error.capture_busy"), details: nil))); return
+    }
+    recordingTransition = true
+    recordingTimer?.invalidate(); recordingTimer = nil
+    recorder.stop { [weak self] outcome in
+      guard let self = self else { return }
+      defer {
+        self.recordingTransition = false
+        self.cleanupRecording()
+        self.restoreRecordingApplication()
+      }
+      switch outcome {
+      case .failure(let error):
+        let detail = self.recordingErrorMessage(error)
+        completion(.failure(PigeonError(code: "recording_failed", message: detail, details: nil)))
+        if !self.discardingRecording { self.presentRecordingError(detail) }
+      case .success(let recording):
+        while true {
+          let panel = NSSavePanel()
+          panel.nameFieldStringValue = "fruler-recording-\(Int(Date().timeIntervalSince1970)).mp4"
+          panel.allowedContentTypes = [.mpeg4Movie]
+          panel.canCreateDirectories = true
+          panel.title = NativeStrings.text("recording.save")
+          var destination: URL?
+          #if FRULER_INTEGRATION_TEST
+          if let path = self.recordingSavePath {
+            destination = URL(fileURLWithPath: path); self.recordingSavePath = nil
+          } else if self.cancelNextSave { self.cancelNextSave = false }
+          else {
+            NSApp.activate(ignoringOtherApps: true)
+            if panel.runModal() == .OK { destination = panel.url }
+          }
+          #else
+          NSApp.activate(ignoringOtherApps: true)
+          if panel.runModal() == .OK { destination = panel.url }
+          #endif
+          guard let destination = destination else { completion(.success(false)); return }
+          do {
+            // 只在完整编码结束后替换目标文件，写入失败不破坏已有视频。
+            if FileManager.default.fileExists(atPath: destination.path) {
+              _ = try FileManager.default.replaceItemAt(destination, withItemAt: recording.url)
+            } else { try FileManager.default.moveItem(at: recording.url, to: destination) }
+            nativeLogs.log(800, "recording", "Screen recording saved: width=\(recording.width), height=\(recording.height).")
+            completion(.success(true))
+            return
+          } catch {
+            nativeLogs.log(1000, "recording", "Recording file save failed: errorType=\(String(reflecting: type(of: error))).")
+            #if FRULER_INTEGRATION_TEST
+            self.recordingSaveFailureCount += 1
+            #endif
+            let alert = NSAlert()
+            alert.messageText = NativeStrings.text("recording.save_failed")
+            alert.informativeText = NativeStrings.text("error.file_export", error.localizedDescription)
+            alert.addButton(withTitle: NativeStrings.text("recording.retry"))
+            alert.addButton(withTitle: NativeStrings.text("recording.discard"))
+            NSApp.activate(ignoringOtherApps: true)
+            #if FRULER_INTEGRATION_TEST
+            if !self.recordingRetryPaths.isEmpty {
+              self.recordingSavePath = self.recordingRetryPaths.removeFirst()
+              // stop 回调位于主队列，模态期间主队列不可重入；用模态 run loop 投递真实按钮点击。
+              let retry = Timer(timeInterval: 0, repeats: false) { _ in alert.buttons.first?.performClick(nil) }
+              RunLoop.main.add(retry, forMode: .modalPanel)
+            }
+            #endif
+            if alert.runModal() != .alertFirstButtonReturn { completion(.success(false)); return }
+          }
+        }
+      }
+    }
+  }
+
+  private func cleanupRecording() {
+    recordingTimer?.invalidate(); recordingTimer = nil
+    recordingStartedAt = nil
+    if let url = recordingTemporaryURL { try? FileManager.default.removeItem(at: url) }
+    recordingTemporaryURL = nil
+    statusItem?.button?.title = ""
+    setupMenu()
+  }
+
+  private func recordingErrorMessage(_ error: Error) -> String {
+    if let error = error as? ScreenRecordingError { return NativeStrings.text("error.\(error.code)") }
+    if let error = error as? PigeonError { return error.message ?? NativeStrings.text("error.recording_write") }
+    return error.localizedDescription
+  }
+
+  private func presentRecordingError(_ detail: String) {
+    NSApp.activate(ignoringOtherApps: true)
+    let alert = NSAlert()
+    alert.messageText = NativeStrings.text("recording.failed")
+    alert.informativeText = NativeStrings.text("error.recording", detail)
+    alert.runModal()
+  }
+
+  private func restoreRecordingApplication() {
+    if let application = recordingReturnApplication, !application.isTerminated {
+      application.activate(options: [])
+    } else if mainWindow?.isVisible != true { NSApp.hide(nil) }
+    recordingReturnApplication = nil
+  }
+
+  func cancelRecording(completion: @escaping (Result<Void, Error>) -> Void) {
+    discardingRecording = true
+    recorder.cancel()
+    discardingRecording = false
+    recordingTransition = false
+    cleanupRecording()
+    recordingReturnApplication = nil
+    completion(.success(()))
+  }
+
+  private func updateRecordingStatus() {
+    guard let started = recordingStartedAt else { return }
+    let seconds = Int(Date().timeIntervalSince(started))
+    statusItem?.button?.title = String(format: " ● %02d:%02d", seconds / 60, seconds % 60)
+  }
+
   private func capture(tool: String, completion: @escaping (Result<CaptureReply, Error>) -> Void) {
-    guard !preparing && session == nil else {
+    guard !preparing && session == nil && !recorder.busy && !recordingTransition else {
       completion(.failure(PigeonError(code: "capture_busy", message: NativeStrings.text("error.capture_busy"), details: nil)))
       return
     }
@@ -1072,11 +1319,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
 
   private func setupMenu() {
     let item = statusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    item.length = recorder.isRecording ? NSStatusItem.variableLength : NSStatusItem.squareLength
     item.button?.image = NSImage(systemSymbolName: "ruler", accessibilityDescription: "fruler")
+    item.button?.contentTintColor = recorder.isRecording ? .systemRed : nil
     let menu = NSMenu()
     // 常用工具独立成组，快捷键靠右；管理入口和退出另起分组。
     for (title, tool, key, symbol) in [
       (NativeStrings.text("tool.screenshot"), "screenshot", "X", "viewfinder"),
+      (NativeStrings.text(recorder.isRecording ? "recording.stop" : "tool.recording"), recorder.isRecording ? "stopRecording" : "recording", "", "record.circle"),
       (NativeStrings.text("tool.picker"), "picker", "C", "eyedropper"),
       (NativeStrings.text("tool.ruler"), "rectangle", "R", "ruler")
     ] {
@@ -1128,8 +1378,9 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     emitActivation(tool)
   }
   private func emitActivation(_ tool: String) {
+    if tool == "stopRecording" { sink?(["type": "stopRecording"]); return }
     guard !shortcutRecording else { return }
-    guard session == nil, !preparing else { NSSound.beep(); return }
+    guard session == nil, !preparing, !recorder.busy, !recordingTransition else { NSSound.beep(); return }
     guard CGPreflightScreenCaptureAccess() else {
       presentMainWindow()
       sink?(["type": "activate", "tool": tool])
@@ -1420,6 +1671,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   let snapshot: DisplaySnapshot
   var regionTargets: [CaptureRegionTarget] = []
   private var tool: String
+  var isRecordingSelection: Bool { tool == "recording" }
   var onEvent: (([String: Any]) -> Void)?
   var onCancel: (() -> Void)?
   var isPointerActive = false {
@@ -1468,7 +1720,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     self.tool = tool
     super.init(frame: NSRect(origin: .zero, size: snapshot.frame.size))
     setupToolbar()
-    toolbar.isHidden = tool == "screenshot"
+    toolbar.isHidden = (tool == "screenshot" || tool == "recording")
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
@@ -1602,7 +1854,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     case kVK_UpArrow: onEvent?(["type": "nudge", "dx": 0, "dy": -1, "resize": event.modifierFlags.contains(.shift)])
     case kVK_DownArrow: onEvent?(["type": "nudge", "dx": 0, "dy": 1, "resize": event.modifierFlags.contains(.shift)])
     case kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4:
-      guard tool != "picker", tool != "screenshot", !event.isARepeat else { return }
+      guard tool != "picker", tool != "screenshot", tool != "recording", !event.isARepeat else { return }
       let modes = [kVK_ANSI_1: "rectangle", kVK_ANSI_2: "horizontal", kVK_ANSI_3: "vertical", kVK_ANSI_4: "cross"]
       onEvent?(["type": "modeChanged", "tool": modes[Int(event.keyCode)]!])
     default: break
@@ -1610,7 +1862,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   }
 
   override func scrollWheel(with event: NSEvent) {
-    guard tool != "rectangle", tool != "screenshot" else { return }
+    guard tool != "rectangle", tool != "screenshot", tool != "recording" else { return }
     scrollRemainder += event.scrollingDeltaY / (event.hasPreciseScrollingDeltas ? 12 : 1)
     let steps = Int(scrollRemainder.rounded(.towardZero))
     if steps != 0 {
@@ -1789,7 +2041,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   func updateOptions(_ data: [String: Any]) {
     lastOptions = data
     if let value = data["tool"] as? String { tool = value }
-    toolbar.isHidden = screenshotEditing || tool == "screenshot"
+    toolbar.isHidden = screenshotEditing || (tool == "screenshot" || tool == "recording")
     capturePurpose = data["capturePurpose"] as? String ?? ""
     pickerActions = data["pickerActions"] as? String ?? pickerActions
     if let value = data["tolerance"] as? Int { tolerance = value }
@@ -1824,14 +2076,14 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     editbar.isHidden = tool != "rectangle" || (pins.isEmpty && !undoButton.isEnabled && !redoButton.isEnabled)
     for (mode, button) in modeButtons {
       let selected = mode == tool
-      button.isHidden = tool == "picker" || tool == "screenshot"
+      button.isHidden = tool == "picker" || (tool == "screenshot" || tool == "recording")
       button.layer?.backgroundColor = (selected ? accent : NSColor.clear).cgColor
       button.contentTintColor = .white
       button.setAccessibilityValue(selected ? NativeStrings.text("overlay.selected") : "")
     }
-    clearButton.isHidden = tool == "picker" || tool == "screenshot"
+    clearButton.isHidden = tool == "picker" || (tool == "screenshot" || tool == "recording")
     infoLabel.stringValue = tool == "picker" ? NativeStrings.text("overlay.picker_summary", capturePurpose.isEmpty ? colorOutputName : capturePurpose, zoom, pickedCount) :
-      tool == "screenshot" ? NativeStrings.text("overlay.screenshot_summary") : editingPins ? NativeStrings.text("overlay.editing_summary") : tool == "rectangle" ? NativeStrings.text("overlay.rectangle_summary") : NativeStrings.text("overlay.tolerance_summary", tolerance)
+      (tool == "screenshot" || tool == "recording") ? NativeStrings.text("overlay.screenshot_summary") : editingPins ? NativeStrings.text("overlay.editing_summary") : tool == "rectangle" ? NativeStrings.text("overlay.rectangle_summary") : NativeStrings.text("overlay.tolerance_summary", tolerance)
     infoLabel.toolTip = tool == "picker" ? NativeStrings.text("overlay.picker_tooltip", pickerActions) : NativeStrings.text("overlay.ruler_tooltip")
     infoLabel.isHidden = tool != "picker"
     toleranceGroup.isHidden = !["horizontal", "vertical", "cross"].contains(tool)
@@ -2027,8 +2279,8 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   func setScreenshotEditing(_ editing: Bool) {
     screenshotEditing = editing
     window?.invalidateCursorRects(for: self)
-    toolbar.isHidden = editing || tool == "screenshot"
-    editbar.isHidden = editing || tool == "screenshot" || tool == "picker"
+    toolbar.isHidden = editing || (tool == "screenshot" || tool == "recording")
+    editbar.isHidden = editing || (tool == "screenshot" || tool == "recording") || tool == "picker"
     isPointerActive = false
     needsDisplay = true
   }
@@ -2059,7 +2311,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     }
     guard isPointerActive, !editingPins else { return }
     if tool == "rectangle", !anchored, selectedPin != nil { return }
-    if tool == "screenshot", let rect = measuredRect {
+    if (tool == "screenshot" || tool == "recording"), let rect = measuredRect {
       let shade = NSBezierPath(rect:bounds)
       shade.appendRect(rect);shade.windingRule = .evenOdd
       NSColor.black.withAlphaComponent(0.22).setFill();shade.fill()
@@ -2073,7 +2325,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     accent.setStroke()
     let path = NSBezierPath()
     path.lineWidth = 1.5
-    if tool == "rectangle" || tool == "screenshot" {
+    if tool == "rectangle" || (tool == "screenshot" || tool == "recording") {
       accent.withAlphaComponent(0.1).setFill()
       rect.fill()
       path.appendRect(rect)
@@ -2107,8 +2359,8 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
 
   private func drawLoupe() {
     let sampling = tool == "picker" || tool == "screenshot"
-    let width: CGFloat = sampling ? 220 : 300
-    let height: CGFloat = sampling ? (tool == "picker" ? 278 : 250) : 64
+    let width: CGFloat = sampling ? 220 : tool == "recording" ? 340 : 300
+    let height: CGFloat = sampling ? (tool == "picker" ? 278 : 250) : tool == "recording" ? 90 : 64
     var x = pointer.x + 26
     var y = pointer.y + 26
     if x + width > bounds.width - 12 { x = pointer.x - width - 26 }
@@ -2134,7 +2386,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
           width: CGFloat(maxX - minX) * cell, height: CGFloat(maxY - minY) * cell)
         NSImage(cgImage: crop, size: imageRect.size).draw(in: imageRect, from: .zero,
           operation: .copy, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.none])
-        if tool == "screenshot", let rect = measuredRect {
+        if (tool == "screenshot" || tool == "recording"), let rect = measuredRect {
           let sx = CGFloat(snapshot.width) / bounds.width, sy = CGFloat(snapshot.height) / bounds.height
           let enlarged = NSRect(x: area.midX + (rect.minX * sx - CGFloat(px) - 0.5) * cell,
             y: area.midY + (rect.minY * sy - CGFloat(py) - 0.5) * cell,
@@ -2161,7 +2413,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
       let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
       var details = "RGB: \(r), \(g), \(b)\nX: \(px)  Y: \(py)"
-      if tool == "screenshot", let rect = measuredRect {
+      if (tool == "screenshot" || tool == "recording"), let rect = measuredRect {
         let w = Int((rect.width / bounds.width * Double(snapshot.width)).rounded())
         let h = Int((rect.height / bounds.height * Double(snapshot.height)).rounded())
         details += NativeStrings.text("loupe.area", w, h)
@@ -2173,7 +2425,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     }
     let hint = tool == "rectangle" ? (anchored ? NativeStrings.text("loupe.anchored_hint") : NativeStrings.text("loupe.rectangle_hint")) :
       (continuous && tool == "picker" ? NativeStrings.text("loupe.continuous_hint") : NativeStrings.text("loupe.copy_hint"))
-    let actionHint = tool == "screenshot" ? NativeStrings.text("loupe.screenshot_hint") : tool == "picker" ? NativeStrings.text("loupe.picker_hint", pickerActions) : hint
+    let actionHint = tool == "recording" ? NativeStrings.text("recording.hint") : tool == "screenshot" ? NativeStrings.text("loupe.screenshot_hint") : tool == "picker" ? NativeStrings.text("loupe.picker_hint", pickerActions) : hint
     (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y: sampling ? box.minY + 207 : labelY + 21,width:width-28,height:60),withAttributes:[
       .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }

@@ -140,3 +140,21 @@
 "pin.error_clipboard" = "剪贴板中没有可贴出的图片、文字或 HEX 颜色。";
 "pin.error_export" = "无法导出贴图。";
 "pin.error_limit" = "贴图数量或大小超过上限，请销毁不再需要的贴图后重试。";
+
+// 录屏
+"tool.recording" = "录屏…";
+"recording.stop" = "停止录屏…";
+"recording.save" = "保存录屏";
+"recording.failed" = "录屏已停止";
+"recording.invalid_region" = "请选择单块显示器内的有效录制范围。";
+"error.recording" = "录屏失败：%@";
+"recording.hint" = "拖动选择范围 · 松手开始录屏 · Esc 取消";
+"recording.save_failed" = "无法保存录屏";
+"recording.retry" = "重新选择位置";
+"recording.discard" = "丢弃录屏";
+"error.recording_busy" = "已有录屏任务正在运行。";
+"error.recording_options" = "录屏参数无效。";
+"error.recording_region" = "请选择有效的录制范围。";
+"error.recording_unavailable" = "录制的显示器已不可用。";
+"error.recording_empty" = "未采集到视频画面。";
+"error.recording_write" = "视频编码器无法写入录屏。";

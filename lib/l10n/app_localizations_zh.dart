@@ -74,7 +74,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get uiScreenPrivacy =>
-      '启动工具时冻结屏幕快照，退出后释放，不上传。仅在你复制或导出标注时，将局部图片写入剪贴板或所选文件。';
+      '取色、尺子与截图工具冻结快照，结束后释放。录屏持续采集所选范围，停止后保存到你选择的位置。所有内容均在本机处理，不上传。';
 
   @override
   String get uiRecheckPermission => '重新检查权限';
@@ -890,4 +890,97 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get msgImagePinned => '已贴到屏幕';
+
+  @override
+  String get uiRecording => '录屏';
+
+  @override
+  String get uiRecordingDescription => '录制前选择屏幕范围，通过菜单栏或本页停止后保存 MP4 视频。';
+
+  @override
+  String get uiStartRecording => '选择录制范围';
+
+  @override
+  String get uiStopRecording => '停止并保存';
+
+  @override
+  String get uiRecordingOptions => '视频参数';
+
+  @override
+  String get uiRecordingCodec => '视频编码';
+
+  @override
+  String get uiRecordingH264 => 'H.264 · 兼容性好';
+
+  @override
+  String get uiRecordingHevc => 'HEVC · 文件更小';
+
+  @override
+  String get uiRecordingFrameRate => '帧率';
+
+  @override
+  String get uiRecordingQuality => '视频质量';
+
+  @override
+  String get uiRecordingQualityLow => '低 · 文件较小';
+
+  @override
+  String get uiRecordingQualityMedium => '中';
+
+  @override
+  String get uiRecordingQualityHigh => '高 · 画面更清晰';
+
+  @override
+  String get uiRecordingResolution => '输出尺寸';
+
+  @override
+  String get uiRecordingOriginal => '原始像素';
+
+  @override
+  String get uiRecordingResolutionHint =>
+      '720p / 1080p 分别限制在 1280 × 720 / 1920 × 1080 内，保持选区比例，不放大小选区。';
+
+  @override
+  String get uiRecordingCursor => '录制鼠标指针';
+
+  @override
+  String get uiRecordingAudio => '录制系统声音';
+
+  @override
+  String get uiRecordingAudioHint => '包含其他应用播放的声音，不录制麦克风。';
+
+  @override
+  String get uiRecordingWorkflow => '录制与保存';
+
+  @override
+  String get uiRecordingSelect => '在一块显示器上拖动选择范围，松开鼠标开始录制；Esc 取消选区。';
+
+  @override
+  String get uiRecordingFinish => '通过菜单栏或本页停止录制，再选择 MP4 保存位置。取消保存会丢弃本次录屏。';
+
+  @override
+  String get uiRecordingSettingsHint => '参数用于下一次录制，录制过程中不可调整。';
+
+  @override
+  String get uiRecordingActive => '正在录屏';
+
+  @override
+  String get uiRecordingWorking => '正在处理录屏…';
+
+  @override
+  String get msgRecordingStarted => '录屏已开始，通过菜单栏可停止。';
+
+  @override
+  String get msgRecordingSaved => '录屏已保存';
+
+  @override
+  String get msgRecordingDiscarded => '已丢弃本次录屏';
+
+  @override
+  String msgRecordingFailed(String detail) {
+    return '录屏失败：$detail';
+  }
+
+  @override
+  String get msgRecordingSelectRegion => '拖动选择录制范围';
 }

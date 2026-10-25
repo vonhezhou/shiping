@@ -13,7 +13,7 @@ import '../platform/desktop_service.dart';
 import '../platform/image_document.dart';
 import '../platform/annotation_renderer.dart';
 
-enum AppSection { picker, ruler, image, settings }
+enum AppSection { picker, ruler, image, recording, settings }
 
 class MeasurementRecord {
   const MeasurementRecord({
@@ -890,6 +890,88 @@ class AppController extends ChangeNotifier {
 
   Future<void> startScreenshot() => _begin('screenshot');
 
+  RecordingOptions recordingOptions = const RecordingOptions();
+  bool screenRecording = false;
+  bool recordingTransition = false;
+  int _recordingGeneration = 0;
+
+  void setRecordingOptions(RecordingOptions value) {
+    if (busy || recordingTransition || screenRecording) return;
+    recordingOptions = RecordingOptions.fromJson(value.toJson());
+    _persist();
+    _notify();
+  }
+
+  Future<void> startRecording() => _begin('recording');
+
+  Future<void> _commitRecording(
+    RulerMeasurement measurement,
+    CapturedDisplay display,
+  ) async {
+    final id = _session!.id;
+    final generation = ++_recordingGeneration;
+    _committing = true;
+    recordingTransition = true;
+    _notify();
+    try {
+      await desktop.startRecording(
+        id,
+        display.id,
+        measurement.rect,
+        recordingOptions,
+      );
+      if (_disposed || generation != _recordingGeneration) return;
+      _resetSession();
+      screenRecording = true;
+      busy = true;
+      notice = strings.msgRecordingStarted;
+      _logger.info('Screen recording started.');
+    } catch (e, stackTrace) {
+      _logFailure('Screen recording start', e, stackTrace);
+      if (_disposed || generation != _recordingGeneration) return;
+      try {
+        await desktop.finish(id);
+      } catch (error, stackTrace) {
+        _logFailure('Screen recording selection cleanup', error, stackTrace);
+      }
+      if (_disposed || generation != _recordingGeneration) return;
+      _resetSession();
+      _fail(strings.msgRecordingFailed(describeError(e)));
+    } finally {
+      if (generation == _recordingGeneration) {
+        recordingTransition = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<void> stopRecording() async {
+    if (!screenRecording || recordingTransition) return;
+    final generation = _recordingGeneration;
+    recordingTransition = true;
+    _notify();
+    try {
+      final saved = await desktop.stopRecording();
+      if (_disposed || generation != _recordingGeneration) return;
+      notice = saved
+          ? strings.msgRecordingSaved
+          : strings.msgRecordingDiscarded;
+      error = null;
+      _logger.info('Screen recording stopped: saved=$saved.');
+    } catch (e, stackTrace) {
+      _logFailure('Screen recording stop', e, stackTrace);
+      if (_disposed || generation != _recordingGeneration) return;
+      _fail(strings.msgRecordingFailed(describeError(e)));
+    } finally {
+      if (generation == _recordingGeneration) {
+        screenRecording = false;
+        recordingTransition = false;
+        busy = false;
+        _notify();
+      }
+    }
+  }
+
   Offset? get screenshotPointer {
     final p = _lastPointer;
     return p != null && p.displayId == screenshotDisplayId
@@ -1019,7 +1101,9 @@ class AppController extends ChangeNotifier {
     _keyboardCursor = false;
     error = null;
     notice = null;
-    section = tool == 'screenshot'
+    section = tool == 'recording'
+        ? AppSection.recording
+        : tool == 'screenshot'
         ? AppSection.image
         : tool == 'picker'
         ? AppSection.picker
@@ -1074,7 +1158,9 @@ class AppController extends ChangeNotifier {
         return;
       case 'activate':
         final tool = event['tool'];
-        if (tool == 'picker') {
+        if (tool == 'recording') {
+          unawaited(startRecording());
+        } else if (tool == 'picker') {
           unawaited(pickColor());
         } else if (tool == 'rectangle') {
           unawaited(startRuler());
@@ -1086,6 +1172,17 @@ class AppController extends ChangeNotifier {
               .firstOrNull;
           if (value != null) unawaited(startRuler(value));
         }
+        return;
+      case 'stopRecording':
+        unawaited(stopRecording());
+        return;
+      case 'recordingFailed':
+        if (!screenRecording && !recordingTransition) return;
+        _recordingGeneration++;
+        screenRecording = false;
+        recordingTransition = false;
+        _resetSession();
+        _fail(strings.msgRecordingFailed(event['message'] as String? ?? ''));
         return;
       case 'pinClipboard':
         unawaited(pinClipboard());
@@ -1116,6 +1213,11 @@ class AppController extends ChangeNotifier {
     }
     if (event['sessionId'] != _session!.id) return;
     if (event['type'] == 'cancelled') {
+      if (_tool == 'recording' && recordingTransition) {
+        _recordingGeneration++;
+        recordingTransition = false;
+        unawaited(desktop.cancelRecording());
+      }
       _logger.info('Capture cancelled: session=${_session!.id}, tool=$_tool.');
       final count = _tool == 'picker' ? _pickedCount : 0;
       _resetSession();
@@ -1266,7 +1368,10 @@ class AppController extends ChangeNotifier {
         final position = _lastPointer;
         if (position == null) return;
         final start =
-            (_tool == 'rectangle' || _tool == 'screenshot') && _anchor == null;
+            (_tool == 'rectangle' ||
+                _tool == 'screenshot' ||
+                _tool == 'recording') &&
+            _anchor == null;
         _pointer({
           'displayId': position.displayId,
           'x': position.x,
@@ -1359,7 +1464,9 @@ class AppController extends ChangeNotifier {
     final pixel = frame.logicalToPixel(x, y);
     final color = frame.pixelAt(pixel.x, pixel.y);
     RulerMeasurement? measurement;
-    if (_tool == RulerMode.rectangle.name || _tool == 'screenshot') {
+    if (_tool == RulerMode.rectangle.name ||
+        _tool == 'screenshot' ||
+        _tool == 'recording') {
       final candidate = _tool == 'screenshot' && event['keyboard'] != true
           ? CaptureControls.suggestedRect(frame, event['suggestedRect'], x, y)
           : null;
@@ -1404,9 +1511,13 @@ class AppController extends ChangeNotifier {
         tolerance: tolerance,
       );
     }
-    if (_tool == 'screenshot') _captureMeasurement = measurement;
+    if (_tool == 'screenshot' || _tool == 'recording') {
+      _captureMeasurement = measurement;
+    }
     final label = _tool == 'picker'
         ? '${color.hex}  ·  ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y}'
+        : _tool == 'recording'
+        ? measurement?.label ?? strings.msgRecordingSelectRegion
         : _tool == 'screenshot'
         ? '${color.hex} · ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y} · ${measurement?.label ?? strings.msgDragScreenshot}'
         : measurement?.label ?? strings.msgDragMeasurement;
@@ -1433,6 +1544,10 @@ class AppController extends ChangeNotifier {
     } else if (measurement != null &&
         measurement.rect.width > 0 &&
         measurement.rect.height > 0) {
+      if (_tool == 'recording') {
+        unawaited(_commitRecording(measurement, display));
+        return;
+      }
       if (_tool == 'screenshot') {
         unawaited(_commitScreenshot(measurement, display));
         return;
@@ -2170,6 +2285,7 @@ class AppController extends ChangeNotifier {
     final json = jsonEncode({
       'version': 1,
       'language': _language.name,
+      'recordingOptions': recordingOptions.toJson(),
       'colorHistoryLimit': colorHistoryLimit,
       'measurementHistoryLimit': measurementHistoryLimit,
       'annotationColors': _annotationColors,
@@ -2200,6 +2316,7 @@ class AppController extends ChangeNotifier {
   void _restore(String saved) {
     try {
       final data = jsonDecode(saved) as Map<String, dynamic>;
+      recordingOptions = RecordingOptions.fromJson(data['recordingOptions']);
       _language = AppLanguage.parse(data['language']);
       _localeNotifier.value = _language.resolve(_systemLocale);
       var ignoredRecords = 0;
@@ -2414,6 +2531,11 @@ class AppController extends ChangeNotifier {
         'shortcut_invalid' => strings.msgShortcutUnavailable,
         'capture_busy' => strings.msgCaptureBusy,
         'pin_failed' => e.message ?? strings.msgSystemOperationFailed,
+        'recording_failed' ||
+        'recording_options' ||
+        'recording_region' ||
+        'recording_save' ||
+        'recording_busy' => e.message ?? strings.msgSystemOperationFailed,
         _ => strings.msgSystemOperationFailed,
       };
     }
@@ -2437,6 +2559,14 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _logger.info('Controller disposed.');
     _disposed = true;
+    _recordingGeneration++;
+    if (screenRecording || recordingTransition) {
+      unawaited(
+        desktop.cancelRecording().catchError((Object e, StackTrace stackTrace) {
+          _logFailure('Disposed recording cleanup', e, stackTrace);
+        }),
+      );
+    }
     _subscription?.cancel();
     final id = _session?.id;
     _resetSession();

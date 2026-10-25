@@ -16,6 +16,7 @@ commands = [
     [sys.executable, 'tool/test_single_instance.py'],
     [sys.executable, 'tool/test_macos_native.py'],
     [sys.executable, 'tool/test_macos_integration.py'],
+    [sys.executable, 'tool/test_macos_recording.py'],
     [sys.executable, 'tool/test_color_samples.py'],
 ]
 if sys.platform != 'darwin':

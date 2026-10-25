@@ -62,6 +62,7 @@ wire.OverlayState overlayToWire(Map<String, Object?> d) {
 }
 
 Map<Object?, Object?> eventFromWire(wire.NativeEvent e) => {
+  'message': e.message,
   'type': e.kind.name,
   'sessionId': e.sessionId,
   'displayId': e.displayId,

@@ -27,6 +27,69 @@ void main() {
     await MacDesktopService().configureLocale('en');
   });
 
+  test('录屏协议传递像素选区和完整编码参数，停止与取消独立', () async {
+    final channels = [
+      for (final name in ['startRecording', 'stopRecording', 'cancelRecording'])
+        BasicMessageChannel<Object?>(
+          'dev.flutter.pigeon.fruler.DesktopHostApi.$name',
+          wire.DesktopHostApi.pigeonChannelCodec,
+        ),
+    ];
+    addTearDown(() {
+      for (final channel in channels) {
+        messenger.setMockDecodedMessageHandler<Object?>(channel, null);
+      }
+    });
+    messenger.setMockDecodedMessageHandler<Object?>(channels[0], (
+      message,
+    ) async {
+      final args = message as List;
+      expect(args.take(2), [7, 9]);
+      final region = args[2] as wire.PixelBounds;
+      expect(
+        [region.left, region.top, region.right, region.bottom],
+        [12, 20, 192, 100],
+      );
+      final options = args[3] as wire.RecordingConfiguration;
+      expect(
+        [
+          options.codec,
+          options.frameRate,
+          options.quality,
+          options.resolution,
+          options.showCursor,
+          options.systemAudio,
+        ],
+        ['hevc', 24, 'medium', '1080p', false, true],
+      );
+      return [null];
+    });
+    messenger.setMockDecodedMessageHandler<Object?>(
+      channels[1],
+      (_) async => [true],
+    );
+    messenger.setMockDecodedMessageHandler<Object?>(
+      channels[2],
+      (_) async => [null],
+    );
+    final service = MacDesktopService();
+    await service.startRecording(
+      7,
+      9,
+      const PixelRect(left: 12, top: 20, right: 192, bottom: 100),
+      const RecordingOptions(
+        codec: 'hevc',
+        frameRate: 24,
+        quality: 'medium',
+        resolution: '1080p',
+        showCursor: false,
+        systemAudio: true,
+      ),
+    );
+    expect(await service.stopRecording(), true);
+    await service.cancelRecording();
+  });
+
   test('贴图协议携带会话与像素选区，历史入口保留空定位', () async {
     final channel = BasicMessageChannel<Object?>(
       'dev.flutter.pigeon.fruler.DesktopHostApi.pinImage',

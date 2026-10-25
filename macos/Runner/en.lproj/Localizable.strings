@@ -140,3 +140,21 @@
 "pin.error_clipboard" = "The clipboard has no image, text or HEX color to pin.";
 "pin.error_export" = "The pinned image could not be exported.";
 "pin.error_limit" = "Too many or oversized pinned images. Destroy unused pins and try again.";
+
+// 录屏
+"tool.recording" = "Screen recording…";
+"recording.stop" = "Stop recording…";
+"recording.save" = "Save recording";
+"recording.failed" = "Screen recording stopped";
+"recording.invalid_region" = "Select a non-empty region on one display.";
+"error.recording" = "Screen recording failed: %@";
+"recording.hint" = "Drag to select · Release to start recording · Esc to cancel";
+"recording.save_failed" = "The recording could not be saved";
+"recording.retry" = "Choose another location";
+"recording.discard" = "Discard recording";
+"error.recording_busy" = "Another recording is already running.";
+"error.recording_options" = "The recording settings are invalid.";
+"error.recording_region" = "Select a valid recording region.";
+"error.recording_unavailable" = "The display is no longer available.";
+"error.recording_empty" = "No video frames were captured.";
+"error.recording_write" = "The video encoder could not write the recording.";

@@ -671,7 +671,7 @@ void main() {
             .cast<Map>()
             .where((item) => item['tool'] != '')
             .map((item) => item['title']),
-        ['Screenshot', 'Color Picker', 'Screen Ruler'],
+        ['Screenshot', 'Screen recording…', 'Color Picker', 'Screen Ruler'],
       );
       const sample = RgbColor(13, 127, 255);
       await controller.copyColor(sample);
@@ -694,7 +694,7 @@ void main() {
             .cast<Map>()
             .where((item) => item['tool'] != '')
             .map((item) => item['title']),
-        ['截图', '取色器', '尺子'],
+        ['截图', '录屏…', '取色器', '尺子'],
       );
       expect(chinese['mainVisible'], false);
       await controller.cancelScreenshot();
@@ -1008,7 +1008,7 @@ void main() {
     },
   );
 
-  testWidgets('状态栏三工具分组入口与独立模式，历史和设置直接打开', (tester) async {
+  testWidgets('状态栏四工具分组入口与独立模式，历史和设置直接打开', (tester) async {
     final d = NativeDesktop();
     final c = AppController(d);
     await c.initialize();
@@ -1021,17 +1021,18 @@ void main() {
       final menu = (initial['menu'] as List).cast<Map>();
       expect(menu.where((i) => i['tool'] != '').map((i) => i['title']), [
         '截图',
+        '录屏…',
         '取色器',
         '尺子',
       ]);
       expect(menu.where((i) => i['separator'] == true), hasLength(3));
-      expect(menu.take(3).every((i) => i['hasImage'] == true), true);
-      expect(menu.skip(4).take(3).map((i) => i['title']), [
+      expect(menu.take(4).every((i) => i['hasImage'] == true), true);
+      expect(menu.skip(5).take(3).map((i) => i['title']), [
         '剪贴板贴图',
         '显示／隐藏全部贴图',
         '销毁全部贴图',
       ]);
-      expect(menu.skip(4).take(3).every((i) => i['hasImage'] == true), true);
+      expect(menu.skip(5).take(3).every((i) => i['hasImage'] == true), true);
       final nativeShortcutsAvailable = (await d.initialize()).shortcuts;
       final chords = [
         c.shortcuts.screenshot,
@@ -1040,7 +1041,7 @@ void main() {
       ];
       for (var i = 0; i < chords.length; i++) {
         expect(
-          menu[i]['key'],
+          menu[i == 0 ? 0 : i + 1]['key'],
           nativeShortcutsAvailable ? chords[i].key.toLowerCase() : '',
           reason: '菜单遵循原生快捷键实际注册状态，冲突时不展示不可用快捷键',
         );
@@ -1063,7 +1064,7 @@ void main() {
       );
       await clickMenu('history');
       await waitFor(tester, () => c.section != AppSection.settings);
-      for (final tool in ['picker', 'rectangle', 'screenshot']) {
+      for (final tool in ['picker', 'rectangle', 'screenshot', 'recording']) {
         final before = d.captureCount;
         if (tool == 'picker') c.selectColorOutput('rgb');
         await clickMenu(tool);
@@ -1079,7 +1080,7 @@ void main() {
         );
         var status = (await driver.invokeMapMethod<String, Object?>('status'))!;
         var view = (status['rulerViews'] as List).cast<Map>().first;
-        if (tool != 'screenshot') {
+        if (tool != 'screenshot' && tool != 'recording') {
           expect(view['toolbarTop'], 22);
           expect(
             (view['toolbarWidth'] as num) -
@@ -1180,7 +1181,7 @@ void main() {
       final initial = (await driver.invokeMapMethod<String, Object?>(
         'status',
       ))!;
-      for (final name in ['picker', 'rectangle', 'screenshot']) {
+      for (final name in ['picker', 'rectangle', 'screenshot', 'recording']) {
         expect(
           await driver.invokeMethod<bool>('clickRulerControl', {'name': name}),
           false,

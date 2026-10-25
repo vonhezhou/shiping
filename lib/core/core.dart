@@ -9,3 +9,4 @@ export 'contrast.dart';
 export 'color_output.dart';
 export 'annotation.dart';
 export 'validation_exception.dart';
+export 'recording.dart';

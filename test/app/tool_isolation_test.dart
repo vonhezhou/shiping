@@ -25,7 +25,7 @@ void main() {
       await d.input.close();
     }
   });
-  for (final initial in ['picker', 'rectangle', 'screenshot']) {
+  for (final initial in ['picker', 'rectangle', 'screenshot', 'recording']) {
     test('$initial 会话不能通过模式切换变成其他工具', () async {
       final d = FakeDesktop();
       final c = AppController(d);
@@ -35,11 +35,13 @@ void main() {
           await c.pickColor();
         } else if (initial == 'rectangle') {
           await c.startRuler(RulerMode.rectangle);
+        } else if (initial == 'recording') {
+          await c.startRecording();
         } else {
           await c.startScreenshot();
         }
         final others = initial == 'rectangle'
-            ? ['picker', 'screenshot']
+            ? ['picker', 'screenshot', 'recording']
             : [
                 'picker',
                 'rectangle',
@@ -47,6 +49,7 @@ void main() {
                 'vertical',
                 'cross',
                 'screenshot',
+                'recording',
               ].where((t) => t != initial);
         for (final tool in others) {
           d.event('modeChanged', {'tool': tool});

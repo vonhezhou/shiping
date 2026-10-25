@@ -20,7 +20,9 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     nativeLogs.log(800, "lifecycle", "Application termination requested.")
-    _ = (mainFlutterWindow as? MainFlutterWindow)?.requestQuitConfirmation()
+    if (mainFlutterWindow as? MainFlutterWindow)?.requestQuitConfirmation() == true {
+      return .terminateLater
+    }
     return super.applicationShouldTerminate(sender)
   }
 

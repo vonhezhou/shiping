@@ -7,7 +7,15 @@ import 'package:pigeon/pigeon.dart';
     dartPackageName: 'fruler',
   ),
 )
-enum CaptureTool { picker, rectangle, horizontal, vertical, cross, screenshot }
+enum CaptureTool {
+  picker,
+  rectangle,
+  horizontal,
+  vertical,
+  cross,
+  screenshot,
+  recording,
+}
 
 enum EventKind {
   activate,
@@ -37,6 +45,8 @@ enum EventKind {
   pinClipboard,
   togglePinnedImages,
   closePinnedImages,
+  stopRecording,
+  recordingFailed,
 }
 
 enum InputPhase { move, down, drag, up, start, update, end }
@@ -47,6 +57,23 @@ class NativeStatus {
   NativeStatus({required this.permission, required this.shortcuts});
   bool permission;
   bool shortcuts;
+}
+
+class RecordingConfiguration {
+  RecordingConfiguration({
+    required this.codec,
+    required this.frameRate,
+    required this.quality,
+    required this.resolution,
+    required this.showCursor,
+    required this.systemAudio,
+  });
+  String codec;
+  int frameRate;
+  String quality;
+  String resolution;
+  bool showCursor;
+  bool systemAudio;
 }
 
 class DisplayFrame {
@@ -214,6 +241,7 @@ class NativeEvent {
     this.tolerance,
     this.save,
     this.suggestedRect,
+    this.message,
   });
   EventKind kind;
   int? sessionId;
@@ -237,6 +265,7 @@ class NativeEvent {
   int? tolerance;
   bool? save;
   PixelBounds? suggestedRect;
+  String? message;
 }
 
 class NativeLogEntry {
@@ -273,6 +302,17 @@ abstract class DesktopHostApi {
   @async
   void finish(int sessionId);
   @async
+  void startRecording(
+    int sessionId,
+    int displayId,
+    PixelBounds rect,
+    RecordingConfiguration options,
+  );
+  @async
+  bool stopRecording();
+  @async
+  void cancelRecording();
+  @async
   void editScreenshot(int sessionId, int displayId);
   @async
   void reselectScreenshot(int sessionId);
@@ -287,7 +327,12 @@ abstract class DesktopHostApi {
   @async
   bool exportImage(Uint8List png, bool save);
   @async
-  void pinImage(Uint8List png, int? sessionId, int? displayId, PixelBounds? rect);
+  void pinImage(
+    Uint8List png,
+    int? sessionId,
+    int? displayId,
+    PixelBounds? rect,
+  );
   @async
   void pinClipboard();
   @async

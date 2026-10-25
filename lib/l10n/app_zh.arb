@@ -21,7 +21,7 @@
   "uiScreenAccess": "屏幕访问",
   "uiScreenPermissionGranted": "已获得屏幕录制权限",
   "uiScreenPermissionNeeded": "需要允许 fruler 录制屏幕",
-  "uiScreenPrivacy": "启动工具时冻结屏幕快照，退出后释放，不上传。仅在你复制或导出标注时，将局部图片写入剪贴板或所选文件。",
+  "uiScreenPrivacy": "取色、尺子与截图工具冻结快照，结束后释放。录屏持续采集所选范围，停止后保存到你选择的位置。所有内容均在本机处理，不上传。",
   "uiRecheckPermission": "重新检查权限",
   "uiRequestPermission": "请求屏幕授权",
   "uiOpenSystemSettings": "打开系统设置 ↗",
@@ -441,5 +441,42 @@
   "uiPinnedImages": "贴图",
   "uiPinHistory": "贴出这张截图",
   "uiPinDescription": "将截图、剪贴板图片、文字或 HEX 颜色贴在其他窗口上方。拖动移动，滚轮缩放，⌘滚轮调透明度；1／2 旋转，3／4 翻转，中键重置。Esc 或双击隐藏，Shift+Esc 销毁；隐藏的贴图可一起恢复。贴图仅保留到退出应用。",
-  "msgImagePinned": "已贴到屏幕"
+  "msgImagePinned": "已贴到屏幕",
+  "uiRecording": "录屏",
+  "uiRecordingDescription": "录制前选择屏幕范围，通过菜单栏或本页停止后保存 MP4 视频。",
+  "uiStartRecording": "选择录制范围",
+  "uiStopRecording": "停止并保存",
+  "uiRecordingOptions": "视频参数",
+  "uiRecordingCodec": "视频编码",
+  "uiRecordingH264": "H.264 · 兼容性好",
+  "uiRecordingHevc": "HEVC · 文件更小",
+  "uiRecordingFrameRate": "帧率",
+  "uiRecordingQuality": "视频质量",
+  "uiRecordingQualityLow": "低 · 文件较小",
+  "uiRecordingQualityMedium": "中",
+  "uiRecordingQualityHigh": "高 · 画面更清晰",
+  "uiRecordingResolution": "输出尺寸",
+  "uiRecordingOriginal": "原始像素",
+  "uiRecordingResolutionHint": "720p / 1080p 分别限制在 1280 × 720 / 1920 × 1080 内，保持选区比例，不放大小选区。",
+  "uiRecordingCursor": "录制鼠标指针",
+  "uiRecordingAudio": "录制系统声音",
+  "uiRecordingAudioHint": "包含其他应用播放的声音，不录制麦克风。",
+  "uiRecordingWorkflow": "录制与保存",
+  "uiRecordingSelect": "在一块显示器上拖动选择范围，松开鼠标开始录制；Esc 取消选区。",
+  "uiRecordingFinish": "通过菜单栏或本页停止录制，再选择 MP4 保存位置。取消保存会丢弃本次录屏。",
+  "uiRecordingSettingsHint": "参数用于下一次录制，录制过程中不可调整。",
+  "uiRecordingActive": "正在录屏",
+  "uiRecordingWorking": "正在处理录屏…",
+  "msgRecordingStarted": "录屏已开始，通过菜单栏可停止。",
+  "msgRecordingSaved": "录屏已保存",
+  "msgRecordingDiscarded": "已丢弃本次录屏",
+  "msgRecordingFailed": "录屏失败：{detail}",
+  "msgRecordingSelectRegion": "拖动选择录制范围",
+  "@msgRecordingFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  }
 }
