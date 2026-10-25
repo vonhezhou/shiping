@@ -1092,4 +1092,45 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get msgRecordingSelectRegion => 'Drag to select the recording region';
+
+  @override
+  String get uiRecognizeQrCode => 'Recognize QR codes in selection';
+
+  @override
+  String get uiQrCodeRecognizing => 'Recognizing QR codes in selection…';
+
+  @override
+  String get uiQrCodeCopying => 'Copying QR code content…';
+
+  @override
+  String get uiQrCodeResults => 'Choose a QR code to copy';
+
+  @override
+  String get uiQrCodeResultsDescription =>
+      'The selection contains multiple QR codes. Check the content before choosing.';
+
+  @override
+  String get uiQrCodeRetryDescription => 'Click the content to retry copying.';
+
+  @override
+  String get uiQrCodeAdjustSelection => 'Back to selection';
+
+  @override
+  String get msgQrCodeNotFound =>
+      'No QR code found in the selection. Adjust the region and include the entire code and its border, then try again.';
+
+  @override
+  String get msgQrCodeRecognitionFailed =>
+      'QR code recognition failed. Please try again.';
+
+  @override
+  String get msgQrCodeCopyFailed =>
+      'Failed to copy QR code content. Please try again.';
+
+  @override
+  String get msgQrCodeCopied => 'QR code content copied';
+
+  @override
+  String get msgScreenshotCancelFailed =>
+      'Failed to cancel the screenshot. Please try again.';
 }

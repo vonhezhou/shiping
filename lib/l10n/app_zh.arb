@@ -478,5 +478,17 @@
         "type": "String"
       }
     }
-  }
+  },
+  "uiRecognizeQrCode": "识别选区二维码",
+  "uiQrCodeRecognizing": "正在识别选区内的二维码…",
+  "uiQrCodeCopying": "正在复制二维码内容…",
+  "uiQrCodeResults": "选择要复制的二维码",
+  "uiQrCodeResultsDescription": "选区内有多个二维码，请核对内容后选择。",
+  "uiQrCodeRetryDescription": "点击内容重试复制。",
+  "uiQrCodeAdjustSelection": "返回调整选区",
+  "msgQrCodeNotFound": "选区内未识别到二维码，请调整范围并保留二维码完整边缘后重试。",
+  "msgQrCodeRecognitionFailed": "二维码识别失败，请重试。",
+  "msgQrCodeCopyFailed": "二维码内容复制失败，请重试。",
+  "msgQrCodeCopied": "已复制二维码内容",
+  "msgScreenshotCancelFailed": "截图取消失败，请重试。"
 }

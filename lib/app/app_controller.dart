@@ -208,8 +208,115 @@ class AppController extends ChangeNotifier {
   bool get screenshotEditing =>
       screenshotSelection != null && imageDocument != null;
   bool imageLoading = false;
-  bool get imageSaving => screenshotExporting;
+  bool get imageSaving => screenshotExporting || _screenshotCancelling;
+  bool _screenshotCancelling = false;
   bool screenshotExporting = false;
+  bool qrCodeRecognizing = false;
+  bool qrCodeCopying = false;
+  bool get qrCodeBusy => qrCodeRecognizing || qrCodeCopying;
+  List<String> _qrCodeResults = const [];
+  List<String> get qrCodeResults => _qrCodeResults;
+  int _qrCodeRequest = 0;
+
+  void _clearQrCodes() {
+    _qrCodeRequest++;
+    _qrCodeResults = const [];
+    qrCodeRecognizing = false;
+    qrCodeCopying = false;
+  }
+
+  bool _isQrCodeRequestCurrent(int request, int sessionId) =>
+      !_disposed &&
+      _qrCodeRequest == request &&
+      _session?.id == sessionId &&
+      screenshotEditing;
+
+  Future<void> recognizeQrCodes() async {
+    final sessionId = _session?.id;
+    final displayId = screenshotDisplayId;
+    final rect = screenshotSelection;
+    if (sessionId == null ||
+        displayId == null ||
+        rect == null ||
+        !screenshotEditing ||
+        imageLoading ||
+        screenshotExporting ||
+        _screenshotCancelling ||
+        qrCodeBusy) {
+      return;
+    }
+    _clearQrCodes();
+    final request = _qrCodeRequest;
+    qrCodeRecognizing = true;
+    error = null;
+    _notify();
+    try {
+      // 原生端直接裁切冻结快照，不让标注或选区外的二维码参与识别。
+      final results = await desktop.recognizeQrCodes(
+        sessionId,
+        displayId,
+        rect,
+      );
+      if (!_isQrCodeRequestCurrent(request, sessionId)) return;
+      _qrCodeResults = List.unmodifiable(
+        results.where((v) => v.isNotEmpty).toSet(),
+      );
+      qrCodeRecognizing = false;
+      if (_qrCodeResults.isEmpty) {
+        error = strings.msgQrCodeNotFound;
+      } else if (_qrCodeResults.length == 1) {
+        await copyQrCode(_qrCodeResults.single);
+      }
+    } catch (e, stackTrace) {
+      _logFailure('QR recognition', e, stackTrace);
+      if (_isQrCodeRequestCurrent(request, sessionId)) {
+        error = strings.msgQrCodeRecognitionFailed;
+      }
+    } finally {
+      if (_isQrCodeRequestCurrent(request, sessionId)) {
+        qrCodeRecognizing = false;
+      }
+      _notify();
+    }
+  }
+
+  Future<void> copyQrCode(String value) async {
+    final sessionId = _session?.id;
+    if (sessionId == null ||
+        !screenshotEditing ||
+        qrCodeBusy ||
+        !_qrCodeResults.contains(value)) {
+      return;
+    }
+    final request = _qrCodeRequest;
+    qrCodeCopying = true;
+    error = null;
+    _notify();
+    try {
+      await desktop.writeClipboard(value);
+      if (!_isQrCodeRequestCurrent(request, sessionId)) return;
+      await desktop.finish(sessionId);
+      if (!_isQrCodeRequestCurrent(request, sessionId)) return;
+      _resetSession();
+      notice = strings.msgQrCodeCopied;
+    } catch (e, stackTrace) {
+      _logFailure('QR clipboard write', e, stackTrace);
+      if (_isQrCodeRequestCurrent(request, sessionId)) {
+        error = strings.msgQrCodeCopyFailed;
+      }
+    } finally {
+      if (_isQrCodeRequestCurrent(request, sessionId)) qrCodeCopying = false;
+      _notify();
+    }
+  }
+
+  void dismissQrCodes() {
+    if (qrCodeBusy) return;
+    _clearQrCodes();
+    error = null;
+    _notify();
+  }
+
   final List<Uint8List> _screenshots = [];
   List<Uint8List> get screenshots => List.unmodifiable(_screenshots);
   int _screenshotBytes = 0;
@@ -223,7 +330,7 @@ class AppController extends ChangeNotifier {
   }
 
   bool get canAdjustScreenshotSelection =>
-      screenshotEditing && !imageLoading && !screenshotExporting;
+      screenshotEditing && !imageLoading && !imageSaving && !qrCodeBusy;
 
   Future<void> adjustScreenshotSelection(PixelRect rect) async {
     final session = _session;
@@ -239,6 +346,7 @@ class AppController extends ChangeNotifier {
         rect.height < 1) {
       return;
     }
+    _clearQrCodes();
     imageLoading = true;
     _notify();
     try {
@@ -272,6 +380,9 @@ class AppController extends ChangeNotifier {
     if (doc == null ||
         imageLoading ||
         screenshotExporting ||
+        qrCodeBusy ||
+        qrCodeResults.isNotEmpty ||
+        _screenshotCancelling ||
         !screenshotEditing) {
       return;
     }
@@ -377,15 +488,29 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> cancelScreenshot() async {
-    if (screenshotExporting) return;
+    if (screenshotExporting || qrCodeCopying || _screenshotCancelling) return;
     final id = _session?.id;
-    if (id != null) await desktop.finish(id);
-    _resetSession();
+    _screenshotCancelling = true;
+    // 取消意图立即生效，不能等原生关闭浮层后才丢弃已在途的识别回复。
+    _clearQrCodes();
     _notify();
+    try {
+      if (id != null) await desktop.finish(id);
+      if (_session?.id == id) _resetSession();
+    } catch (e, stackTrace) {
+      _logFailure('Screenshot cancellation', e, stackTrace);
+      if (_session?.id == id) error = strings.msgScreenshotCancelFailed;
+    } finally {
+      _screenshotCancelling = false;
+      _notify();
+    }
   }
 
   Future<void> reselectScreenshot() async {
-    if (!screenshotEditing || imageLoading || screenshotExporting) return;
+    if (!screenshotEditing || imageLoading || imageSaving || qrCodeBusy) {
+      return;
+    }
+    _clearQrCodes();
     await desktop.reselectScreenshot(_session!.id);
     imageDocument = null;
     screenshotSelection = null;
@@ -989,7 +1114,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> sampleCaptureColor(int displayId, double x, double y) async {
-    if (_session == null || _committing || screenshotExporting) return;
+    if (_session == null || _committing || imageSaving || qrCodeBusy) return;
     final display = _session!.displays
         .where((d) => d.id == displayId)
         .firstOrNull;
@@ -1002,7 +1127,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> copyCaptureSize(int displayId, PixelRect rect) async {
-    if (_session == null || _committing || screenshotExporting) return;
+    if (_session == null || _committing || imageSaving || qrCodeBusy) return;
     final display = _session!.displays
         .where((d) => d.id == displayId)
         .firstOrNull;
@@ -1898,6 +2023,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _resetSession() {
+    _clearQrCodes();
     imageCodec.clearCaptureImages();
     if (_session != null) {
       _logger.info(

@@ -68,7 +68,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   );
   double get scale => 1 / c.screenshotScaleX;
   bool get editable =>
-      c.screenshotEditing && !c.imageLoading && !c.imageSaving && !colorPicking;
+      c.screenshotEditing &&
+      !c.imageLoading &&
+      !c.imageSaving &&
+      !colorPicking &&
+      !c.qrCodeBusy &&
+      c.qrCodeResults.isEmpty;
   List<Annotation> get visibleItems {
     final result = List<Annotation>.of(items);
     if (textEditing && textIndex != null && textIndex! < result.length) {
@@ -284,6 +289,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     finishText();
     finishLine();
     c.exportScreenshot(save: save, pin: pin);
+  }
+
+  void recognizeQrCodes() {
+    finishText();
+    finishLine();
+    c.recognizeQrCodes();
   }
 
   void deleteSelected() {
@@ -887,6 +898,16 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }
 
   KeyEventResult key(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent && (c.qrCodeBusy || c.qrCodeResults.isNotEmpty)) {
+      if (event.logicalKey == LogicalKeyboardKey.escape) {
+        if (c.qrCodeResults.isNotEmpty && !c.qrCodeBusy) {
+          c.dismissQrCodes();
+        } else if (c.qrCodeRecognizing) {
+          c.cancelScreenshot();
+        }
+      }
+      return KeyEventResult.handled;
+    }
     if (event is! KeyDownEvent && event is! KeyRepeatEvent || !editable) {
       return KeyEventResult.ignored;
     }
@@ -1840,6 +1861,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           image == null ? null : () => export(false, pin: true),
         ),
         toolbarButton(
+          'recognize-qr-code',
+          context.l10n.uiRecognizeQrCode,
+          Icons.qr_code_scanner,
+          recognizeQrCodes,
+        ),
+        toolbarButton(
           'save-screenshot',
           context.l10n.uiSavePng,
           Icons.save_alt,
@@ -1904,6 +1931,91 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             if (c.error != null)
               Text(c.error!, style: const TextStyle(color: Colors.orange)),
           ],
+        ),
+      ),
+    ),
+  );
+
+  Widget qrCodePanel() => Positioned.fill(
+    child: Material(
+      color: Colors.black45,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580),
+          child: AlertDialog(
+            key: ValueKey(
+              c.qrCodeBusy ? 'qr-code-progress' : 'qr-code-results',
+            ),
+            title: Text(
+              c.qrCodeBusy
+                  ? (c.qrCodeRecognizing
+                        ? context.l10n.uiQrCodeRecognizing
+                        : context.l10n.uiQrCodeCopying)
+                  : context.l10n.uiQrCodeResults,
+            ),
+            content: c.qrCodeBusy
+                ? const SizedBox(
+                    height: 48,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : SizedBox(
+                    width: 480,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 340),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              c.qrCodeResults.length > 1
+                                  ? context.l10n.uiQrCodeResultsDescription
+                                  : context.l10n.uiQrCodeRetryDescription,
+                            ),
+                            const SizedBox(height: 12),
+                            for (var i = 0; i < c.qrCodeResults.length; i++)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: OutlinedButton(
+                                  key: ValueKey('qr-result-$i'),
+                                  style: OutlinedButton.styleFrom(
+                                    alignment: Alignment.centerLeft,
+                                  ),
+                                  onPressed: () =>
+                                      c.copyQrCode(c.qrCodeResults[i]),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                    child: Text(c.qrCodeResults[i]),
+                                  ),
+                                ),
+                              ),
+                            if (c.error != null)
+                              Text(
+                                c.error!,
+                                style: const TextStyle(color: Colors.orange),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+            actions: [
+              if (c.qrCodeRecognizing)
+                TextButton(
+                  key: const ValueKey('cancel-qr-code'),
+                  onPressed: c.cancelScreenshot,
+                  child: Text(context.l10n.uiCancelScreenshot),
+                )
+              else if (!c.qrCodeCopying)
+                TextButton(
+                  key: const ValueKey('dismiss-qr-codes'),
+                  onPressed: c.dismissQrCodes,
+                  child: Text(context.l10n.uiQrCodeAdjustSelection),
+                ),
+            ],
+          ),
         ),
       ),
     ),
@@ -2108,7 +2220,23 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
             13 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
-          final totalHeight = hasProperties ? 72.0 : 36.0;
+          var feedbackHeight = 0.0;
+          for (final message in [
+            if (loadFailed) context.l10n.uiScreenshotLoadingFailed,
+            if (c.error != null) c.error!,
+          ]) {
+            final painter = TextPainter(
+              text: TextSpan(
+                text: message,
+                style: DefaultTextStyle.of(context).style,
+              ),
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+            )..layout(maxWidth: constraints.maxWidth - 24);
+            feedbackHeight += painter.height.ceilToDouble();
+            painter.dispose();
+          }
+          final totalHeight = (hasProperties ? 72.0 : 36.0) + feedbackHeight;
           final above =
               rect.bottom + totalHeight + 8 > constraints.maxHeight &&
               rect.top > totalHeight + 8;
@@ -2300,6 +2428,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                               screenPointer!.dy >= activeRect.top &&
                               screenPointer!.dy <= activeRect.bottom)))
                     pickerFeedback(constraints),
+                  if (c.qrCodeBusy || c.qrCodeResults.isNotEmpty) qrCodePanel(),
                   if (colorPicking)
                     const Positioned.fill(
                       child: ModalBarrier(

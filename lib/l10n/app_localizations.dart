@@ -1874,6 +1874,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Drag to select the recording region'**
   String get msgRecordingSelectRegion;
+
+  /// No description provided for @uiRecognizeQrCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognize QR codes in selection'**
+  String get uiRecognizeQrCode;
+
+  /// No description provided for @uiQrCodeRecognizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognizing QR codes in selection…'**
+  String get uiQrCodeRecognizing;
+
+  /// No description provided for @uiQrCodeCopying.
+  ///
+  /// In en, this message translates to:
+  /// **'Copying QR code content…'**
+  String get uiQrCodeCopying;
+
+  /// No description provided for @uiQrCodeResults.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a QR code to copy'**
+  String get uiQrCodeResults;
+
+  /// No description provided for @uiQrCodeResultsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'The selection contains multiple QR codes. Check the content before choosing.'**
+  String get uiQrCodeResultsDescription;
+
+  /// No description provided for @uiQrCodeRetryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Click the content to retry copying.'**
+  String get uiQrCodeRetryDescription;
+
+  /// No description provided for @uiQrCodeAdjustSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to selection'**
+  String get uiQrCodeAdjustSelection;
+
+  /// No description provided for @msgQrCodeNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No QR code found in the selection. Adjust the region and include the entire code and its border, then try again.'**
+  String get msgQrCodeNotFound;
+
+  /// No description provided for @msgQrCodeRecognitionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code recognition failed. Please try again.'**
+  String get msgQrCodeRecognitionFailed;
+
+  /// No description provided for @msgQrCodeCopyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to copy QR code content. Please try again.'**
+  String get msgQrCodeCopyFailed;
+
+  /// No description provided for @msgQrCodeCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code content copied'**
+  String get msgQrCodeCopied;
+
+  /// No description provided for @msgScreenshotCancelFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to cancel the screenshot. Please try again.'**
+  String get msgScreenshotCancelFailed;
 }
 
 class _AppLocalizationsDelegate

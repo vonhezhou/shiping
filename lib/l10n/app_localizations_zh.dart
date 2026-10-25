@@ -983,4 +983,40 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get msgRecordingSelectRegion => '拖动选择录制范围';
+
+  @override
+  String get uiRecognizeQrCode => '识别选区二维码';
+
+  @override
+  String get uiQrCodeRecognizing => '正在识别选区内的二维码…';
+
+  @override
+  String get uiQrCodeCopying => '正在复制二维码内容…';
+
+  @override
+  String get uiQrCodeResults => '选择要复制的二维码';
+
+  @override
+  String get uiQrCodeResultsDescription => '选区内有多个二维码，请核对内容后选择。';
+
+  @override
+  String get uiQrCodeRetryDescription => '点击内容重试复制。';
+
+  @override
+  String get uiQrCodeAdjustSelection => '返回调整选区';
+
+  @override
+  String get msgQrCodeNotFound => '选区内未识别到二维码，请调整范围并保留二维码完整边缘后重试。';
+
+  @override
+  String get msgQrCodeRecognitionFailed => '二维码识别失败，请重试。';
+
+  @override
+  String get msgQrCodeCopyFailed => '二维码内容复制失败，请重试。';
+
+  @override
+  String get msgQrCodeCopied => '已复制二维码内容';
+
+  @override
+  String get msgScreenshotCancelFailed => '截图取消失败，请重试。';
 }
