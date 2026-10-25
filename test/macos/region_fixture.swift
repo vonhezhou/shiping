@@ -1,4 +1,5 @@
 import Cocoa
+import CoreImage
 // 夹具独立于被测进程：即使测试应用异常退出，也恢复测试前的系统剪贴板。
 let savedPasteboard = (NSPasteboard.general.pasteboardItems ?? []).map { item in
   Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
@@ -76,6 +77,41 @@ let colorObserver = DistributedNotificationCenter.default().addObserver(
   }
 }
 #endif
+// 两张真实可见二维码供 ScreenCaptureKit 采集，生产路径不会注入夹具图片。
+final class QRFixtureView: NSView {
+  override var isFlipped: Bool { true }
+  let context = CIContext()
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor.white.setFill()
+    bounds.fill()
+    NSGraphicsContext.current?.imageInterpolation = .none
+    for (payload, x) in [("fruler:selected-left", 40.0), ("fruler:outside-right", 380.0)] {
+      let filter = CIFilter(name: "CIQRCodeGenerator")!
+      filter.setValue(Data(payload.utf8), forKey: "inputMessage")
+      filter.setValue("M", forKey: "inputCorrectionLevel")
+      let output = filter.outputImage!
+      let scale = floor(180 / output.extent.width)
+      let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+      let image = context.createCGImage(scaled, from: scaled.extent)!
+      NSImage(cgImage: image, size: .zero).draw(
+        in: NSRect(x: x, y: 60, width: scaled.extent.width, height: scaled.extent.height),
+        from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
+    }
+  }
+}
+let qrWindow = NSWindow(contentRect: NSRect(x: screen.minX + 80, y: screen.maxY - 500, width: 640, height: 360),
+  styleMask: [.titled], backing: .buffered, defer: false)
+qrWindow.title = "fruler-qr-fixture"
+qrWindow.isReleasedWhenClosed = false
+qrWindow.contentView = QRFixtureView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
+let qrObserver = DistributedNotificationCenter.default().addObserver(
+  forName: Notification.Name("dev.fruler.integration.qrFixture"), object: nil, queue: .main) { note in
+  if note.object as? String == "hide" { qrWindow.orderOut(nil) }
+  else {
+    app.activate(ignoringOtherApps: true)
+    qrWindow.makeKeyAndOrderFront(nil)
+  }
+}
 window.orderFrontRegardless()
 print("ready");fflush(stdout)
 app.run()

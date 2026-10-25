@@ -359,6 +359,207 @@ void main() {
     });
     return;
   }
+  testWidgets('真实屏幕二维码严格限定选区，单码复制、多码选择并回原应用', (tester) async {
+    final desktop = NativeDesktop();
+    final c = AppController(desktop);
+    await c.initialize();
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      expect(c.permissionGranted, true, reason: '真实二维码截图集成测试需要录屏权限');
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await driver.invokeMethod<void>('qrFixture', {'action': 'show'});
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+
+      Future<({int id, PixelFrame frame, Rect content})> begin() async {
+        await c.startScreenshot();
+        expect(c.error, isNull);
+        final status = (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!;
+        Map? target;
+        int? id;
+        for (final view in (status['rulerViews'] as List).cast<Map>()) {
+          for (final region in (view['regions'] as List).cast<Map>()) {
+            if (region['title'] == 'fruler-qr-fixture') {
+              target = region;
+              id = (view['displayId'] as num).toInt();
+              break;
+            }
+          }
+          if (target != null) break;
+        }
+        expect(target, isNotNull, reason: '必须找到独立 AppKit 进程的真实双二维码窗口');
+        final frame = desktop.lastCapture!.displays
+            .firstWhere((d) => d.id == id)
+            .frame;
+        final content = Rect.fromLTWH(
+          (target!['x'] as num).toDouble(),
+          (target['y'] as num).toDouble() +
+              (target['height'] as num).toDouble() -
+              360,
+          640,
+          360,
+        );
+        final blank = Rect.fromLTWH(
+          content.left + 20,
+          content.top + 280,
+          600,
+          60,
+        );
+        for (final phase in ['down', 'drag', 'up']) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': id,
+            'x': phase == 'down' ? blank.left : blank.right,
+            'y': phase == 'down' ? blank.top : blank.bottom,
+            'phase': phase,
+            'warp': true,
+          });
+          await tester.pump();
+        }
+        await waitFor(
+          tester,
+          () =>
+              desktop.screenshotHosted &&
+              c.screenshotEditing &&
+              !c.imageLoading,
+        );
+        await tester.pumpAndSettle();
+        return (id: id!, frame: frame, content: content);
+      }
+
+      PixelRect pixels(PixelFrame frame, Rect rect) {
+        final tl = frame.logicalToBoundary(rect.left, rect.top);
+        final br = frame.logicalToBoundary(rect.right, rect.bottom);
+        return PixelRect(left: tl.x, top: tl.y, right: br.x, bottom: br.y);
+      }
+
+      final first = await begin();
+      final session = desktop.lastCapture!.id;
+      final left = pixels(
+        first.frame,
+        Rect.fromLTWH(
+          first.content.left + 20,
+          first.content.top + 40,
+          240,
+          220,
+        ),
+      );
+      final right = pixels(
+        first.frame,
+        Rect.fromLTWH(
+          first.content.left + 360,
+          first.content.top + 40,
+          240,
+          220,
+        ),
+      );
+      final both = pixels(
+        first.frame,
+        Rect.fromLTWH(
+          first.content.left + 20,
+          first.content.top + 40,
+          580,
+          220,
+        ),
+      );
+      expect(await desktop.recognizeQrCodes(session, first.id, left), [
+        'fruler:selected-left',
+      ]);
+      expect(await desktop.recognizeQrCodes(session, first.id, right), [
+        'fruler:outside-right',
+      ]);
+      expect(await desktop.recognizeQrCodes(session, first.id, both), [
+        'fruler:selected-left',
+        'fruler:outside-right',
+      ]);
+      await expectLater(
+        desktop.recognizeQrCodes(
+          session,
+          first.id,
+          const PixelRect(left: -1, top: 0, right: 100, bottom: 100),
+        ),
+        throwsA(isA<PlatformException>()),
+      );
+      await expectLater(
+        desktop.recognizeQrCodes(session, -1, left),
+        throwsA(isA<PlatformException>()),
+      );
+      await Clipboard.setData(
+        const ClipboardData(text: 'fruler:keep-clipboard'),
+      );
+      await click(tester, find.byKey(const ValueKey('recognize-qr-code')));
+      await waitFor(tester, () => !c.qrCodeBusy);
+      expect(c.screenshotEditing, true, reason: '空白选区必须保留浮层供调整');
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:keep-clipboard',
+      );
+      expect(c.error, isNotNull);
+      await c.adjustScreenshotSelection(left);
+      await tester.pumpAndSettle();
+      await click(tester, find.byKey(const ValueKey('recognize-qr-code')));
+      await waitFor(tester, () => !c.busy);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:selected-left',
+      );
+      final finished = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      expect(finished['panels'], 0);
+      expect(finished['mainVisible'], false);
+      await expectLater(
+        desktop.recognizeQrCodes(session, first.id, left),
+        throwsA(isA<PlatformException>()),
+      );
+
+      final second = await begin();
+      await c.adjustScreenshotSelection(
+        pixels(
+          second.frame,
+          Rect.fromLTWH(
+            second.content.left + 20,
+            second.content.top + 40,
+            580,
+            220,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await desktop.writeClipboard('fruler:before-multiple');
+      await click(tester, find.byKey(const ValueKey('recognize-qr-code')));
+      await waitFor(tester, () => !c.qrCodeBusy);
+      expect(c.qrCodeResults, ['fruler:selected-left', 'fruler:outside-right']);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:before-multiple',
+        reason: '多个结果不能自动挑一个覆盖剪贴板',
+      );
+      expect(c.screenshotEditing, true);
+      await click(tester, find.byKey(const ValueKey('qr-result-1')));
+      await waitFor(tester, () => !c.busy);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:outside-right',
+      );
+      final finalStatus = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      expect(finalStatus['panels'], 0);
+      expect(finalStatus['mainVisible'], false);
+      expect(desktop.captureCount, 2, reason: '二维码识别与调整选区应复用每次冻结快照');
+      expect(tester.takeException(), isNull);
+    } finally {
+      await c.cancelScreenshot();
+      c.dispose();
+      await driver.invokeMethod<void>('qrFixture', {'action': 'hide'});
+      await driver.invokeMethod<void>('restoreClipboard');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('native system font families render distinct exported text', (
     tester,
   ) async {
