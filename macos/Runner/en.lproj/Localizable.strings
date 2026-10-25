@@ -119,3 +119,24 @@
 "tool.picker" = "Color Picker";
 "tool.ruler" = "Screen Ruler";
 "tool.screenshot" = "Screenshot";
+
+"pin.clipboard" = "Pin clipboard";
+"pin.toggle" = "Show / hide all pins";
+"pin.close_all" = "Destroy all pins";
+"pin.copy" = "Copy image (⌘C)";
+"pin.save" = "Save PNG… (⌘S)";
+"pin.actual_size" = "Actual size (0)";
+"pin.fit_screen" = "Fit to screen (9)";
+"pin.rotate_left" = "Rotate counterclockwise (2)";
+"pin.rotate_right" = "Rotate clockwise (1)";
+"pin.flip_horizontal" = "Flip horizontally (3)";
+"pin.flip_vertical" = "Flip vertically (4)";
+"pin.opacity" = "Opacity";
+"pin.click_through" = "Ignore mouse input";
+"pin.hide" = "Hide (Esc / double click)";
+"pin.close" = "Destroy (Shift+Esc)";
+"pin.hint" = "Drag to move · Scroll to zoom · ⌘scroll for opacity · Right click for actions";
+"pin.error_image" = "This image cannot be pinned.";
+"pin.error_clipboard" = "The clipboard has no image, text or HEX color to pin.";
+"pin.error_export" = "The pinned image could not be exported.";
+"pin.error_limit" = "Too many or oversized pinned images. Destroy unused pins and try again.";

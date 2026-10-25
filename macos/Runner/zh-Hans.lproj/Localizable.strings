@@ -119,3 +119,24 @@
 "tool.picker" = "取色器";
 "tool.ruler" = "尺子";
 "tool.screenshot" = "截图";
+
+"pin.clipboard" = "剪贴板贴图";
+"pin.toggle" = "显示／隐藏全部贴图";
+"pin.close_all" = "销毁全部贴图";
+"pin.copy" = "复制图片（⌘C）";
+"pin.save" = "保存 PNG…（⌘S）";
+"pin.actual_size" = "原始大小（0）";
+"pin.fit_screen" = "适应屏幕（9）";
+"pin.rotate_left" = "逆时针旋转（2）";
+"pin.rotate_right" = "顺时针旋转（1）";
+"pin.flip_horizontal" = "水平翻转（3）";
+"pin.flip_vertical" = "垂直翻转（4）";
+"pin.opacity" = "不透明度";
+"pin.click_through" = "鼠标穿透";
+"pin.hide" = "隐藏（Esc／双击）";
+"pin.close" = "销毁（Shift+Esc）";
+"pin.hint" = "拖动移动 · 滚轮缩放 · ⌘滚轮调透明度 · 右键更多操作";
+"pin.error_image" = "无法贴出这张图片。";
+"pin.error_clipboard" = "剪贴板中没有可贴出的图片、文字或 HEX 颜色。";
+"pin.error_export" = "无法导出贴图。";
+"pin.error_limit" = "贴图数量或大小超过上限，请销毁不再需要的贴图后重试。";
