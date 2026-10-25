@@ -34,6 +34,9 @@ enum EventKind {
   pointer,
   sampleColor,
   copyCaptureSize,
+  pinClipboard,
+  togglePinnedImages,
+  closePinnedImages,
 }
 
 enum InputPhase { move, down, drag, up, start, update, end }
@@ -115,10 +118,14 @@ class NativeBindings {
     required this.picker,
     required this.ruler,
     required this.screenshot,
+    required this.pinClipboard,
+    required this.togglePins,
   });
   NativeChord picker;
   NativeChord ruler;
   NativeChord screenshot;
+  NativeChord pinClipboard;
+  NativeChord togglePins;
 }
 
 class MeasurementPin {
@@ -279,6 +286,14 @@ abstract class DesktopHostApi {
   void replyToQuit(bool allow);
   @async
   bool exportImage(Uint8List png, bool save);
+  @async
+  void pinImage(Uint8List png, int? sessionId, int? displayId, PixelBounds? rect);
+  @async
+  void pinClipboard();
+  @async
+  void togglePinnedImages();
+  @async
+  void closePinnedImages();
   @async
   bool saveTextFile(String filename, String text);
   @async

@@ -527,7 +527,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get msgShortcutInvalid => '快捷键需要字母或数字、至少一个主修饰键，且各工具不能重复。';
+  String get msgShortcutInvalid => '快捷键需要未被保留的字母或数字、至少一个主修饰键，且各操作不能重复。';
 
   @override
   String get msgShortcutRegistrationFailed => '快捷键注册失败，已保留原配置。';
@@ -712,7 +712,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get validationShortcutBindings => '快捷键配置无效';
 
   @override
-  String get validationShortcutDuplicates => '各工具的快捷键不能重复';
+  String get validationShortcutDuplicates => '各操作的快捷键不能重复';
 
   @override
   String validationOutputPlaceholder(String token) {
@@ -746,7 +746,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiRulerDescription => '在屏幕上测量像素和逻辑尺寸，设置默认模式与边界识别容差。';
 
   @override
-  String get uiScreenshotDescription => '在同一个全屏浮层框选、标注并复制或保存截图。';
+  String get uiScreenshotDescription => '在同一个全屏浮层框选、标注并复制、保存或贴出截图。';
 
   @override
   String get uiPickerOptions => '取色选项';
@@ -776,7 +776,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiScreenshotAnnotate => '在原位添加形状、画笔、文字或模糊，选区可继续调整。';
 
   @override
-  String get uiScreenshotFinish => '复制或保存成功后返回原应用；取消保存会继续标注。';
+  String get uiScreenshotFinish => '复制、保存或贴图成功后返回原应用；取消保存会继续标注。';
 
   @override
   String get uiScreenshotHistoryStorage =>
@@ -865,4 +865,29 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get uiDeleteColorFormat => '删除格式';
+
+  @override
+  String get uiPinScreenshot => '贴到屏幕（⌘T）';
+
+  @override
+  String get uiPinClipboard => '剪贴板贴图';
+
+  @override
+  String get uiTogglePins => '显示／隐藏全部贴图';
+
+  @override
+  String get uiClosePins => '销毁全部贴图';
+
+  @override
+  String get uiPinnedImages => '贴图';
+
+  @override
+  String get uiPinHistory => '贴出这张截图';
+
+  @override
+  String get uiPinDescription =>
+      '将截图、剪贴板图片、文字或 HEX 颜色贴在其他窗口上方。拖动移动，滚轮缩放，⌘滚轮调透明度；1／2 旋转，3／4 翻转，中键重置。Esc 或双击隐藏，Shift+Esc 销毁；隐藏的贴图可一起恢复。贴图仅保留到退出应用。';
+
+  @override
+  String get msgImagePinned => '已贴到屏幕';
 }

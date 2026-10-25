@@ -117,6 +117,10 @@ class _GeneralSettingsPage extends StatelessWidget {
             _editableShortcut(context, false),
             const SizedBox(height: 10),
             _editableShortcut(context, false, screenshot: true),
+            const SizedBox(height: 10),
+            _editableShortcut(context, false, pinClipboard: true),
+            const SizedBox(height: 10),
+            _editableShortcut(context, false, togglePins: true),
             const SizedBox(height: 15),
             _shortcut(context.l10n.uiCancelTool, context.l10n.uiCancelToolKeys),
             if (!controller.shortcutsAvailable)
@@ -188,10 +192,16 @@ class _GeneralSettingsPage extends StatelessWidget {
     BuildContext context,
     bool picker, {
     bool screenshot = false,
+    bool pinClipboard = false,
+    bool togglePins = false,
   }) => Row(
     children: [
       Text(
-        screenshot
+        pinClipboard
+            ? context.l10n.uiPinClipboard
+            : togglePins
+            ? context.l10n.uiTogglePins
+            : screenshot
             ? context.l10n.uiScreenshotAndAnnotate
             : picker
             ? context.l10n.uiColorPicker
@@ -206,9 +216,19 @@ class _GeneralSettingsPage extends StatelessWidget {
                 controller.savingShortcuts ||
                 controller.recordingShortcut
             ? null
-            : () => _recordShortcut(context, picker, screenshot: screenshot),
+            : () => _recordShortcut(
+                context,
+                picker,
+                screenshot: screenshot,
+                pinClipboard: pinClipboard,
+                togglePins: togglePins,
+              ),
         child: Text(
-          (screenshot
+          (pinClipboard
+                  ? controller.shortcuts.pinClipboard
+                  : togglePins
+                  ? controller.shortcuts.togglePins
+                  : screenshot
                   ? controller.shortcuts.screenshot
                   : picker
                   ? controller.shortcuts.picker
@@ -223,6 +243,8 @@ class _GeneralSettingsPage extends StatelessWidget {
     BuildContext context,
     bool picker, {
     bool screenshot = false,
+    bool pinClipboard = false,
+    bool togglePins = false,
   }) async {
     if (!await controller.beginShortcutRecording()) return;
     ShortcutChord? chord;
@@ -231,7 +253,11 @@ class _GeneralSettingsPage extends StatelessWidget {
         chord = await showDialog<ShortcutChord>(
           context: context,
           builder: (_) => _ShortcutDialog(
-            tool: screenshot
+            tool: pinClipboard
+                ? context.l10n.uiPinClipboard
+                : togglePins
+                ? context.l10n.uiTogglePins
+                : screenshot
                 ? context.l10n.uiScreenshotAndAnnotate
                 : picker
                 ? context.l10n.uiColorPicker
@@ -244,7 +270,13 @@ class _GeneralSettingsPage extends StatelessWidget {
       await controller.endShortcutRecording();
     }
     if (chord != null) {
-      await controller.setShortcut(picker, chord, screenshot: screenshot);
+      await controller.setShortcut(
+        picker,
+        chord,
+        screenshot: screenshot,
+        pinClipboard: pinClipboard,
+        togglePins: togglePins,
+      );
     }
   }
 
@@ -525,6 +557,45 @@ class _ScreenshotOptionsPage extends StatelessWidget {
             _Hint(
               icon: Icons.copy_outlined,
               text: context.l10n.uiScreenshotFinish,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 24),
+      _SettingsCard(
+        title: context.l10n.uiPinnedImages,
+        icon: Icons.push_pin_outlined,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.uiPinDescription,
+              style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  key: const ValueKey('pin-clipboard'),
+                  onPressed: controller.pinningImage
+                      ? null
+                      : controller.pinClipboard,
+                  icon: const Icon(Icons.push_pin_outlined, size: 16),
+                  label: Text(context.l10n.uiPinClipboard),
+                ),
+                OutlinedButton(
+                  key: const ValueKey('toggle-pins'),
+                  onPressed: controller.togglePinnedImages,
+                  child: Text(context.l10n.uiTogglePins),
+                ),
+                TextButton(
+                  key: const ValueKey('close-pins'),
+                  onPressed: controller.closePinnedImages,
+                  child: Text(context.l10n.uiClosePins),
+                ),
+              ],
             ),
           ],
         ),

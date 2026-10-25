@@ -212,6 +212,9 @@ enum EventKind: Int {
   case pointer = 21
   case sampleColor = 22
   case copyCaptureSize = 23
+  case pinClipboard = 24
+  case togglePinnedImages = 25
+  case closePinnedImages = 26
 }
 
 enum InputPhase: Int {
@@ -516,6 +519,8 @@ struct NativeBindings: Hashable {
   var picker: NativeChord
   var ruler: NativeChord
   var screenshot: NativeChord
+  var pinClipboard: NativeChord
+  var togglePins: NativeChord
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -523,11 +528,15 @@ struct NativeBindings: Hashable {
     let picker = pigeonVar_list[0] as! NativeChord
     let ruler = pigeonVar_list[1] as! NativeChord
     let screenshot = pigeonVar_list[2] as! NativeChord
+    let pinClipboard = pigeonVar_list[3] as! NativeChord
+    let togglePins = pigeonVar_list[4] as! NativeChord
 
     return NativeBindings(
       picker: picker,
       ruler: ruler,
-      screenshot: screenshot
+      screenshot: screenshot,
+      pinClipboard: pinClipboard,
+      togglePins: togglePins
     )
   }
   func toList() -> [Any?] {
@@ -535,13 +544,15 @@ struct NativeBindings: Hashable {
       picker,
       ruler,
       screenshot,
+      pinClipboard,
+      togglePins,
     ]
   }
   static func == (lhs: NativeBindings, rhs: NativeBindings) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return deepEqualsDesktop(lhs.picker, rhs.picker) && deepEqualsDesktop(lhs.ruler, rhs.ruler) && deepEqualsDesktop(lhs.screenshot, rhs.screenshot)
+    return deepEqualsDesktop(lhs.picker, rhs.picker) && deepEqualsDesktop(lhs.ruler, rhs.ruler) && deepEqualsDesktop(lhs.screenshot, rhs.screenshot) && deepEqualsDesktop(lhs.pinClipboard, rhs.pinClipboard) && deepEqualsDesktop(lhs.togglePins, rhs.togglePins)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -549,6 +560,8 @@ struct NativeBindings: Hashable {
     deepHashDesktop(value: picker, hasher: &hasher)
     deepHashDesktop(value: ruler, hasher: &hasher)
     deepHashDesktop(value: screenshot, hasher: &hasher)
+    deepHashDesktop(value: pinClipboard, hasher: &hasher)
+    deepHashDesktop(value: togglePins, hasher: &hasher)
   }
 }
 
@@ -1053,6 +1066,10 @@ protocol DesktopHostApi {
   func openPaletteFile(completion: @escaping (Result<String?, Error>) -> Void)
   func replyToQuit(allow: Bool, completion: @escaping (Result<Void, Error>) -> Void)
   func exportImage(png: FlutterStandardTypedData, save: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
+  func pinImage(png: FlutterStandardTypedData, sessionId: Int64?, displayId: Int64?, rect: PixelBounds?, completion: @escaping (Result<Void, Error>) -> Void)
+  func pinClipboard(completion: @escaping (Result<Void, Error>) -> Void)
+  func togglePinnedImages(completion: @escaping (Result<Void, Error>) -> Void)
+  func closePinnedImages(completion: @escaping (Result<Void, Error>) -> Void)
   func saveTextFile(filename: String, text: String, completion: @escaping (Result<Bool, Error>) -> Void)
   func exportAnnotations(sessionId: Int64, displayId: Int64, annotations: [MeasurementPin], save: Bool, completion: @escaping (Result<Bool, Error>) -> Void)
   func configureShortcuts(bindings: NativeBindings, completion: @escaping (Result<Bool, Error>) -> Void)
@@ -1341,6 +1358,71 @@ class DesktopHostApiSetup {
       }
     } else {
       exportImageChannel.setMessageHandler(nil)
+    }
+    let pinImageChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.pinImage\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      pinImageChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let pngArg = args[0] as! FlutterStandardTypedData
+        let sessionIdArg: Int64? = nilOrValue(args[1])
+        let displayIdArg: Int64? = nilOrValue(args[2])
+        let rectArg: PixelBounds? = nilOrValue(args[3])
+        api.pinImage(png: pngArg, sessionId: sessionIdArg, displayId: displayIdArg, rect: rectArg) { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      pinImageChannel.setMessageHandler(nil)
+    }
+    let pinClipboardChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.pinClipboard\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      pinClipboardChannel.setMessageHandler { _, reply in
+        api.pinClipboard { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      pinClipboardChannel.setMessageHandler(nil)
+    }
+    let togglePinnedImagesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.togglePinnedImages\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      togglePinnedImagesChannel.setMessageHandler { _, reply in
+        api.togglePinnedImages { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      togglePinnedImagesChannel.setMessageHandler(nil)
+    }
+    let closePinnedImagesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.closePinnedImages\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      closePinnedImagesChannel.setMessageHandler { _, reply in
+        api.closePinnedImages { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      closePinnedImagesChannel.setMessageHandler(nil)
     }
     let saveTextFileChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.saveTextFile\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

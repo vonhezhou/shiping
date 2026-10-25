@@ -27,6 +27,43 @@ void main() {
     await MacDesktopService().configureLocale('en');
   });
 
+  test('贴图协议携带会话与像素选区，历史入口保留空定位', () async {
+    final channel = BasicMessageChannel<Object?>(
+      'dev.flutter.pigeon.fruler.DesktopHostApi.pinImage',
+      wire.DesktopHostApi.pigeonChannelCodec,
+    );
+    addTearDown(
+      () => messenger.setMockDecodedMessageHandler<Object?>(channel, null),
+    );
+    final png = Uint8List.fromList([137, 80, 78, 71]);
+    var calls = 0;
+    messenger.setMockDecodedMessageHandler<Object?>(channel, (message) async {
+      final args = message as List;
+      expect(args[0], png);
+      if (calls++ == 0) {
+        expect(args[1], 7);
+        expect(args[2], 9);
+        final bounds = args[3] as wire.PixelBounds;
+        expect(
+          [bounds.left, bounds.top, bounds.right, bounds.bottom],
+          [20, 40, 320, 240],
+        );
+      } else {
+        expect(args.skip(1), everyElement(isNull));
+      }
+      return [null];
+    });
+    final desktop = MacDesktopService();
+    await desktop.pinImage(
+      png,
+      sessionId: 7,
+      displayId: 9,
+      rect: const PixelRect(left: 20, top: 40, right: 320, bottom: 240),
+    );
+    await desktop.pinImage(png);
+    expect(calls, 2);
+  });
+
   test('原生日志按类型转入统一日志，不进入工具事件流', () async {
     final previousLevel = Logger.root.level;
     Logger.root.level = Level.ALL;

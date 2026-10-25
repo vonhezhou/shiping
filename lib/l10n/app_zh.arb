@@ -263,7 +263,7 @@
       }
     }
   },
-  "msgShortcutInvalid": "快捷键需要字母或数字、至少一个主修饰键，且各工具不能重复。",
+  "msgShortcutInvalid": "快捷键需要未被保留的字母或数字、至少一个主修饰键，且各操作不能重复。",
   "msgShortcutRegistrationFailed": "快捷键注册失败，已保留原配置。",
   "msgShortcutsUpdated": "快捷键已更新",
   "msgColorsExported": "颜色已导出",
@@ -372,7 +372,7 @@
   "validationImageExport": "图片导出失败",
   "validationShortcut": "快捷键无效",
   "validationShortcutBindings": "快捷键配置无效",
-  "validationShortcutDuplicates": "各工具的快捷键不能重复",
+  "validationShortcutDuplicates": "各操作的快捷键不能重复",
   "validationOutputPlaceholder": "未知占位符：%{token}",
   "@validationOutputPlaceholder": {
     "placeholders": {
@@ -396,7 +396,7 @@
   "uiScreenshot": "截图",
   "uiPickerDescription": "在屏幕上取色并立即复制，按你的习惯设置复制格式与放大镜。",
   "uiRulerDescription": "在屏幕上测量像素和逻辑尺寸，设置默认模式与边界识别容差。",
-  "uiScreenshotDescription": "在同一个全屏浮层框选、标注并复制或保存截图。",
+  "uiScreenshotDescription": "在同一个全屏浮层框选、标注并复制、保存或贴出截图。",
   "uiPickerOptions": "取色选项",
   "uiMagnification": "放大倍率",
   "uiMagnificationDescription": "使用工具时也可通过滚轮调整，支持 4×–32×。",
@@ -406,7 +406,7 @@
   "uiScreenshotWorkflow": "截图与标注",
   "uiScreenshotSelect": "框选屏幕区域，可单击吸附窗口或拖动框选。",
   "uiScreenshotAnnotate": "在原位添加形状、画笔、文字或模糊，选区可继续调整。",
-  "uiScreenshotFinish": "复制或保存成功后返回原应用；取消保存会继续标注。",
+  "uiScreenshotFinish": "复制、保存或贴图成功后返回原应用；取消保存会继续标注。",
   "uiScreenshotHistoryStorage": "仅保留本次运行最近 12 张截图，总计不超过 64 MiB；退出应用后释放。",
   "uiColorHistoryStorage": "最近颜色保存在本机，按配置的上限保留，点击即可再次复制。",
   "uiAboutTitle": "关于",
@@ -433,5 +433,13 @@
   "uiMoveUp": "上移",
   "uiMoveDown": "下移",
   "uiFormatActions": "格式操作",
-  "uiDeleteColorFormat": "删除格式"
+  "uiDeleteColorFormat": "删除格式",
+  "uiPinScreenshot": "贴到屏幕（⌘T）",
+  "uiPinClipboard": "剪贴板贴图",
+  "uiTogglePins": "显示／隐藏全部贴图",
+  "uiClosePins": "销毁全部贴图",
+  "uiPinnedImages": "贴图",
+  "uiPinHistory": "贴出这张截图",
+  "uiPinDescription": "将截图、剪贴板图片、文字或 HEX 颜色贴在其他窗口上方。拖动移动，滚轮缩放，⌘滚轮调透明度；1／2 旋转，3／4 翻转，中键重置。Esc 或双击隐藏，Shift+Esc 销毁；隐藏的贴图可一起恢复。贴图仅保留到退出应用。",
+  "msgImagePinned": "已贴到屏幕"
 }

@@ -568,7 +568,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get msgShortcutInvalid =>
-      'Use a letter or digit with at least one main modifier. Each tool must have a different shortcut.';
+      'Use an unreserved letter or digit with at least one main modifier. Each action must have a different shortcut.';
 
   @override
   String get msgShortcutRegistrationFailed =>
@@ -795,7 +795,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get validationShortcutDuplicates =>
-      'Each tool must have a different shortcut';
+      'Each action must have a different shortcut';
 
   @override
   String validationOutputPlaceholder(String token) {
@@ -833,7 +833,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiScreenshotDescription =>
-      'Select, annotate, and copy or save in one full-screen overlay.';
+      'Select, annotate, and copy, save or pin in one full-screen overlay.';
 
   @override
   String get uiPickerOptions => 'Color picker options';
@@ -868,7 +868,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiScreenshotFinish =>
-      'Return to your previous app after copying or saving. Canceling a save keeps annotation open.';
+      'Return to your previous app after copying, saving or pinning. Canceling a save keeps annotation open.';
 
   @override
   String get uiScreenshotHistoryStorage =>
@@ -968,4 +968,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get uiDeleteColorFormat => 'Delete format';
+
+  @override
+  String get uiPinScreenshot => 'Pin to screen (⌘T)';
+
+  @override
+  String get uiPinClipboard => 'Pin clipboard';
+
+  @override
+  String get uiTogglePins => 'Show / hide all pins';
+
+  @override
+  String get uiClosePins => 'Destroy all pins';
+
+  @override
+  String get uiPinnedImages => 'Pinned images';
+
+  @override
+  String get uiPinHistory => 'Pin this screenshot';
+
+  @override
+  String get uiPinDescription =>
+      'Pin a screenshot, clipboard image, text or HEX color above other windows. Drag to move, scroll to zoom, ⌘scroll for opacity. 1/2 rotate, 3/4 flip, middle click resets. Esc or double click hides; Shift+Esc destroys. Hidden pins can be restored together. Pins stay in memory until you quit.';
+
+  @override
+  String get msgImagePinned => 'Image pinned to screen';
 }

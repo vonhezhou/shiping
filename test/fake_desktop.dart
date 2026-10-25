@@ -61,6 +61,41 @@ class FakeDesktop extends DesktopService {
     return fileResult;
   }
 
+  Uint8List? pinnedImage;
+  PixelRect? pinBounds;
+  int? pinSession, pinDisplay;
+  Object? pinError;
+  int pinClipboardCalls = 0, togglePinCalls = 0, closePinCalls = 0;
+  @override
+  Future<void> pinImage(
+    Uint8List png, {
+    int? sessionId,
+    int? displayId,
+    PixelRect? rect,
+  }) async {
+    if (pinError != null) throw pinError!;
+    pinnedImage = png;
+    pinSession = sessionId;
+    pinDisplay = displayId;
+    pinBounds = rect;
+  }
+
+  @override
+  Future<void> pinClipboard() async {
+    if (pinError != null) throw pinError!;
+    pinClipboardCalls++;
+  }
+
+  @override
+  Future<void> togglePinnedImages() async {
+    togglePinCalls++;
+  }
+
+  @override
+  Future<void> closePinnedImages() async {
+    closePinCalls++;
+  }
+
   String? importText;
   @override
   Future<String?> openPaletteFile() async => importText;

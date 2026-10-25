@@ -141,6 +141,9 @@ enum EventKind {
   pointer,
   sampleColor,
   copyCaptureSize,
+  pinClipboard,
+  togglePinnedImages,
+  closePinnedImages,
 }
 
 enum InputPhase {
@@ -499,6 +502,8 @@ class NativeBindings {
     required this.picker,
     required this.ruler,
     required this.screenshot,
+    required this.pinClipboard,
+    required this.togglePins,
   });
 
   NativeChord picker;
@@ -507,11 +512,17 @@ class NativeBindings {
 
   NativeChord screenshot;
 
+  NativeChord pinClipboard;
+
+  NativeChord togglePins;
+
   List<Object?> _toList() {
     return <Object?>[
       picker,
       ruler,
       screenshot,
+      pinClipboard,
+      togglePins,
     ];
   }
 
@@ -524,6 +535,8 @@ class NativeBindings {
       picker: result[0]! as NativeChord,
       ruler: result[1]! as NativeChord,
       screenshot: result[2]! as NativeChord,
+      pinClipboard: result[3]! as NativeChord,
+      togglePins: result[4]! as NativeChord,
     );
   }
 
@@ -536,7 +549,7 @@ class NativeBindings {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(picker, other.picker) && _deepEquals(ruler, other.ruler) && _deepEquals(screenshot, other.screenshot);
+    return _deepEquals(picker, other.picker) && _deepEquals(ruler, other.ruler) && _deepEquals(screenshot, other.screenshot) && _deepEquals(pinClipboard, other.pinClipboard) && _deepEquals(togglePins, other.togglePins);
   }
 
   @override
@@ -1365,6 +1378,78 @@ class DesktopHostApi {
     )
     ;
     return pigeonVar_replyValue! as bool;
+  }
+
+  Future<void> pinImage(Uint8List png, int? sessionId, int? displayId, PixelBounds? rect) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.pinImage$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[png, sessionId, displayId, rect]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> pinClipboard() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.pinClipboard$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> togglePinnedImages() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.togglePinnedImages$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
+  }
+
+  Future<void> closePinnedImages() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.closePinnedImages$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: true,
+    )
+    ;
   }
 
   Future<bool> saveTextFile(String filename, String text) async {

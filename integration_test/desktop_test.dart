@@ -202,6 +202,34 @@ Future<void> chooseAnnotationTool(
   await click(tester, button);
 }
 
+Future<List<Map<String, Object?>>> nativePinnedImages() async {
+  final items = await driver.invokeListMethod<Object?>('pinState');
+  return [for (final item in items!) Map<String, Object?>.from(item as Map)];
+}
+
+Future<({int width, int height, Uint8List pixels})> pngPixels(
+  Uint8List png,
+) async {
+  final codec = await ui.instantiateImageCodec(png);
+  try {
+    final image = (await codec.getNextFrame()).image;
+    try {
+      final raw = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      return (
+        width: image.width,
+        height: image.height,
+        pixels: Uint8List.fromList(
+          raw.buffer.asUint8List(raw.offsetInBytes, raw.lengthInBytes),
+        ),
+      );
+    } finally {
+      image.dispose();
+    }
+  } finally {
+    codec.dispose();
+  }
+}
+
 // A separate isolate makes external-data finalization deterministic at shutdown.
 void pixelReaderIsolate(List<Object> args) async {
   final parent = args[0] as SendPort;
@@ -996,8 +1024,14 @@ void main() {
         '取色器',
         '尺子',
       ]);
-      expect(menu.where((i) => i['separator'] == true), hasLength(2));
+      expect(menu.where((i) => i['separator'] == true), hasLength(3));
       expect(menu.take(3).every((i) => i['hasImage'] == true), true);
+      expect(menu.skip(4).take(3).map((i) => i['title']), [
+        '剪贴板贴图',
+        '显示／隐藏全部贴图',
+        '销毁全部贴图',
+      ]);
+      expect(menu.skip(4).take(3).every((i) => i['hasImage'] == true), true);
       final nativeShortcutsAvailable = (await d.initialize()).shortcuts;
       final chords = [
         c.shortcuts.screenshot,
@@ -2401,6 +2435,460 @@ void main() {
       }
     },
   );
+  testWidgets('贴图状态栏入口无需录屏权限且不启动截图', (tester) async {
+    final desktop = NativeDesktop();
+    final c = AppController(desktop);
+    await c.initialize();
+    await tester.pumpWidget(FrulerApp(controller: c));
+    await tester.pumpAndSettle();
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      await desktop.closePinnedImages();
+      // 权限状态不应阻断这三个入口；该用例从不申请或使用录屏。
+      c.permissionGranted = false;
+      await driver.invokeMethod<void>('pinClipboardFixture', {'kind': 'text'});
+      Future<void> clickPinMenu(String name) async {
+        expect(
+          await driver.invokeMethod<bool>('clickMenu', {'name': name}),
+          true,
+        );
+        await tester.pumpAndSettle();
+        expect(c.error, isNull);
+      }
+
+      await clickPinMenu('pinClipboard');
+      expect(await nativePinnedImages(), hasLength(1));
+      expect((await nativePinnedImages()).single['visible'], true);
+      await clickPinMenu('togglePinnedImages');
+      expect((await nativePinnedImages()).single['visible'], false);
+      await clickPinMenu('togglePinnedImages');
+      expect((await nativePinnedImages()).single['visible'], true);
+      await clickPinMenu('closePinnedImages');
+      expect(await nativePinnedImages(), isEmpty);
+      expect(desktop.captureCount, 0);
+      expect(c.busy, false);
+    } finally {
+      await desktop.closePinnedImages();
+      await driver.invokeMethod<void>('restoreClipboard');
+      c.dispose();
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+  testWidgets('原生协议接受全部五组默认快捷键并恢复原配置', (tester) async {
+    final desktop = MacDesktopService();
+    final controller = AppController(NativeDesktop());
+    await controller.initialize();
+    final original = controller.shortcuts;
+    try {
+      // 暂停注册，只经过真实 Swift 校验，不抢占交互应用的全局快捷键。
+      expect(await desktop.setShortcutRecording(true), true);
+      expect(await desktop.configureShortcuts(ShortcutBindings.defaults), true);
+    } finally {
+      await desktop.configureShortcuts(original);
+      await desktop.setShortcutRecording(false);
+      controller.dispose();
+    }
+  });
+  testWidgets(
+    'real screenshot pins annotated pixels in a separate floating window',
+    (tester) async {
+      final desktop = NativeDesktop();
+      final c = AppController(desktop);
+      await c.initialize();
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await tester.pumpAndSettle();
+      await driver.invokeMethod<void>('backupClipboard');
+      try {
+        await desktop.closePinnedImages();
+        await Clipboard.setData(
+          const ClipboardData(
+            text: 'fruler screenshot pin preserves clipboard',
+          ),
+        );
+        expect(
+          c.permissionGranted,
+          true,
+          reason: 'Real screen-recording permission is required',
+        );
+        await c.startScreenshot();
+        final display = desktop.lastCapture!.displays.first;
+        for (final event in [
+          {'phase': 'down', 'x': 40.0, 'y': 180.0},
+          {'phase': 'drag', 'x': 300.0, 'y': 340.0},
+          {'phase': 'up', 'x': 300.0, 'y': 340.0},
+        ]) {
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': display.id,
+            ...event,
+          });
+          await tester.pump();
+        }
+        await waitFor(
+          tester,
+          () =>
+              desktop.screenshotHosted &&
+              c.screenshotEditing &&
+              !c.imageLoading,
+        );
+        await tester.pumpAndSettle();
+        final captureStatus = await driver.invokeMapMethod<String, Object?>(
+          'status',
+        );
+        final selection = c.screenshotSelection!;
+        final document = c.imageDocument!;
+        await chooseAnnotationTool(tester, AnnotationKind.rectangle);
+        final canvas = tester.getRect(
+          find.byKey(const ValueKey('annotation-canvas')),
+        );
+        await mouseDrag(
+          tester,
+          canvas.topLeft + const Offset(35, 35),
+          const Offset(90, 55),
+        );
+        expect(c.markup.items, hasLength(1));
+        final expectedPng = await AnnotationRenderer.export(
+          document.frame,
+          List.of(c.markup.items),
+          loadImage: c.imageCodec.sourceImage,
+        );
+        // 通过真实 Cocoa 快捷键提交贴图，不用假平台或直接改控制器状态。
+        await driver.invokeMethod<void>('key', {
+          'keyCode': 17,
+          'command': true,
+        });
+        await waitFor(tester, () => !c.busy);
+        final pins = await nativePinnedImages();
+        expect(pins, hasLength(1));
+        final pin = pins.single;
+        expect(pin['visible'], true);
+        expect(pin['level'] as num, greaterThan(0));
+        expect(pin['windowNumber'], isNot(captureStatus?['windowNumber']));
+        expect(pin['pixelWidth'], selection.width);
+        expect(pin['pixelHeight'], selection.height);
+        expect(
+          pin['width'] as num,
+          closeTo(selection.width / display.frame.scaleX, .01),
+        );
+        expect(
+          pin['height'] as num,
+          closeTo(selection.height / display.frame.scaleY, .01),
+        );
+        final done = await driver.invokeMapMethod<String, Object?>('status');
+        expect(done?['panels'], 0);
+        expect(done?['editing'], false);
+        expect(done?['mainVisible'], false);
+        expect(c.imageDocument, isNull);
+        expect(c.screenshots, hasLength(1));
+        expect(c.screenshots.single, orderedEquals(expectedPng));
+        expect(
+          await driver.invokeMethod<String>('clipboardText'),
+          'fruler screenshot pin preserves clipboard',
+        );
+        await driver.invokeMethod<void>('pinInput', {
+          'id': pin['id'],
+          'action': 'key',
+          'keyCode': 8,
+          'command': true,
+        });
+        final copiedPng = await driver.invokeMethod<Uint8List>('clipboardPng');
+        expect(copiedPng, isNotNull);
+        final copied = await pngPixels(copiedPng!);
+        final expected = await pngPixels(expectedPng);
+        expect(
+          (copied.width, copied.height),
+          (expected.width, expected.height),
+        );
+        expect(copied.pixels, orderedEquals(expected.pixels));
+        // 历史重新贴图不消耗已有窗口，也不打开主窗口或编辑工作区。
+        await c.pinScreenshotFromHistory(c.screenshots.single);
+        final restored = await nativePinnedImages();
+        expect(restored, hasLength(2));
+        expect(restored.every((item) => item['visible'] == true), true);
+        expect(restored.map((item) => item['id']).toSet(), hasLength(2));
+        expect(
+          (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))?['mainVisible'],
+          false,
+        );
+      } finally {
+        await c.cancelScreenshot();
+        await desktop.closePinnedImages();
+        await driver.invokeMethod<void>('restoreClipboard');
+        await desktop.showMainWindow();
+        c.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+  testWidgets(
+    'real clipboard pins support Cocoa input, visibility and destruction',
+    (tester) async {
+      final desktop = NativeDesktop();
+      await desktop.initialize();
+      await driver.invokeMethod<void>('backupClipboard');
+      Future<void> input(Map<String, Object?> args) async {
+        await driver.invokeMethod<void>('pinInput', args);
+        await tester.pump();
+      }
+
+      try {
+        await desktop.closePinnedImages();
+        await driver.invokeMethod<void>('pinClipboardFixture', {
+          'kind': 'image',
+        });
+        final fixturePng = await driver.invokeMethod<Uint8List>('clipboardPng');
+        expect(fixturePng, isNotNull);
+        final fixture = await pngPixels(fixturePng!);
+        await desktop.pinClipboard();
+        var pins = await nativePinnedImages();
+        expect(pins, hasLength(1));
+        final id = pins.single['id'];
+        final original = pins.single;
+        expect(original['visible'], true);
+        expect(original['pixelWidth'], fixture.width);
+        expect(original['pixelHeight'], fixture.height);
+        final anchorX =
+            (original['x'] as num) + (original['width'] as num) * .25;
+        final anchorY =
+            (original['y'] as num) + (original['height'] as num) * .75;
+        await input({
+          'id': id,
+          'action': 'scroll',
+          'delta': 1,
+          'x': (original['width'] as num).toDouble() * .25,
+          'y': (original['height'] as num).toDouble() * .75,
+        });
+        var pin = (await nativePinnedImages()).single;
+        expect(pin['scale'] as num, greaterThan(original['scale'] as num));
+        // AppKit 将真实窗口原点对齐到整逻辑点；精确数学换算另由原生单元测试覆盖。
+        expect(
+          (pin['x'] as num) + (pin['width'] as num) * .25,
+          closeTo(anchorX, 1),
+          reason: '缩放必须固定鼠标下的图像位置，不能因全局坐标误换算跳屏',
+        );
+        expect(
+          (pin['y'] as num) + (pin['height'] as num) * .75,
+          closeTo(anchorY, 1),
+        );
+        await input({
+          'id': id,
+          'action': 'scroll',
+          'delta': -1,
+          'command': true,
+        });
+        pin = (await nativePinnedImages()).single;
+        expect(pin['opacity'] as num, lessThan(1));
+        final beforeDrag = pin;
+        final dragX = (pin['width'] as num).toDouble() / 2;
+        final dragY = (pin['height'] as num).toDouble() / 2;
+        for (final event in [
+          {'phase': 'down', 'x': dragX, 'y': dragY},
+          {'phase': 'drag', 'x': dragX + 30, 'y': dragY + 20},
+          {'phase': 'up', 'x': dragX + 30, 'y': dragY + 20},
+        ]) {
+          await input({'id': id, 'action': 'mouse', ...event});
+        }
+        pin = (await nativePinnedImages()).single;
+        expect((pin['x'], pin['y']), isNot((beforeDrag['x'], beforeDrag['y'])));
+        await input({'id': id, 'action': 'key', 'keyCode': 18}); // 1
+        pin = (await nativePinnedImages()).single;
+        expect(pin['rotation'], 90);
+        expect(
+          (pin['pixelWidth'], pin['pixelHeight']),
+          (fixture.height, fixture.width),
+        );
+        await input({'id': id, 'action': 'key', 'keyCode': 20}); // 3
+        await input({'id': id, 'action': 'key', 'keyCode': 21}); // 4
+        pin = (await nativePinnedImages()).single;
+        expect(pin['flippedHorizontal'], true);
+        expect(pin['flippedVertical'], true);
+        await input({'id': id, 'action': 'key', 'keyCode': 19}); // 2
+        expect((await nativePinnedImages()).single['rotation'], 0);
+        await input({
+          'id': id,
+          'action': 'mouse',
+          'phase': 'down',
+          'button': 'middle',
+          'x': (pin['width'] as num).toDouble() / 2,
+          'y': (pin['height'] as num).toDouble() / 2,
+        });
+        pin = (await nativePinnedImages()).single;
+        expect(pin['scale'], 1);
+        expect(pin['opacity'], 1);
+        expect(pin['rotation'], 0);
+        expect(pin['flippedHorizontal'], false);
+        expect(pin['flippedVertical'], false);
+        await input({'id': id, 'action': 'key', 'keyCode': 8, 'command': true});
+        final copied = await pngPixels(
+          (await driver.invokeMethod<Uint8List>('clipboardPng'))!,
+        );
+        expect((copied.width, copied.height), (fixture.width, fixture.height));
+        expect(copied.pixels, orderedEquals(fixture.pixels));
+        expect(
+          await driver.invokeMethod<bool>('pinInput', {
+            'id': id,
+            'action': 'menu',
+            'name': 'save',
+            'cancelSave': true,
+          }),
+          false,
+        );
+        final afterCancelSave = (await nativePinnedImages()).single;
+        expect(afterCancelSave['visible'], true);
+        expect(afterCancelSave['pixelWidth'], fixture.width);
+        expect(afterCancelSave['pixelHeight'], fixture.height);
+        final beforeNudge = (await nativePinnedImages()).single['x'] as num;
+        await input({'id': id, 'action': 'key', 'keyCode': 124});
+        expect(
+          (await nativePinnedImages()).single['x'] as num,
+          greaterThan(beforeNudge),
+        );
+        for (final kind in ['text', 'color']) {
+          await driver.invokeMethod<void>('pinClipboardFixture', {
+            'kind': kind,
+          });
+          await desktop.pinClipboard();
+        }
+        pins = await nativePinnedImages();
+        expect(pins, hasLength(3));
+        expect(pins.every((item) => item['visible'] == true), true);
+        await desktop.togglePinnedImages();
+        expect(
+          (await nativePinnedImages()).every(
+            (item) => item['visible'] == false,
+          ),
+          true,
+        );
+        await desktop.togglePinnedImages();
+        expect(
+          (await nativePinnedImages()).every((item) => item['visible'] == true),
+          true,
+        );
+        await input({'id': id, 'action': 'key', 'keyCode': 53});
+        pins = await nativePinnedImages();
+        expect(pins, hasLength(3));
+        expect(pins.singleWhere((item) => item['id'] == id)['visible'], false);
+        await desktop.togglePinnedImages();
+        await desktop.togglePinnedImages();
+        expect(
+          (await nativePinnedImages()).singleWhere(
+            (item) => item['id'] == id,
+          )['visible'],
+          true,
+        );
+        await input({
+          'id': id,
+          'action': 'mouse',
+          'phase': 'down',
+          'x': (original['width'] as num).toDouble() / 2,
+          'y': (original['height'] as num).toDouble() / 2,
+          'clickCount': 2,
+        });
+        expect(
+          (await nativePinnedImages()).singleWhere(
+            (item) => item['id'] == id,
+          )['visible'],
+          false,
+        );
+        await desktop.togglePinnedImages();
+        await desktop.togglePinnedImages();
+        await input({'id': id, 'action': 'key', 'keyCode': 53, 'shift': true});
+        pins = await nativePinnedImages();
+        expect(pins, hasLength(2));
+        expect(pins.any((item) => item['id'] == id), false);
+        await driver.invokeMethod<void>('pinClipboardFixture', {
+          'kind': 'invalid',
+        });
+        await expectLater(
+          desktop.pinClipboard(),
+          throwsA(isA<PlatformException>()),
+        );
+        expect(await nativePinnedImages(), hasLength(2));
+      } finally {
+        await desktop.closePinnedImages();
+        await driver.invokeMethod<void>('restoreClipboard');
+        await desktop.showMainWindow();
+      }
+    },
+  );
+  testWidgets('冻结截图包含可见贴图并排除隐藏贴图', (tester) async {
+    final desktop = NativeDesktop();
+    final status = await desktop.initialize();
+    CaptureSession? active;
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      expect(
+        status.permission,
+        true,
+        reason: 'Real screen-recording permission is required',
+      );
+      await desktop.closePinnedImages();
+      await driver.invokeMethod<void>('raiseRegionFixture');
+      active = await desktop.begin('screenshot');
+      final display = active.displays.first;
+      // 独立夹具的内容区左上方，避开标题、按钮及鼠标指针。
+      final point = display.frame.logicalToPixel(200, 350);
+      final background = display.frame.pixelAt(point.x, point.y);
+      final color = RgbColor(
+        255 - background.r,
+        255 - background.g,
+        255 - background.b,
+      );
+      final bounds = PixelRect.fromPoints(
+        display.frame.logicalToBoundary(150, 300),
+        display.frame.logicalToBoundary(250, 400),
+      );
+      final frame = PixelFrame(
+        width: bounds.width,
+        height: bounds.height,
+        logicalWidth: bounds.width / display.frame.scaleX,
+        logicalHeight: bounds.height / display.frame.scaleY,
+        rgba: Uint8List.fromList([
+          for (var i = 0; i < bounds.width * bounds.height; i++) ...[
+            color.r,
+            color.g,
+            color.b,
+            255,
+          ],
+        ]),
+      );
+      final png = await AnnotationRenderer.export(frame, []);
+      await desktop.pinImage(
+        png,
+        sessionId: active.id,
+        displayId: display.id,
+        rect: bounds,
+      );
+      await desktop.finish(active.id);
+      active = null;
+      expect((await nativePinnedImages()).single['visible'], true);
+      active = await desktop.begin('screenshot');
+      final visible = active.displays
+          .singleWhere((d) => d.id == display.id)
+          .frame;
+      expect(
+        visible.pixelAt(point.x, point.y),
+        color,
+        reason: '屏幕上可见的贴图必须进入真实 ScreenCaptureKit 冻结快照',
+      );
+      await desktop.finish(active.id);
+      active = null;
+      await desktop.togglePinnedImages();
+      expect((await nativePinnedImages()).single['visible'], false);
+      active = await desktop.begin('screenshot');
+      final hidden = active.displays
+          .singleWhere((d) => d.id == display.id)
+          .frame;
+      expect(hidden.pixelAt(point.x, point.y), background);
+      expect(hidden.pixelAt(point.x, point.y), isNot(color));
+    } finally {
+      if (active != null) await desktop.finish(active.id);
+      await desktop.closePinnedImages();
+      await driver.invokeMethod<void>('restoreClipboard');
+      await desktop.showMainWindow();
+    }
+  });
   testWidgets(
     'rectangle ruler retains results, moves/resizes and adds multiple regions',
     (tester) async {

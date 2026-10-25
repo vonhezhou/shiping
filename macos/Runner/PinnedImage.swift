@@ -185,7 +185,17 @@ final class PinnedImageManager {
         return
       }
     }
-    if let image = NSImage(pasteboard: pasteboard), let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+    if let image = NSImage(pasteboard: pasteboard) {
+      // 其他粘贴板图像格式同样先检查已有表示尺寸，再要求 AppKit 解码像素。
+      for representation in image.representations where representation.pixelsWide > 0 && representation.pixelsHigh > 0 {
+        try checkCapacity(width: representation.pixelsWide, height: representation.pixelsHigh)
+      }
+      guard image.size.width.isFinite, image.size.height.isFinite,
+        image.size.width > 0, image.size.height > 0,
+        image.size.width <= CGFloat(maximumPixelCount), image.size.height <= CGFloat(maximumPixelCount)
+        else { throw PinImageError.invalidImage }
+      try checkCapacity(width: Int(ceil(image.size.width)), height: Int(ceil(image.size.height)))
+      guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { throw PinImageError.invalidImage }
       try pin(image: cgImage, logicalSize: nil, center: nil)
       return
     }
@@ -286,6 +296,10 @@ final class PinnedImagePanel: NSPanel {
   var imageView: PinnedImageView { contentView as! PinnedImageView }
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+    // 初始位置和适屏由工具显式限制；缩放时 AppKit 的菜单栏避让会破坏鼠标锚点。
+    frameRect
+  }
 
   init(id: Int, image: CGImage, logicalSize: NSSize, center: NSPoint, visibleFrame: NSRect) {
     pinID = id
@@ -338,6 +352,7 @@ final class PinnedImagePanel: NSPanel {
       height: (turned ? originalLogicalSize.width : originalLogicalSize.height) * scale)
     let point = anchor ?? NSPoint(x: frame.midX, y: frame.midY)
     let newFrame = PinnedImageGeometry.scaledFrame(frame, size: size, anchor: point)
+    // 几何保留小数；AppKit 最终会对齐窗口逻辑整点，锚点存在最多 1 pt 的显示误差。
     setFrame(newFrame, display: true)
   }
 
@@ -358,6 +373,13 @@ final class PinnedImagePanel: NSPanel {
   }
 
   @discardableResult func performAction(_ action: String) -> Bool {
+    var previousApplication: NSRunningApplication?
+    defer {
+      if let previous = previousApplication, !previous.isTerminated,
+        previous.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+        previous.activate(options: [])
+      }
+    }
     do {
       switch action {
       case "copy":
@@ -369,10 +391,16 @@ final class PinnedImagePanel: NSPanel {
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = "fruler-pin.png"
         // 临时激活以显示系统面板；取消保存仍保留原贴图。
-        let previous = NSWorkspace.shared.frontmostApplication
+        previousApplication = NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK, let url = panel.url { try exportPNG().write(to: url, options: .atomic) }
-        if previous?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previous?.activate(options: []) }
+        #if FRULER_INTEGRATION_TEST
+        if integrationCancelNextSave {
+          integrationCancelNextSave = false
+          DispatchQueue.main.async { panel.cancel(nil) }
+        }
+        #endif
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        try exportPNG().write(to: url, options: .atomic)
       case "actual_size": setScale(1)
       case "fit_screen":
         let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? frame
@@ -411,6 +439,7 @@ final class PinnedImagePanel: NSPanel {
   }
 
   #if FRULER_INTEGRATION_TEST
+  var integrationCancelNextSave = false
   var integrationState: [String: Any] {
     ["id": pinID, "visible": isVisible, "windowNumber": windowNumber,
      "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height,

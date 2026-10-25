@@ -65,6 +65,16 @@ abstract class DesktopService {
   Future<String?> openPaletteFile();
   Future<void> replyToQuit(bool allow) async {}
   Future<bool> exportImage(Uint8List png, {required bool save});
+  Future<void> pinImage(
+    Uint8List png, {
+    int? sessionId,
+    int? displayId,
+    PixelRect? rect,
+  }) async => throw UnsupportedError('platform_unsupported');
+  Future<void> pinClipboard() async =>
+      throw UnsupportedError('platform_unsupported');
+  Future<void> togglePinnedImages() async {}
+  Future<void> closePinnedImages() async {}
   Future<bool> saveTextFile(String filename, String text);
   Future<bool> exportAnnotations(
     int sessionId,
@@ -76,7 +86,7 @@ abstract class DesktopService {
   Future<bool> setShortcutRecording(bool recording);
 }
 
-class MacDesktopService implements DesktopService {
+class MacDesktopService extends DesktopService {
   MacDesktopService({PixelFrame Function(wire.DisplayFrame)? readFrame})
     : _readFrame = readFrame ?? NativePixelBuffers.read {
     wire.DesktopFlutterApi.setUp(_NativeCallbacks(_events));
@@ -177,6 +187,24 @@ class MacDesktopService implements DesktopService {
   Future<bool> exportImage(Uint8List png, {required bool save}) =>
       _api.exportImage(png, save);
   @override
+  Future<void> pinImage(
+    Uint8List png, {
+    int? sessionId,
+    int? displayId,
+    PixelRect? rect,
+  }) => _api.pinImage(
+    png,
+    sessionId,
+    displayId,
+    rect == null ? null : boundsToWire(rect.toJson()),
+  );
+  @override
+  Future<void> pinClipboard() => _api.pinClipboard();
+  @override
+  Future<void> togglePinnedImages() => _api.togglePinnedImages();
+  @override
+  Future<void> closePinnedImages() => _api.closePinnedImages();
+  @override
   Future<bool> saveTextFile(String filename, String text) =>
       _api.saveTextFile(filename, text);
   @override
@@ -198,6 +226,8 @@ class MacDesktopService implements DesktopService {
           picker: chordToWire(bindings.picker),
           ruler: chordToWire(bindings.ruler),
           screenshot: chordToWire(bindings.screenshot),
+          pinClipboard: chordToWire(bindings.pinClipboard),
+          togglePins: chordToWire(bindings.togglePins),
         ),
       );
   @override

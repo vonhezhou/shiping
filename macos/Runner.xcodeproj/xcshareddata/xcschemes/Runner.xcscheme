@@ -55,9 +55,10 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <!-- 原生测试共享单实例宿主、剪贴板和 AppKit 状态，必须串行运行。 -->
          <TestableReference
             skipped = "NO"
-            parallelizable = "YES">
+            parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "331C80D4294CF70F00263BE5"

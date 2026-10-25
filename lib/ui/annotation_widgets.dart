@@ -280,10 +280,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     }
   }
 
-  void export(bool save) {
+  void export(bool save, {bool pin = false}) {
     finishText();
     finishLine();
-    c.exportScreenshot(save: save);
+    c.exportScreenshot(save: save, pin: pin);
   }
 
   void deleteSelected() {
@@ -896,6 +896,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         HardwareKeyboard.instance.isMetaPressed ||
         HardwareKeyboard.instance.isControlPressed;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (meta && k == LogicalKeyboardKey.keyT) {
+      export(false, pin: true);
+      return KeyEventResult.handled;
+    }
     if (textEditing) {
       if (k == LogicalKeyboardKey.escape) {
         finishText(cancel: true);
@@ -1830,6 +1834,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           c.cancelScreenshot,
         ),
         toolbarButton(
+          'pin-screenshot',
+          context.l10n.uiPinScreenshot,
+          Icons.push_pin_outlined,
+          image == null ? null : () => export(false, pin: true),
+        ),
+        toolbarButton(
           'save-screenshot',
           context.l10n.uiSavePng,
           Icons.save_alt,
@@ -2093,9 +2103,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 12 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
+          // 13 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
           final toolbarWidth = math.min(
-            12 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
+            13 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
           final totalHeight = hasProperties ? 72.0 : 36.0;

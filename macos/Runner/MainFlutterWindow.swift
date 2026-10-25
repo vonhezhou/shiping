@@ -110,6 +110,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private var session: Int?
   private var nextSession = 0
   private var preparing = false
+  private let pinnedImages = PinnedImageManager()
   private var screenshotHost: CapturePanel?
   private var colorDialog: AnnotationColorDialog?
   private var flutterController: FlutterViewController?
@@ -122,6 +123,15 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private var pausedMenuKeys: [(NSMenuItem, String)] = []
   private var toolMenuItems: [String: NSMenuItem] = [:]
   private let stateKey = "fruler.state.v1"
+
+  private var flutterInputView: NSView? {
+    func inputView(_ view: NSView) -> NSView? {
+      if view.acceptsFirstResponder { return view }
+      for child in view.subviews { if let input = inputView(child) { return input } }
+      return nil
+    }
+    return flutterController.flatMap { inputView($0.view) }
+  }
 
   func availableFontFamilies(completion: @escaping (Result<[String], Error>) -> Void) {
     completion(.success(NSFontManager.shared.availableFontFamilies.sorted {
@@ -166,6 +176,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       if self.shortcuts.picker.matches(event) { self.emitActivation("picker"); return nil }
       if self.shortcuts.ruler.matches(event) { self.emitActivation("rectangle"); return nil }
       if self.shortcuts.screenshot.matches(event) { self.emitActivation("screenshot"); return nil }
+      if self.shortcuts.pinClipboard.matches(event) { self.emitPinAction("pinClipboard"); return nil }
+      if self.shortcuts.togglePins.matches(event) { self.emitPinAction("togglePinnedImages"); return nil }
       return event
     }
     observers.append(NotificationCenter.default.addObserver(
@@ -218,6 +230,75 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       guard let self = self else { return }
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
+      case "pinState": result(self.pinnedImages.integrationState)
+      case "pinClipboardFixture":
+        let kind = args["kind"] as? String ?? "image"
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if kind == "image" {
+          let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 80, pixelsHigh: 60,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 320, bitsPerPixel: 32)!
+          for y in 0..<60 { for x in 0..<80 {
+            let offset = y * 320 + x * 4
+            rep.bitmapData![offset] = UInt8(x * 3)
+            rep.bitmapData![offset + 1] = UInt8(y * 4)
+            rep.bitmapData![offset + 2] = 120
+            rep.bitmapData![offset + 3] = 255
+          } }
+          pasteboard.setData(rep.representation(using: .png, properties: [:])!, forType: .png)
+        } else if kind == "text" || kind == "color" {
+          pasteboard.setString(args["text"] as? String ?? (kind == "color" ? "#12AB34" : "fruler pinned text"), forType: .string)
+        }
+        result(nil)
+      case "pinInput":
+        let id = args["id"] as? Int
+        guard let panel = self.pinnedImages.panels.first(where: { id == nil || $0.pinID == id }) else {
+          result(FlutterError(code: "test_no_pin", message: "No pinned image", details: nil)); return
+        }
+        let view = panel.imageView
+        let flags: NSEvent.ModifierFlags = (args["command"] as? Bool == true ? NSEvent.ModifierFlags.command : [])
+          .union(args["shift"] as? Bool == true ? .shift : [])
+        let point = view.convert(NSPoint(x: args["x"] as? Double ?? view.bounds.midX,
+          y: args["y"] as? Double ?? view.bounds.midY), to: nil)
+        switch args["action"] as? String {
+        case "key":
+          let code = args["keyCode"] as? UInt16 ?? 0
+          let chars: [UInt16: String] = [8: "c", 1: "s", 13: "w", 18: "1", 19: "2", 20: "3", 21: "4", 29: "0", 25: "9", 24: "=", 27: "-"]
+          guard let event = NSEvent.keyEvent(with: .keyDown, location: point, modifierFlags: flags,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+            context: nil, characters: chars[code] ?? "", charactersIgnoringModifiers: chars[code] ?? "",
+            isARepeat: false, keyCode: code) else { result(false); return }
+          panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(view)
+          panel.sendEvent(event)
+        case "scroll":
+          guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
+            wheel1: args["delta"] as? Int32 ?? 0, wheel2: 0, wheel3: 0) else { result(false); return }
+          cg.flags = CGEventFlags(rawValue: UInt64(flags.rawValue))
+          let screenPoint = panel.convertPoint(toScreen: point)
+          cg.location = CGPoint(x: screenPoint.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - screenPoint.y)
+          if let event = NSEvent(cgEvent: cg) { view.scrollWheel(with: event) }
+        case "mouse":
+          let button = args["button"] as? String ?? "primary"
+          let phase = args["phase"] as? String ?? "down"
+          let types: [String: NSEvent.EventType] = button == "middle"
+            ? ["down": .otherMouseDown, "drag": .otherMouseDragged, "up": .otherMouseUp]
+            : ["down": .leftMouseDown, "drag": .leftMouseDragged, "up": .leftMouseUp]
+          guard let type = types[phase], var event = NSEvent.mouseEvent(with: type,
+            location: point, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+            clickCount: args["clickCount"] as? Int ?? 1, pressure: 1) else { result(false); return }
+          if button == "middle", let cg = event.cgEvent {
+            cg.setIntegerValueField(.mouseEventButtonNumber, value: 2)
+            if let adjusted = NSEvent(cgEvent: cg) { event = adjusted }
+          }
+          panel.sendEvent(event)
+        case "menu":
+          panel.integrationCancelNextSave = args["cancelSave"] as? Bool ?? false
+          result(panel.performAction(args["name"] as? String ?? "")); return
+        default: result(FlutterError(code: "test_invalid_pin_input", message: "Unknown pin input", details: nil)); return
+        }
+        result(nil)
       case "inputDiagnostics": result(NativeInputDiagnostics.recent)
       case "requestExit":
         result(nil)
@@ -423,12 +504,12 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         self.flutterController?.scrollWheel(with:event)
         result(nil)
       case "key":
-        let keyCharacters: [UInt16:String] = [51:"\u{7f}",117:"\u{f728}",6:"z",16:"y",8:"c",46:"m"]
+        let keyCharacters: [UInt16:String] = [51:"\u{7f}",117:"\u{f728}",6:"z",16:"y",8:"c",46:"m",17:"t"]
         guard let panel=self.overlays.values.first(where:{$0.isKeyWindow}) ?? self.overlays.values.first,
           let code=args["keyCode"] as? UInt16,
           let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:
-            (args["command"] as? Bool == true ? NSEvent.ModifierFlags.command : []).union(
-              args["shift"] as? Bool == true ? .shift : []),
+            (args["command"] as? Bool == true ? NSEvent.ModifierFlags.command.union(NSEvent.ModifierFlags(rawValue: 0x8)) : []).union(
+              args["shift"] as? Bool == true ? NSEvent.ModifierFlags.shift.union(NSEvent.ModifierFlags(rawValue: 0x2)) : []),
             timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
             context:nil,characters:keyCharacters[code] ?? "",charactersIgnoringModifiers:keyCharacters[code] ?? "",isARepeat:false,keyCode:code) else {
           result(FlutterError(code:"test_no_panel",message:"No native panel",details:nil));return
@@ -436,9 +517,23 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         if let host = self.screenshotHost {
           host.makeKeyAndOrderFront(nil)
           // Keep Flutter's text input responder when editing text.
-          if host.firstResponder === host.overlay {
-            host.makeFirstResponder(self.flutterController?.view)
+          if host.firstResponder === host.overlay || host.firstResponder === self.flutterController?.view {
+            host.makeFirstResponder(self.flutterInputView)
           }
+          // Cocoa 实际输入先发送修饰键状态变化，再发送主键；只设主键flags不足以更新Flutter状态。
+          // 同时保留 NX_DEVICELCMDKEYMASK / NX_DEVICELSHIFTKEYMASK，Flutter按左右设备位同步修饰键。
+          let modifiers: [(NSEvent.ModifierFlags, UInt16)] = [
+            (.command.union(NSEvent.ModifierFlags(rawValue: 0x8)), 55),
+            (.shift.union(NSEvent.ModifierFlags(rawValue: 0x2)), 56)
+          ].filter { event.modifierFlags.contains($0.0) }
+          func sendModifiers(_ flags: NSEvent.ModifierFlags, code: UInt16) {
+            if let change = NSEvent.keyEvent(with: .flagsChanged, location: .zero,
+              modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+              windowNumber: host.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "",
+              isARepeat: false, keyCode: code) { NSApp.sendEvent(change) }
+          }
+          var pressed: NSEvent.ModifierFlags = []
+          for (flag, code) in modifiers { pressed.insert(flag); sendModifiers(pressed, code: code) }
           NSApp.sendEvent(event)
           if let up = NSEvent.keyEvent(with: .keyUp, location: .zero,
             modifierFlags: event.modifierFlags, timestamp: event.timestamp,
@@ -446,6 +541,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
             characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code) {
             NSApp.sendEvent(up)
           }
+          for (flag, code) in modifiers.reversed() { pressed.remove(flag); sendModifiers(pressed, code: code) }
         } else {
           panel.makeKeyAndOrderFront(nil);panel.makeFirstResponder(panel.overlay)
           panel.sendEvent(event)
@@ -492,6 +588,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     setupMenu()
     for panel in overlays.values { panel.overlay.refreshLocalization() }
     colorDialog?.refreshLocalization()
+    pinnedImages.refreshLocale()
     nativeLogs.log(800, "desktop", "Locale configured: language=\(languageCode).")
     completion(.success(()))
   }
@@ -650,6 +747,52 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     }
   }
 
+  func pinImage(png: FlutterStandardTypedData, sessionId: Int64?, displayId: Int64?, rect: PixelBounds?,
+    completion: @escaping (Result<Void, Error>) -> Void) {
+    do {
+      var size: NSSize?, center: NSPoint?
+      if let id = sessionId {
+        guard Int(id) == session, let displayId = displayId,
+          let display = UInt32(exactly: displayId), let panel = overlays[display], let rect = rect else {
+          throw PinImageError.invalidImage
+        }
+        let snapshot = panel.overlay.snapshot
+        guard rect.left >= 0, rect.top >= 0, rect.right <= snapshot.width,
+          rect.bottom <= snapshot.height, rect.right > rect.left, rect.bottom > rect.top else {
+          throw PinImageError.invalidImage
+        }
+        let scaleX = snapshot.frame.width / CGFloat(snapshot.width)
+        let scaleY = snapshot.frame.height / CGFloat(snapshot.height)
+        size = NSSize(width: CGFloat(rect.right - rect.left) * scaleX,
+          height: CGFloat(rect.bottom - rect.top) * scaleY)
+        center = NSPoint(x: snapshot.frame.minX + CGFloat(rect.left + rect.right) / 2 * scaleX,
+          y: snapshot.frame.maxY - CGFloat(rect.top + rect.bottom) / 2 * scaleY)
+      } else if displayId != nil || rect != nil { throw PinImageError.invalidImage }
+      try pinnedImages.pin(png: png.data, logicalSize: size, center: center)
+      completion(.success(()))
+    } catch { completion(.failure(PigeonError(code: "pin_failed", message: error.localizedDescription, details: nil))) }
+  }
+
+  func pinClipboard(completion: @escaping (Result<Void, Error>) -> Void) {
+    guard session == nil, !preparing else {
+      completion(.failure(PigeonError(code: "capture_busy", message: NativeStrings.text("error.capture_busy"), details: nil))); return
+    }
+    do {
+      try pinnedImages.pinClipboard()
+      completion(.success(()))
+    } catch { completion(.failure(PigeonError(code: "pin_failed", message: error.localizedDescription, details: nil))) }
+  }
+
+  func togglePinnedImages(completion: @escaping (Result<Void, Error>) -> Void) {
+    pinnedImages.toggleVisibility()
+    completion(.success(()))
+  }
+
+  func closePinnedImages(completion: @escaping (Result<Void, Error>) -> Void) {
+    pinnedImages.closeAll()
+    completion(.success(()))
+  }
+
   func openPaletteFile(completion: @escaping (Result<String?, Error>) -> Void) {
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.json]
@@ -775,7 +918,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     nativeLogs.log(800, "capture", "Screenshot editor attached: session=\(id).")
     screenshotHost = panel
     panel.makeKeyAndOrderFront(nil)
-    panel.makeFirstResponder(controller.view)
+    panel.makeFirstResponder(flutterInputView)
     completion(.success(()))
   }
 
@@ -828,13 +971,16 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         let screens = NSScreen.screens
         nativeLogs.log(800, "capture", "Capture displays discovered: session=\(id), screens=\(screens.count), shareableDisplays=\(content.displays.count).")
         let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        // 贴图属于屏幕内容；仅把可见贴图从本应用排除规则中重新纳入。
+        let visiblePins = Set(self.pinnedImages.panels.filter { $0.isVisible && !$0.isPinnedHidden }.map { $0.windowNumber })
+        let pinnedWindows = content.windows.filter { visiblePins.contains(Int($0.windowID)) }
         var captures: [DisplaySnapshot] = []
         for screen in screens {
           try Task.checkCancellation()
           captureStage = "display_match"
           guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
                 let display = content.displays.first(where: { $0.displayID == number.uint32Value }) else { continue }
-          let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+          let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: pinnedWindows)
           let config = SCStreamConfiguration()
           // A scaled display's backing pixels can differ from its native panel resolution.
           config.width = Int((screen.frame.width * screen.backingScaleFactor).rounded())
@@ -919,7 +1065,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     if let previous = previousApplication, !previous.isTerminated,
        previous.processIdentifier != ProcessInfo.processInfo.processIdentifier {
       previous.activate(options: [])
-    } else { NSApp.hide(nil) }
+    } else if !pinnedImages.panels.contains(where: { !$0.isPinnedHidden }) { NSApp.hide(nil) }
+    pinnedImages.showVisible()
     previousApplication = nil
   }
 
@@ -943,6 +1090,16 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       menu.addItem(entry)
     }
     menu.addItem(.separator())
+    for (key, action, symbol) in [("pin.clipboard", "pinClipboard", "pin"),
+      ("pin.toggle", "togglePinnedImages", "eye"), ("pin.close_all", "closePinnedImages", "xmark.rectangle")] {
+      let entry = menu.addItem(withTitle: NativeStrings.text(key), action: #selector(pinMenuAction(_:)), keyEquivalent: "")
+      entry.target = self
+      entry.identifier = NSUserInterfaceItemIdentifier(action)
+      entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: entry.title)
+      entry.image?.size = NSSize(width: 16, height: 16)
+      if action != "closePinnedImages" { toolMenuItems[action] = entry }
+    }
+    menu.addItem(.separator())
     let history = menu.addItem(withTitle: NativeStrings.text("menu.history"), action: #selector(openHistory), keyEquivalent: "")
     history.target = self
     history.identifier = NSUserInterfaceItemIdentifier("history")
@@ -955,6 +1112,15 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     item.menu = menu
     statusItem = item
     updateMenuShortcuts()
+  }
+
+  @objc private func pinMenuAction(_ sender: NSMenuItem) {
+    if let action = sender.identifier?.rawValue { emitPinAction(action) }
+  }
+
+  private func emitPinAction(_ action: String) {
+    guard !shortcutRecording, session == nil, !preparing else { NSSound.beep(); return }
+    sink?(["type": action])
   }
 
   @objc private func activateTool(_ sender: NSMenuItem) {
@@ -996,7 +1162,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
         EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &key)
       guard status == noErr else { return status }
-      bridge.emitActivation(key.id == 1 ? "picker" : key.id == 2 ? "rectangle" : "screenshot")
+      switch key.id {
+      case 1: bridge.emitActivation("picker")
+      case 2: bridge.emitActivation("rectangle")
+      case 3: bridge.emitActivation("screenshot")
+      case 4: bridge.emitPinAction("pinClipboard")
+      case 5: bridge.emitPinAction("togglePinnedImages")
+      default: return OSStatus(eventNotHandledErr)
+      }
       return noErr
     }, 1, &spec, context, &hotkeyHandler)
     guard status == noErr else {
@@ -1017,7 +1190,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     unregisterHotkeys()
     guard hotkeyHandler != nil else { return false }
     let signature: OSType = 0x46524C52
-    for (id, chord) in [(UInt32(1), bindings.picker), (UInt32(2), bindings.ruler), (UInt32(3), bindings.screenshot)] {
+    for (id, chord) in [(UInt32(1), bindings.picker), (UInt32(2), bindings.ruler), (UInt32(3), bindings.screenshot),
+      (UInt32(4), bindings.pinClipboard), (UInt32(5), bindings.togglePins)] {
       var ref: EventHotKeyRef?
       let error = RegisterEventHotKey(chord.keyCode, chord.carbonModifiers,
         EventHotKeyID(signature: signature, id: id), GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &ref)
@@ -1027,7 +1201,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       }
       hotkeys.append(value)
     }
-    hasShortcuts = hotkeys.count == 3
+    hasShortcuts = hotkeys.count == 5
     return hasShortcuts
   }
 
@@ -1046,7 +1220,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   }
 
   private func updateMenuShortcuts() {
-    for (tool, chord) in [("picker", shortcuts.picker), ("rectangle", shortcuts.ruler), ("screenshot", shortcuts.screenshot)] {
+    for (tool, chord) in [("picker", shortcuts.picker), ("rectangle", shortcuts.ruler), ("screenshot", shortcuts.screenshot),
+      ("pinClipboard", shortcuts.pinClipboard), ("togglePinnedImages", shortcuts.togglePins)] {
       toolMenuItems[tool]?.keyEquivalent = (shortcutRecording || !hasShortcuts) ? "" : chord.key.lowercased()
       toolMenuItems[tool]?.keyEquivalentModifierMask = chord.modifiers
     }
@@ -1097,15 +1272,28 @@ private struct NativeShortcutBindings: Equatable {
   let picker: NativeShortcut
   let ruler: NativeShortcut
   let screenshot: NativeShortcut
+  let pinClipboard: NativeShortcut
+  let togglePins: NativeShortcut
   static let defaults = NativeShortcutBindings(picker: NativeShortcut(key: "C", modifiers: [.command, .shift]),
     ruler: NativeShortcut(key: "R", modifiers: [.command, .shift]))
-  init(picker: NativeShortcut, ruler: NativeShortcut, screenshot: NativeShortcut = NativeShortcut(key: "X", modifiers: [.command, .shift])) { self.picker = picker; self.ruler = ruler; self.screenshot = screenshot }
-  init?(_ data: [String: Any]) {
-    guard let picker = NativeShortcut(data["picker"]), let ruler = NativeShortcut(data["ruler"]) else { return nil }
-    guard data["screenshot"] == nil || NativeShortcut(data["screenshot"]) != nil else { return nil }
-    self.init(picker: picker, ruler: ruler, screenshot: NativeShortcut(data["screenshot"]) ?? Self.defaults.screenshot)
+  init(picker: NativeShortcut, ruler: NativeShortcut,
+    screenshot: NativeShortcut = NativeShortcut(key: "X", modifiers: [.command, .shift]),
+    pinClipboard: NativeShortcut = NativeShortcut(key: "T", modifiers: [.command, .shift]),
+    togglePins: NativeShortcut = NativeShortcut(key: "V", modifiers: [.command, .shift])) {
+    self.picker = picker; self.ruler = ruler; self.screenshot = screenshot
+    self.pinClipboard = pinClipboard; self.togglePins = togglePins
   }
-  var isValid: Bool { picker.isValid && ruler.isValid && screenshot.isValid && picker != ruler && picker != screenshot && ruler != screenshot }
+  init?(_ data: [String: Any]) {
+    guard let picker = NativeShortcut(data["picker"]), let ruler = NativeShortcut(data["ruler"]),
+      let screenshot = NativeShortcut(data["screenshot"]), let pin = NativeShortcut(data["pinClipboard"]),
+      let toggle = NativeShortcut(data["togglePins"]) else { return nil }
+    self.init(picker: picker, ruler: ruler, screenshot: screenshot, pinClipboard: pin, togglePins: toggle)
+  }
+  var isValid: Bool {
+    let chords = [picker, ruler, screenshot, pinClipboard, togglePins]
+    return chords.allSatisfy { $0.isValid } &&
+      chords.enumerated().allSatisfy { index, chord in !chords.prefix(index).contains(chord) }
+  }
 }
 
 private enum CaptureFailure: LocalizedError {

@@ -265,7 +265,9 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> exportScreenshot({required bool save}) async {
+  Future<void> pinScreenshot() => exportScreenshot(save: false, pin: true);
+
+  Future<void> exportScreenshot({required bool save, bool pin = false}) async {
     final doc = imageDocument;
     if (doc == null ||
         imageLoading ||
@@ -283,14 +285,21 @@ class AppController extends ChangeNotifier {
         loadImage: imageCodec.sourceImage,
       );
       if (_disposed || _session?.id != sessionId) return;
-      if (!await desktop.exportImage(png, save: save)) {
+      if (pin) {
+        await desktop.pinImage(
+          png,
+          sessionId: sessionId,
+          displayId: screenshotDisplayId,
+          rect: screenshotSelection,
+        );
+      } else if (!await desktop.exportImage(png, save: save)) {
         _logger.info(
           'Screenshot export cancelled: session=$sessionId, save=$save.',
         );
         return;
       }
       _logger.info(
-        'Screenshot export completed: session=$sessionId, save=$save.',
+        'Screenshot export completed: session=$sessionId, save=$save, pin=$pin.',
       );
       _screenshots.insert(0, png);
       _screenshotBytes += png.length;
@@ -299,7 +308,11 @@ class AppController extends ChangeNotifier {
       }
       await desktop.finish(sessionId);
       _resetSession();
-      notice = save ? strings.msgScreenshotSaved : strings.msgScreenshotCopied;
+      notice = pin
+          ? strings.msgImagePinned
+          : save
+          ? strings.msgScreenshotSaved
+          : strings.msgScreenshotCopied;
       error = null;
     } catch (e, stackTrace) {
       _logFailure('Screenshot export', e, stackTrace);
@@ -309,6 +322,47 @@ class AppController extends ChangeNotifier {
       _notify();
     }
   }
+
+  bool pinningImage = false;
+
+  Future<void> _pinAction(Future<void> Function() action) async {
+    if (busy ||
+        pinningImage ||
+        initializing ||
+        recordingShortcut ||
+        savingShortcuts ||
+        _disposed) {
+      return;
+    }
+    pinningImage = true;
+    _notify();
+    try {
+      await action();
+      error = null;
+    } catch (e, stackTrace) {
+      _logFailure('Pinned image action', e, stackTrace);
+      _fail(describeError(e));
+      // 菜单或全局快捷键失败时，让隐藏窗口中的错误也能被用户看到。
+      try {
+        await desktop.showMainWindow();
+      } catch (windowError, windowStack) {
+        _logFailure(
+          'Pinned image error presentation',
+          windowError,
+          windowStack,
+        );
+      }
+    } finally {
+      pinningImage = false;
+      _notify();
+    }
+  }
+
+  Future<void> pinScreenshotFromHistory(Uint8List png) =>
+      _pinAction(() => desktop.pinImage(png));
+  Future<void> pinClipboard() => _pinAction(desktop.pinClipboard);
+  Future<void> togglePinnedImages() => _pinAction(desktop.togglePinnedImages);
+  Future<void> closePinnedImages() => _pinAction(desktop.closePinnedImages);
 
   Future<void> copyScreenshot(Uint8List png) async {
     try {
@@ -931,6 +985,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> _begin(String tool) async {
     if (busy ||
+        pinningImage ||
         imageLoading ||
         imageSaving ||
         initializing ||
@@ -1031,6 +1086,15 @@ class AppController extends ChangeNotifier {
               .firstOrNull;
           if (value != null) unawaited(startRuler(value));
         }
+        return;
+      case 'pinClipboard':
+        unawaited(pinClipboard());
+        return;
+      case 'togglePinnedImages':
+        unawaited(togglePinnedImages());
+        return;
+      case 'closePinnedImages':
+        unawaited(closePinnedImages());
         return;
       case 'showSettings':
         selectSection(AppSection.settings);
@@ -1755,7 +1819,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<bool> beginShortcutRecording() async {
-    if (busy || initializing || recordingShortcut || savingShortcuts) {
+    if (busy ||
+        pinningImage ||
+        initializing ||
+        recordingShortcut ||
+        savingShortcuts) {
       return false;
     }
     try {
@@ -1787,12 +1855,22 @@ class AppController extends ChangeNotifier {
     bool picker,
     ShortcutChord chord, {
     bool screenshot = false,
+    bool pinClipboard = false,
+    bool togglePins = false,
   }) async {
-    if (busy || savingShortcuts || recordingShortcut) return false;
+    if (busy || pinningImage || savingShortcuts || recordingShortcut) {
+      return false;
+    }
     final candidate = ShortcutBindings(
-      picker: !screenshot && picker ? chord : shortcuts.picker,
-      ruler: !screenshot && !picker ? chord : shortcuts.ruler,
+      picker: !screenshot && !pinClipboard && !togglePins && picker
+          ? chord
+          : shortcuts.picker,
+      ruler: !screenshot && !pinClipboard && !togglePins && !picker
+          ? chord
+          : shortcuts.ruler,
       screenshot: screenshot ? chord : shortcuts.screenshot,
+      pinClipboard: pinClipboard ? chord : shortcuts.pinClipboard,
+      togglePins: togglePins ? chord : shortcuts.togglePins,
     );
     if (!candidate.isValid) {
       _fail(strings.msgShortcutInvalid);
@@ -2335,6 +2413,7 @@ class AppController extends ChangeNotifier {
         'shortcut_conflict' => strings.msgShortcutConflict,
         'shortcut_invalid' => strings.msgShortcutUnavailable,
         'capture_busy' => strings.msgCaptureBusy,
+        'pin_failed' => e.message ?? strings.msgSystemOperationFailed,
         _ => strings.msgSystemOperationFailed,
       };
     }

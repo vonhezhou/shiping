@@ -367,7 +367,7 @@
       }
     }
   },
-  "msgShortcutInvalid": "Use a letter or digit with at least one main modifier. Each tool must have a different shortcut.",
+  "msgShortcutInvalid": "Use an unreserved letter or digit with at least one main modifier. Each action must have a different shortcut.",
   "msgShortcutRegistrationFailed": "Unable to register the shortcut. Previous settings were kept.",
   "msgShortcutsUpdated": "Shortcuts updated",
   "msgColorsExported": "Colors exported",
@@ -476,7 +476,7 @@
   "validationImageExport": "Image export failed",
   "validationShortcut": "Invalid shortcut",
   "validationShortcutBindings": "Invalid shortcut settings",
-  "validationShortcutDuplicates": "Each tool must have a different shortcut",
+  "validationShortcutDuplicates": "Each action must have a different shortcut",
   "validationOutputPlaceholder": "Unknown placeholder: %{token}",
   "@validationOutputPlaceholder": {
     "placeholders": {
@@ -500,7 +500,7 @@
   "uiScreenshot": "Screenshot",
   "uiPickerDescription": "Pick screen pixels and copy colors instantly. Choose the output format and magnification.",
   "uiRulerDescription": "Measure pixels and logical dimensions on screen. Set the default mode and edge tolerance.",
-  "uiScreenshotDescription": "Select, annotate, and copy or save in one full-screen overlay.",
+  "uiScreenshotDescription": "Select, annotate, and copy, save or pin in one full-screen overlay.",
   "uiPickerOptions": "Color picker options",
   "uiMagnification": "Magnification",
   "uiMagnificationDescription": "You can also use the scroll wheel while picking (4×–32×).",
@@ -510,7 +510,7 @@
   "uiScreenshotWorkflow": "Capture and annotation",
   "uiScreenshotSelect": "Select a screen region. Click to snap to a window, or drag to draw a region.",
   "uiScreenshotAnnotate": "Annotate in place with shapes, drawing, text, or blur. You can keep adjusting the region.",
-  "uiScreenshotFinish": "Return to your previous app after copying or saving. Canceling a save keeps annotation open.",
+  "uiScreenshotFinish": "Return to your previous app after copying, saving or pinning. Canceling a save keeps annotation open.",
   "uiScreenshotHistoryStorage": "Keeps up to 12 recent screenshots and 64 MiB in this session. Screenshots are released when you quit.",
   "uiColorHistoryStorage": "Recent colors are saved locally up to the configured limit. Click a color to copy it again.",
   "uiAboutTitle": "About",
@@ -551,5 +551,13 @@
   "uiMoveUp": "Move up",
   "uiMoveDown": "Move down",
   "uiFormatActions": "Format actions",
-  "uiDeleteColorFormat": "Delete format"
+  "uiDeleteColorFormat": "Delete format",
+  "uiPinScreenshot": "Pin to screen (⌘T)",
+  "uiPinClipboard": "Pin clipboard",
+  "uiTogglePins": "Show / hide all pins",
+  "uiClosePins": "Destroy all pins",
+  "uiPinnedImages": "Pinned images",
+  "uiPinHistory": "Pin this screenshot",
+  "uiPinDescription": "Pin a screenshot, clipboard image, text or HEX color above other windows. Drag to move, scroll to zoom, ⌘scroll for opacity. 1/2 rotate, 3/4 flip, middle click resets. Esc or double click hides; Shift+Esc destroys. Hidden pins can be restored together. Pins stay in memory until you quit.",
+  "msgImagePinned": "Image pinned to screen"
 }

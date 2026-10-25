@@ -1020,7 +1020,7 @@ abstract class AppLocalizations {
   /// No description provided for @msgShortcutInvalid.
   ///
   /// In en, this message translates to:
-  /// **'Use a letter or digit with at least one main modifier. Each tool must have a different shortcut.'**
+  /// **'Use an unreserved letter or digit with at least one main modifier. Each action must have a different shortcut.'**
   String get msgShortcutInvalid;
 
   /// No description provided for @msgShortcutRegistrationFailed.
@@ -1362,7 +1362,7 @@ abstract class AppLocalizations {
   /// No description provided for @validationShortcutDuplicates.
   ///
   /// In en, this message translates to:
-  /// **'Each tool must have a different shortcut'**
+  /// **'Each action must have a different shortcut'**
   String get validationShortcutDuplicates;
 
   /// No description provided for @validationOutputPlaceholder.
@@ -1422,7 +1422,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiScreenshotDescription.
   ///
   /// In en, this message translates to:
-  /// **'Select, annotate, and copy or save in one full-screen overlay.'**
+  /// **'Select, annotate, and copy, save or pin in one full-screen overlay.'**
   String get uiScreenshotDescription;
 
   /// No description provided for @uiPickerOptions.
@@ -1482,7 +1482,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiScreenshotFinish.
   ///
   /// In en, this message translates to:
-  /// **'Return to your previous app after copying or saving. Canceling a save keeps annotation open.'**
+  /// **'Return to your previous app after copying, saving or pinning. Canceling a save keeps annotation open.'**
   String get uiScreenshotFinish;
 
   /// No description provided for @uiScreenshotHistoryStorage.
@@ -1646,6 +1646,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete format'**
   String get uiDeleteColorFormat;
+
+  /// No description provided for @uiPinScreenshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin to screen (⌘T)'**
+  String get uiPinScreenshot;
+
+  /// No description provided for @uiPinClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin clipboard'**
+  String get uiPinClipboard;
+
+  /// No description provided for @uiTogglePins.
+  ///
+  /// In en, this message translates to:
+  /// **'Show / hide all pins'**
+  String get uiTogglePins;
+
+  /// No description provided for @uiClosePins.
+  ///
+  /// In en, this message translates to:
+  /// **'Destroy all pins'**
+  String get uiClosePins;
+
+  /// No description provided for @uiPinnedImages.
+  ///
+  /// In en, this message translates to:
+  /// **'Pinned images'**
+  String get uiPinnedImages;
+
+  /// No description provided for @uiPinHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin this screenshot'**
+  String get uiPinHistory;
+
+  /// No description provided for @uiPinDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Pin a screenshot, clipboard image, text or HEX color above other windows. Drag to move, scroll to zoom, ⌘scroll for opacity. 1/2 rotate, 3/4 flip, middle click resets. Esc or double click hides; Shift+Esc destroys. Hidden pins can be restored together. Pins stay in memory until you quit.'**
+  String get uiPinDescription;
+
+  /// No description provided for @msgImagePinned.
+  ///
+  /// In en, this message translates to:
+  /// **'Image pinned to screen'**
+  String get msgImagePinned;
 }
 
 class _AppLocalizationsDelegate

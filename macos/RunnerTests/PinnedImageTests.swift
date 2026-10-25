@@ -22,6 +22,29 @@ final class PinnedImageTests: XCTestCase {
     XCTAssertTrue(screen.contains(frame))
   }
 
+  func testNativeZoomAtScreenTopKeepsNoncentralAnchorWithinWindowPointGrid() throws {
+    let screen = try XCTUnwrap(NSScreen.screens.first)
+    let visible = screen.visibleFrame
+    let panel = PinnedImagePanel(id: 1, image: sampleImage(), logicalSize: NSSize(width: 40, height: 30),
+      center: NSPoint(x: visible.midX, y: visible.maxY - 15), visibleFrame: visible)
+    defer { panel.close() }
+    panel.orderFrontRegardless()
+    let original = panel.frame
+    let anchor = NSPoint(x: original.minX + original.width * 0.25,
+      y: original.minY + original.height * 0.75)
+    for scale: CGFloat in [1.1, 2, 4] {
+      panel.setFrame(original, display: false)
+      panel.setScale(scale, anchor: anchor)
+      // AppKit 在 backingScale=2 时仍把窗口原点截为逻辑整点，不能按子像素断言窗口位置。
+      XCTAssertEqual(panel.frame.minX + panel.frame.width * 0.25, anchor.x, accuracy: 1)
+      XCTAssertEqual(panel.frame.minY + panel.frame.height * 0.75, anchor.y, accuracy: 1)
+      if scale >= 2 {
+        // 允许图片越过菜单栏边界；系统默认约束会导致 2×/4× 时漂移 7.5/22.5 pt。
+        XCTAssertGreaterThan(panel.frame.maxY, visible.maxY)
+      }
+    }
+  }
+
   func testTransformExportsFullPixelsInDisplayOrder() throws {
     // 非方形二维色块检查旋转方向和坐标轴，而非仅检查导出尺寸。
     let image = sampleImage()
@@ -131,6 +154,29 @@ final class PinnedImageTests: XCTestCase {
     XCTAssertThrowsError(try manager.pin(png: Data([1,2,3]), logicalSize: nil, center: nil))
     XCTAssertTrue(manager.panels.isEmpty)
   }
+
+  #if FRULER_INTEGRATION_TEST
+  func testCancellingNativeSaveKeepsPinAndImageState() throws {
+    let manager = PinnedImageManager()
+    defer { manager.closeAll() }
+    try manager.pin(png: samplePNG(), logicalSize: NSSize(width: 300, height: 200), center: nil)
+    let panel = manager.panels[0]
+    panel.performAction("rotate_right")
+    panel.setScale(0.5)
+    panel.adjustOpacity(-0.5)
+    let frame = panel.frame
+    let image = try panel.exportPNG()
+    panel.integrationCancelNextSave = true
+    XCTAssertFalse(panel.performAction("save"))
+    XCTAssertFalse(panel.integrationCancelNextSave)
+    XCTAssertEqual(manager.panels.count, 1)
+    XCTAssertTrue(panel.isVisible)
+    XCTAssertEqual(panel.frame, frame)
+    XCTAssertEqual(panel.alphaValue, 0.5)
+    XCTAssertEqual(panel.scale, 0.5)
+    XCTAssertEqual(try panel.exportPNG(), image)
+  }
+  #endif
 
   private func colorBytes(_ order: [Int]) -> [UInt8] {
     let colors: [[UInt8]] = [[255,0,0,255], [0,255,0,255], [0,0,255,255],

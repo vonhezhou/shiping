@@ -52,6 +52,9 @@ extension EventKind {
     case .pointer: return "pointer"
     case .sampleColor: return "sampleColor"
     case .copyCaptureSize: return "copyCaptureSize"
+    case .pinClipboard: return "pinClipboard"
+    case .togglePinnedImages: return "togglePinnedImages"
+    case .closePinnedImages: return "closePinnedImages"
     }
   }
   init?(name: String) {
@@ -80,6 +83,9 @@ extension EventKind {
     case "pointer": self = .pointer
     case "sampleColor": self = .sampleColor
     case "copyCaptureSize": self = .copyCaptureSize
+    case "pinClipboard": self = .pinClipboard
+    case "togglePinnedImages": self = .togglePinnedImages
+    case "closePinnedImages": self = .closePinnedImages
     default: return nil
     }
   }
@@ -153,6 +159,8 @@ extension NativeBindings {
     data["picker"] = picker.local
     data["ruler"] = ruler.local
     data["screenshot"] = screenshot.local
+    data["pinClipboard"] = pinClipboard.local
+    data["togglePins"] = togglePins.local
     return data
   }
 }

@@ -129,6 +129,7 @@ class _OptionsHome extends StatelessWidget {
     final c = controller;
     final canStart =
         !c.busy &&
+        !c.pinningImage &&
         !c.initializing &&
         !c.recordingShortcut &&
         !c.savingShortcuts;
