@@ -1133,6 +1133,7 @@ protocol DesktopHostApi {
   func cancelRecording(completion: @escaping (Result<Void, Error>) -> Void)
   func editScreenshot(sessionId: Int64, displayId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func reselectScreenshot(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
+  func recognizeQrCodes(sessionId: Int64, displayId: Int64, rect: PixelBounds, completion: @escaping (Result<[String], Error>) -> Void)
   func loadState(completion: @escaping (Result<String?, Error>) -> Void)
   func saveState(json: String, completion: @escaping (Result<Void, Error>) -> Void)
   func openPaletteFile(completion: @escaping (Result<String?, Error>) -> Void)
@@ -1398,6 +1399,25 @@ class DesktopHostApiSetup {
       }
     } else {
       reselectScreenshotChannel.setMessageHandler(nil)
+    }
+    let recognizeQrCodesChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.recognizeQrCodes\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      recognizeQrCodesChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let sessionIdArg = args[0] as! Int64
+        let displayIdArg = args[1] as! Int64
+        let rectArg = args[2] as! PixelBounds
+        api.recognizeQrCodes(sessionId: sessionIdArg, displayId: displayIdArg, rect: rectArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      recognizeQrCodesChannel.setMessageHandler(nil)
     }
     let loadStateChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.loadState\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

@@ -1,4 +1,5 @@
 import Cocoa
+import CoreImage
 import FlutterMacOS
 import XCTest
 @testable import fruler
@@ -164,6 +165,70 @@ class RunnerTests: XCTestCase {
     owner = nil
     XCTAssertNil(observed)
     XCTAssertNil(frulerFrameAcquire(id))
+  }
+
+  private func qrCanvas(scale: Int = 1, duplicate: Bool = false, leftValue: String = "fruler-left") throws -> CGImage {
+    let width = 480 * scale, height = 480 * scale
+    let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height,
+      bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.interpolationQuality = .none
+    for (value, left, top) in [(leftValue, 30, 30), ("fruler-right", 270, 30),
+                               (duplicate ? leftValue : "fruler-bottom", 30, 270)] {
+      let filter = try XCTUnwrap(CIFilter(name: "CIQRCodeGenerator"))
+      filter.setValue(Data(value.utf8), forKey: "inputMessage")
+      filter.setValue("M", forKey: "inputCorrectionLevel")
+      let output = try XCTUnwrap(filter.outputImage)
+      let code = try XCTUnwrap(CIContext().createCGImage(output, from: output.extent))
+      context.draw(code, in: CGRect(x: left * scale, y: height - (top + 180) * scale,
+        width: 180 * scale, height: 180 * scale))
+    }
+    return try XCTUnwrap(context.makeImage())
+  }
+
+  private func qrBounds(_ left: Int64, _ top: Int64, _ right: Int64, _ bottom: Int64) -> PixelBounds {
+    PixelBounds(left: left, top: top, right: right, bottom: bottom)
+  }
+
+  func testQrRecognitionCropsBeforeDetectionAndKeepsDisplayPixelOrientation() throws {
+    for scale: Int64 in [1, 2] {
+      let image = try qrCanvas(scale: Int(scale))
+      func scan(_ left: Int64, _ top: Int64, _ right: Int64, _ bottom: Int64) throws -> [String] {
+        try QrCodeRecognizer.recognize(image: image,
+          rect: qrBounds(left * scale, top * scale, right * scale, bottom * scale))
+      }
+      XCTAssertEqual(try scan(0, 0, 240, 240), ["fruler-left"])
+      XCTAssertEqual(try scan(240, 0, 480, 240), ["fruler-right"])
+      XCTAssertEqual(try scan(0, 240, 240, 480), ["fruler-bottom"])
+      XCTAssertEqual(try scan(0, 0, 480, 480), ["fruler-left", "fruler-right", "fruler-bottom"])
+      XCTAssertEqual(try scan(240, 240, 480, 480), [])
+      // 小于二维码的选区也不能向外扩张找到完整码。
+      XCTAssertEqual(try scan(40, 40, 80, 80), [])
+    }
+  }
+
+  func testQrRecognitionDeduplicatesPayloadsWithoutRemovingWhitespace() throws {
+    let image = try qrCanvas(duplicate: true)
+    XCTAssertEqual(try QrCodeRecognizer.recognize(image: image, rect: qrBounds(0, 0, 480, 480)),
+      ["fruler-left", "fruler-right"])
+    let whitespace = try qrCanvas(leftValue: "  fruler\n")
+    XCTAssertEqual(try QrCodeRecognizer.recognize(image: whitespace, rect: qrBounds(0, 0, 240, 240)),
+      ["  fruler\n"])
+  }
+
+  func testQrRecognitionRejectsInvalidAndOutOfBoundsRegions() throws {
+    let image = try qrCanvas()
+    for bounds in [qrBounds(-1, 0, 240, 240), qrBounds(0, -1, 240, 240),
+                   qrBounds(0, 0, 481, 240), qrBounds(0, 0, 240, 481),
+                   qrBounds(0, 0, 0, 240), qrBounds(0, 0, 240, 0),
+                   qrBounds(240, 0, 0, 240), qrBounds(0, 240, 240, 0),
+                   qrBounds(Int64.min, 0, Int64.max, 240)] {
+      XCTAssertThrowsError(try QrCodeRecognizer.recognize(image: image, rect: bounds)) { error in
+        XCTAssertEqual((error as? PigeonError)?.code, "invalid_qr_region")
+      }
+    }
   }
 
 }

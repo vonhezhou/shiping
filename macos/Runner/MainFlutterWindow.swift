@@ -4,6 +4,7 @@ import ScreenCaptureKit
 import Carbon.HIToolbox
 import UniformTypeIdentifiers
 import AVFoundation
+import Vision
 
 /// 启动时 Dart 通道尚未就绪，保留有限条原生日志，由 Dart 统一落盘和轮转。
 final class NativeLogBuffer {
@@ -401,6 +402,11 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       case "releasePixelFixture":
         self.integrationPixelFixture?.unpublish()
         self.integrationPixelFixture = nil
+        result(nil)
+      case "qrFixture":
+        DistributedNotificationCenter.default().postNotificationName(
+          Notification.Name("dev.fruler.integration.qrFixture"), object: args["action"] as? String ?? "show",
+          userInfo: nil, deliverImmediately: true)
         result(nil)
       case "raiseRegionFixture":
         DistributedNotificationCenter.default().postNotificationName(
@@ -999,6 +1005,32 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     panel.makeKeyAndOrderFront(nil)
     panel.makeFirstResponder(flutterInputView)
     completion(.success(()))
+  }
+
+  func recognizeQrCodes(sessionId: Int64, displayId: Int64, rect: PixelBounds,
+                        completion: @escaping (Result<[String], Error>) -> Void) {
+    guard Int(sessionId) == session,
+          let display = UInt32(exactly: displayId), let panel = overlays[display] else {
+      completion(.failure(PigeonError(code: "capture_cancelled", message: nil, details: nil))); return
+    }
+    let image = panel.overlay.snapshot.image
+    nativeLogs.log(800, "qr", "QR recognition requested: session=\(sessionId).")
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let result = Result { try QrCodeRecognizer.recognize(image: image, rect: rect) }
+      DispatchQueue.main.async {
+        guard let self = self, self.session == Int(sessionId) else {
+          completion(.failure(PigeonError(code: "capture_cancelled", message: nil, details: nil))); return
+        }
+        switch result {
+        case .success(let codes):
+          nativeLogs.log(800, "qr", "QR recognition completed: count=\(codes.count).")
+          completion(.success(codes))
+        case .failure(let error):
+          nativeLogs.log(1000, "qr", "QR recognition failed: errorType=\(String(reflecting: type(of: error))).")
+          completion(.failure(error))
+        }
+      }
+    }
   }
 
   func reselectScreenshot(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void) {
@@ -2602,5 +2634,37 @@ final class AnnotationColorDialog: NSObject, NSWindowDelegate {
     panel.close()
     if let owner, let ownerLevel { owner.level = ownerLevel }
     reply(color)
+  }
+}
+
+/// 只把选区原始像素交给 Vision，避免画面上其他二维码参与检测或排序。
+enum QrCodeRecognizer {
+  static func recognize(image: CGImage, rect: PixelBounds) throws -> [String] {
+    guard rect.left >= 0, rect.top >= 0,
+          rect.right <= Int64(image.width), rect.bottom <= Int64(image.height),
+          rect.right > rect.left, rect.bottom > rect.top else {
+      throw PigeonError(code: "invalid_qr_region", message: nil, details: nil)
+    }
+    let bounds = CGRect(x: CGFloat(rect.left), y: CGFloat(rect.top),
+      width: CGFloat(rect.right - rect.left), height: CGFloat(rect.bottom - rect.top))
+    guard let cropped = image.cropping(to: bounds) else {
+      throw PigeonError(code: "invalid_qr_region", message: nil, details: nil)
+    }
+    let request = VNDetectBarcodesRequest()
+    request.symbologies = [.qr]
+    try VNImageRequestHandler(cgImage: cropped, orientation: .up).perform([request])
+    // Vision 使用左下原点；按画面从上到下、从左到右展示，重复内容只保留一次。
+    let observations = (request.results ?? []).sorted {
+      let firstRow = Int(($0.boundingBox.maxY * 100).rounded())
+      let secondRow = Int(($1.boundingBox.maxY * 100).rounded())
+      if firstRow != secondRow { return firstRow > secondRow }
+      return $0.boundingBox.minX < $1.boundingBox.minX
+    }
+    var seen = Set<String>()
+    return observations.compactMap { observation in
+      guard let value = observation.payloadStringValue, !value.isEmpty,
+            seen.insert(value).inserted else { return nil }
+      return value
+    }
   }
 }

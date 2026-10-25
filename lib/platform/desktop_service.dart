@@ -67,6 +67,11 @@ abstract class DesktopService {
   Future<void> cancelRecording() async {}
   Future<void> editScreenshot(int sessionId, int displayId) async {}
   Future<void> reselectScreenshot(int sessionId) async {}
+  Future<List<String>> recognizeQrCodes(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+  ) async => throw UnsupportedError('platform_unsupported');
   Future<String?> loadState();
   Future<void> saveState(String json);
   Future<void> writeClipboard(String text);
@@ -203,6 +208,12 @@ class MacDesktopService extends DesktopService {
   @override
   Future<void> reselectScreenshot(int sessionId) =>
       _api.reselectScreenshot(sessionId);
+  @override
+  Future<List<String>> recognizeQrCodes(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+  ) => _api.recognizeQrCodes(sessionId, displayId, boundsToWire(rect.toJson()));
   @override
   Future<String?> loadState() => _api.loadState();
   @override

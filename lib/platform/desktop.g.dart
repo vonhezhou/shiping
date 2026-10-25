@@ -1420,6 +1420,25 @@ class DesktopHostApi {
     ;
   }
 
+  Future<List<String>> recognizeQrCodes(int sessionId, int displayId, PixelBounds rect) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.recognizeQrCodes$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, displayId, rect]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<String>();
+  }
+
   Future<String?> loadState() async {
     final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.loadState$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(

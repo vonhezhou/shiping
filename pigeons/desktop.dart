@@ -317,6 +317,8 @@ abstract class DesktopHostApi {
   @async
   void reselectScreenshot(int sessionId);
   @async
+  List<String> recognizeQrCodes(int sessionId, int displayId, PixelBounds rect);
+  @async
   String? loadState();
   @async
   void saveState(String json);

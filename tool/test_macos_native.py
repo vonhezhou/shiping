@@ -13,9 +13,11 @@ flutter = env.get('FRULER_FLUTTER', 'flutter')
 commands = [
     [flutter, '--no-version-check', 'build', 'macos', '--debug', '--config-only',
      '--no-pub', '--target=lib/main.dart'],
+    # 应用只允许一个实例；并行测试 runner 会相互触发退出，无法完成 XCTest 握手。
     ['xcodebuild', '-workspace', 'macos/Runner.xcworkspace', '-scheme', 'Runner',
      '-configuration', 'Debug', '-destination', f'platform=macOS,arch={platform.machine()}',
-     '-derivedDataPath', 'build/macos', '-only-testing:RunnerTests', 'test'],
+     '-derivedDataPath', 'build/macos', '-only-testing:RunnerTests',
+     '-parallel-testing-enabled', 'NO', 'test'],
 ]
 for command in commands:
     result = subprocess.run(command, cwd=root, env=env)
