@@ -218,6 +218,7 @@ enum EventKind: Int {
   case closePinnedImages = 26
   case stopRecording = 27
   case recordingFailed = 28
+  case activateQrCode = 29
 }
 
 enum InputPhase: Int {

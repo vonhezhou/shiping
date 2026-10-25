@@ -117,6 +117,7 @@
 "picker.continuous_tooltip" = "Continuous picking: copy each color immediately; Esc to finish";
 "picker.default_actions" = "Left click to pick · Right click to cancel";
 "tool.picker" = "Color Picker";
+"tool.qr_code" = "Recognize QR Code";
 "tool.ruler" = "Screen Ruler";
 "tool.screenshot" = "Screenshot";
 

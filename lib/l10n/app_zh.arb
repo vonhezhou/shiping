@@ -490,5 +490,6 @@
   "msgQrCodeRecognitionFailed": "二维码识别失败，请重试。",
   "msgQrCodeCopyFailed": "二维码内容复制失败，请重试。",
   "msgQrCodeCopied": "已复制二维码内容",
-  "msgScreenshotCancelFailed": "截图取消失败，请重试。"
+  "msgScreenshotCancelFailed": "截图取消失败，请重试。",
+  "uiQrCodeSelectionHint": "拖动框选二维码 · 松开识别 · Esc 取消"
 }

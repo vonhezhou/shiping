@@ -372,8 +372,28 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
       );
 
-      Future<({int id, PixelFrame frame, Rect content})> begin() async {
-        await c.startScreenshot();
+      Future<({int id, PixelFrame frame, Rect content})> begin({
+        bool fromMenu = false,
+        String area = 'blank',
+      }) async {
+        if (fromMenu) {
+          final before = desktop.captureCount;
+          expect(
+            await driver.invokeMethod<bool>('clickMenu', {'name': 'qrCode'}),
+            true,
+          );
+          await waitFor(
+            tester,
+            () =>
+                desktop.captureCount == before + 1 &&
+                desktop.lastCapture != null &&
+                desktop.overlay != null,
+          );
+          expect(desktop.overlay!['tool'], 'screenshot');
+          expect(desktop.overlay!['capturePurpose'], contains('二维码'));
+        } else {
+          await c.startScreenshot();
+        }
         expect(c.error, isNull);
         final status = (await driver.invokeMapMethod<String, Object?>(
           'status',
@@ -402,17 +422,22 @@ void main() {
           640,
           360,
         );
-        final blank = Rect.fromLTWH(
-          content.left + 20,
-          content.top + 280,
-          600,
-          60,
-        );
+        final selection = area == 'blank'
+            ? Rect.fromLTWH(content.left + 20, content.top + 280, 600, 60)
+            : Rect.fromLTWH(
+                content.left + 20,
+                content.top + 40,
+                area == 'left' ? 240 : 580,
+                220,
+              );
+        if (fromMenu) {
+          await desktop.writeClipboard('fruler:before-menu-selection');
+        }
         for (final phase in ['down', 'drag', 'up']) {
           await driver.invokeMethod<void>('pointer', {
             'displayId': id,
-            'x': phase == 'down' ? blank.left : blank.right,
-            'y': phase == 'down' ? blank.top : blank.bottom,
+            'x': phase == 'down' ? selection.left : selection.right,
+            'y': phase == 'down' ? selection.top : selection.bottom,
             'phase': phase,
             'warp': true,
           });
@@ -422,9 +447,10 @@ void main() {
           tester,
           () =>
               desktop.screenshotHosted &&
-              c.screenshotEditing &&
+              (c.screenshotEditing || !c.busy) &&
               !c.imageLoading,
         );
+        if (fromMenu) await waitFor(tester, () => !c.qrCodeBusy);
         await tester.pumpAndSettle();
         return (id: id!, frame: frame, content: content);
       }
@@ -550,6 +576,40 @@ void main() {
       expect(finalStatus['panels'], 0);
       expect(finalStatus['mainVisible'], false);
       expect(desktop.captureCount, 2, reason: '二维码识别与调整选区应复用每次冻结快照');
+
+      // 从真实状态栏入口启动，松开框选立即识别，不再点工具栏按钮。
+      await begin(fromMenu: true, area: 'left');
+      await waitFor(tester, () => !c.busy);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:selected-left',
+      );
+      await begin(fromMenu: true, area: 'both');
+      expect(c.qrCodeResults, ['fruler:selected-left', 'fruler:outside-right']);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:before-menu-selection',
+      );
+      await click(tester, find.byKey(const ValueKey('qr-result-1')));
+      await waitFor(tester, () => !c.busy);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:outside-right',
+      );
+      await begin(fromMenu: true);
+      expect(c.error, isNotNull);
+      expect(c.screenshotEditing, true);
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:before-menu-selection',
+      );
+      await c.cancelScreenshot();
+      final menuFinished = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      expect(menuFinished['panels'], 0);
+      expect(menuFinished['mainVisible'], false);
+      expect(desktop.captureCount, 5);
       expect(tester.takeException(), isNull);
     } finally {
       await c.cancelScreenshot();
@@ -872,7 +932,13 @@ void main() {
             .cast<Map>()
             .where((item) => item['tool'] != '')
             .map((item) => item['title']),
-        ['Screenshot', 'Screen recording…', 'Color Picker', 'Screen Ruler'],
+        [
+          'Screenshot',
+          'Recognize QR Code',
+          'Screen recording…',
+          'Color Picker',
+          'Screen Ruler',
+        ],
       );
       const sample = RgbColor(13, 127, 255);
       await controller.copyColor(sample);
@@ -895,7 +961,7 @@ void main() {
             .cast<Map>()
             .where((item) => item['tool'] != '')
             .map((item) => item['title']),
-        ['截图', '录屏…', '取色器', '尺子'],
+        ['截图', '识别二维码', '录屏…', '取色器', '尺子'],
       );
       expect(chinese['mainVisible'], false);
       await controller.cancelScreenshot();
@@ -1209,7 +1275,7 @@ void main() {
     },
   );
 
-  testWidgets('状态栏四工具分组入口与独立模式，历史和设置直接打开', (tester) async {
+  testWidgets('状态栏工具分组入口与独立模式，历史和设置直接打开', (tester) async {
     final d = NativeDesktop();
     final c = AppController(d);
     await c.initialize();
@@ -1222,28 +1288,30 @@ void main() {
       final menu = (initial['menu'] as List).cast<Map>();
       expect(menu.where((i) => i['tool'] != '').map((i) => i['title']), [
         '截图',
+        '识别二维码',
         '录屏…',
         '取色器',
         '尺子',
       ]);
       expect(menu.where((i) => i['separator'] == true), hasLength(3));
-      expect(menu.take(4).every((i) => i['hasImage'] == true), true);
-      expect(menu.skip(5).take(3).map((i) => i['title']), [
+      expect(menu.take(5).every((i) => i['hasImage'] == true), true);
+      expect(menu.skip(6).take(3).map((i) => i['title']), [
         '剪贴板贴图',
         '显示／隐藏全部贴图',
         '销毁全部贴图',
       ]);
-      expect(menu.skip(5).take(3).every((i) => i['hasImage'] == true), true);
+      expect(menu.skip(6).take(3).every((i) => i['hasImage'] == true), true);
+      expect(menu.singleWhere((i) => i['tool'] == 'qrCode')['key'], isEmpty);
       final nativeShortcutsAvailable = (await d.initialize()).shortcuts;
-      final chords = [
-        c.shortcuts.screenshot,
-        c.shortcuts.picker,
-        c.shortcuts.ruler,
-      ];
-      for (var i = 0; i < chords.length; i++) {
+      final chords = {
+        'screenshot': c.shortcuts.screenshot,
+        'picker': c.shortcuts.picker,
+        'rectangle': c.shortcuts.ruler,
+      };
+      for (final entry in chords.entries) {
         expect(
-          menu[i == 0 ? 0 : i + 1]['key'],
-          nativeShortcutsAvailable ? chords[i].key.toLowerCase() : '',
+          menu.singleWhere((i) => i['tool'] == entry.key)['key'],
+          nativeShortcutsAvailable ? entry.value.key.toLowerCase() : '',
           reason: '菜单遵循原生快捷键实际注册状态，冲突时不展示不可用快捷键',
         );
       }

@@ -608,5 +608,6 @@
   "msgQrCodeRecognitionFailed": "QR code recognition failed. Please try again.",
   "msgQrCodeCopyFailed": "Failed to copy QR code content. Please try again.",
   "msgQrCodeCopied": "QR code content copied",
-  "msgScreenshotCancelFailed": "Failed to cancel the screenshot. Please try again."
+  "msgScreenshotCancelFailed": "Failed to cancel the screenshot. Please try again.",
+  "uiQrCodeSelectionHint": "Drag to select a QR code · Release to recognize · Esc to cancel"
 }

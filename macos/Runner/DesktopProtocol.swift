@@ -59,6 +59,7 @@ extension EventKind {
     case .closePinnedImages: return "closePinnedImages"
     case .stopRecording: return "stopRecording"
     case .recordingFailed: return "recordingFailed"
+    case .activateQrCode: return "activateQrCode"
     }
   }
   init?(name: String) {
@@ -92,6 +93,7 @@ extension EventKind {
     case "closePinnedImages": self = .closePinnedImages
     case "stopRecording": self = .stopRecording
     case "recordingFailed": self = .recordingFailed
+    case "activateQrCode": self = .activateQrCode
     default: return nil
     }
   }

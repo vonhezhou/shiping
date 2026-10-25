@@ -117,6 +117,7 @@
 "picker.continuous_tooltip" = "连续取色：每次取色立即复制，Esc 结束";
 "picker.default_actions" = "左键取色 · 右键取消";
 "tool.picker" = "取色器";
+"tool.qr_code" = "识别二维码";
 "tool.ruler" = "尺子";
 "tool.screenshot" = "截图";
 

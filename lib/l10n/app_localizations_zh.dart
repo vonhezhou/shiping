@@ -1019,4 +1019,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get msgScreenshotCancelFailed => '截图取消失败，请重试。';
+
+  @override
+  String get uiQrCodeSelectionHint => '拖动框选二维码 · 松开识别 · Esc 取消';
 }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/core/core.dart';
+import 'package:fruler/platform/desktop_service.dart';
 
 import '../fake_desktop.dart';
 
@@ -19,6 +20,20 @@ class QrDesktop extends FakeDesktop {
     await super.finish(sessionId);
     if (finishError != null) throw finishError!;
     await pendingFinish?.future;
+  }
+
+  final begunTools = <String>[];
+  Completer<void>? pendingHosting;
+
+  @override
+  Future<CaptureSession> begin(String tool) {
+    begunTools.add(tool);
+    return super.begin(tool);
+  }
+
+  @override
+  Future<void> editScreenshot(int sessionId, int displayId) async {
+    await pendingHosting?.future;
   }
 
   final requests = <(int, int, PixelRect)>[];
@@ -52,8 +67,95 @@ Future<AppController> selection(QrDesktop desktop) async {
   return controller;
 }
 
+Future<void> waitUntil(bool Function() ready) async {
+  for (var i = 0; i < 100 && !ready(); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  expect(ready(), true);
+}
+
+void selectQrRegion(QrDesktop desktop) {
+  desktop.pointer(x: 1, y: 0.5, phase: 'down');
+  desktop.pointer(x: 3, y: 2.5, phase: 'up');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('状态栏二维码入口使用截图框选，松手并托管浮层后自动识别复制', () async {
+    final desktop = QrDesktop()
+      ..results = ['menu-selection']
+      ..pendingHosting = Completer<void>();
+    final controller = AppController(desktop);
+    await controller.initialize();
+    addTearDown(controller.dispose);
+    addTearDown(desktop.input.close);
+    desktop.event('activateQrCode');
+    await waitUntil(() => desktop.lastOverlay != null);
+    expect(desktop.begunTools, ['screenshot']);
+    expect(desktop.lastOverlay!['capturePurpose'], '拖动框选二维码 · 松开识别 · Esc 取消');
+    selectQrRegion(desktop);
+    await waitUntil(() => controller.screenshotEditing);
+    expect(desktop.requests, isEmpty, reason: '原生尚未托管编辑器时不能开始识别');
+    desktop.pendingHosting!.complete();
+    await waitUntil(() => desktop.clipboard != null && !controller.busy);
+    expect(desktop.clipboard, 'menu-selection');
+    expect(desktop.requests.single.$3.toJson(), {
+      'left': 2,
+      'top': 1,
+      'right': 6,
+      'bottom': 5,
+    });
+    expect(desktop.finishCalls, 1);
+    expect(desktop.showMainCalls, 0);
+  });
+
+  test('菜单框选包含多个二维码时保留结果供选择', () async {
+    final desktop = QrDesktop()..results = ['first', 'second'];
+    final controller = AppController(desktop);
+    await controller.initialize();
+    addTearDown(controller.dispose);
+    addTearDown(desktop.input.close);
+    desktop.event('activateQrCode');
+    await waitUntil(() => desktop.lastOverlay != null);
+    selectQrRegion(desktop);
+    await waitUntil(() => controller.qrCodeResults.isNotEmpty);
+    expect(controller.qrCodeResults, ['first', 'second']);
+    expect(controller.screenshotEditing, true);
+    expect(desktop.clipboard, isNull);
+    expect(desktop.finishCalls, 0);
+  });
+
+  for (final interrupted in ['failed', 'cancelled', 'busy']) {
+    test('二维码入口$interrupted后普通截图不会自动识别', () async {
+      final desktop = QrDesktop()..results = ['must-not-copy'];
+      final controller = AppController(desktop);
+      await controller.initialize();
+      addTearDown(controller.dispose);
+      addTearDown(desktop.input.close);
+      if (interrupted == 'failed') {
+        desktop.beginError = StateError('capture unavailable');
+        desktop.event('activateQrCode');
+        await waitUntil(() => controller.error != null);
+        desktop.beginError = null;
+      } else if (interrupted == 'cancelled') {
+        desktop.event('activateQrCode');
+        await waitUntil(() => desktop.lastOverlay != null);
+        desktop.event('cancelled');
+        expect(controller.busy, false);
+      }
+      await controller.startScreenshot();
+      if (interrupted == 'busy') desktop.event('activateQrCode');
+      selectQrRegion(desktop);
+      await waitUntil(
+        () => controller.screenshotEditing && !controller.imageLoading,
+      );
+      expect(desktop.requests, isEmpty);
+      expect(desktop.clipboard, isNull);
+      expect(desktop.lastOverlay!['capturePurpose'], '');
+      expect(controller.busy, true);
+    });
+  }
 
   test('精确传递冻结会话、显示器与Retina像素选区，唯一结果复制后退出', () async {
     final desktop = QrDesktop()..results = ['https://example.test/选中的二维码'];

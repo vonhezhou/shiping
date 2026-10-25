@@ -1946,6 +1946,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to cancel the screenshot. Please try again.'**
   String get msgScreenshotCancelFailed;
+
+  /// No description provided for @uiQrCodeSelectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to select a QR code · Release to recognize · Esc to cancel'**
+  String get uiQrCodeSelectionHint;
 }
 
 class _AppLocalizationsDelegate

@@ -211,6 +211,7 @@ class AppController extends ChangeNotifier {
   bool get imageSaving => screenshotExporting || _screenshotCancelling;
   bool _screenshotCancelling = false;
   bool screenshotExporting = false;
+  bool _recognizeQrCodeAfterSelection = false;
   bool qrCodeRecognizing = false;
   bool qrCodeCopying = false;
   bool get qrCodeBusy => qrCodeRecognizing || qrCodeCopying;
@@ -1097,6 +1098,9 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> startQrCodeRecognition() =>
+      _begin('screenshot', recognizeQrCodeAfterSelection: true);
+
   Offset? get screenshotPointer {
     final p = _lastPointer;
     return p != null && p.displayId == screenshotDisplayId
@@ -1172,6 +1176,13 @@ class AppController extends ChangeNotifier {
       imageLoading = false;
       _notify();
     }
+    if (!_disposed &&
+        _session?.id == id &&
+        screenshotEditing &&
+        _recognizeQrCodeAfterSelection) {
+      // 先让原生面板完成编辑器托管，再自动识别本次框选的二维码。
+      await recognizeQrCodes();
+    }
   }
 
   Future<void> _abortScreenshot(Object error, int id) async {
@@ -1190,7 +1201,10 @@ class AppController extends ChangeNotifier {
     return _begin(mode.name);
   }
 
-  Future<void> _begin(String tool) async {
+  Future<void> _begin(
+    String tool, {
+    bool recognizeQrCodeAfterSelection = false,
+  }) async {
     if (busy ||
         pinningImage ||
         imageLoading ||
@@ -1205,6 +1219,7 @@ class AppController extends ChangeNotifier {
       _fail(strings.msgMacOSRequired);
       return;
     }
+    _recognizeQrCodeAfterSelection = recognizeQrCodeAfterSelection;
     busy = true;
     if (tool == 'screenshot') screenshotPermissionRequired = false;
     _tool = tool;
@@ -1254,6 +1269,7 @@ class AppController extends ChangeNotifier {
       }
     } catch (e, stackTrace) {
       _logFailure('Capture begin', e, stackTrace);
+      _recognizeQrCodeAfterSelection = false;
       busy = false;
       _session = null;
       _pending.clear();
@@ -1280,6 +1296,9 @@ class AppController extends ChangeNotifier {
             /* Ignore modifier-only or unsupported keys. */
           }
         }
+        return;
+      case 'activateQrCode':
+        unawaited(startQrCodeRecognition());
         return;
       case 'activate':
         final tool = event['tool'];
@@ -1532,7 +1551,9 @@ class AppController extends ChangeNotifier {
             pickerActionLabel(pickerBehavior.secondary),
           )
         : strings.msgConfirmActions,
-    'capturePurpose': _contrastTarget == null
+    'capturePurpose': _recognizeQrCodeAfterSelection
+        ? strings.uiQrCodeSelectionHint
+        : _contrastTarget == null
         ? ''
         : (_contrastTarget == 'foreground'
               ? strings.msgPickForeground
@@ -2023,6 +2044,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _resetSession() {
+    _recognizeQrCodeAfterSelection = false;
     _clearQrCodes();
     imageCodec.clearCaptureImages();
     if (_session != null) {

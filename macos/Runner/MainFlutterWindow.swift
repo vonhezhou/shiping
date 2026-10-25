@@ -1358,6 +1358,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     // 常用工具独立成组，快捷键靠右；管理入口和退出另起分组。
     for (title, tool, key, symbol) in [
       (NativeStrings.text("tool.screenshot"), "screenshot", "X", "viewfinder"),
+      (NativeStrings.text("tool.qr_code"), "qrCode", "", "qrcode.viewfinder"),
       (NativeStrings.text(recorder.isRecording ? "recording.stop" : "tool.recording"), recorder.isRecording ? "stopRecording" : "recording", "", "record.circle"),
       (NativeStrings.text("tool.picker"), "picker", "C", "eyedropper"),
       (NativeStrings.text("tool.ruler"), "rectangle", "R", "ruler")
@@ -1365,7 +1366,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       let entry = NSMenuItem(title: title, action: #selector(activateTool(_:)), keyEquivalent: key)
       entry.target = self
       entry.representedObject = tool
-      entry.keyEquivalentModifierMask = [.command, .shift]
+      entry.keyEquivalentModifierMask = key.isEmpty ? [] : [.command, .shift]
       entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
       entry.image?.size = NSSize(width: 16, height: 16)
       toolMenuItems[tool] = entry
@@ -1413,12 +1414,14 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     if tool == "stopRecording" { sink?(["type": "stopRecording"]); return }
     guard !shortcutRecording else { return }
     guard session == nil, !preparing, !recorder.busy, !recordingTransition else { NSSound.beep(); return }
+    let activation: [String: Any] = tool == "qrCode"
+      ? ["type": "activateQrCode"] : ["type": "activate", "tool": tool]
     guard CGPreflightScreenCaptureAccess() else {
       presentMainWindow()
-      sink?(["type": "activate", "tool": tool])
+      sink?(activation)
       return
     }
-    sink?(["type": "activate", "tool": tool])
+    sink?(activation)
   }
   @objc private func presentMainWindow() {
     if session != nil { cancelSession() }
@@ -2457,7 +2460,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     }
     let hint = tool == "rectangle" ? (anchored ? NativeStrings.text("loupe.anchored_hint") : NativeStrings.text("loupe.rectangle_hint")) :
       (continuous && tool == "picker" ? NativeStrings.text("loupe.continuous_hint") : NativeStrings.text("loupe.copy_hint"))
-    let actionHint = tool == "recording" ? NativeStrings.text("recording.hint") : tool == "screenshot" ? NativeStrings.text("loupe.screenshot_hint") : tool == "picker" ? NativeStrings.text("loupe.picker_hint", pickerActions) : hint
+    let actionHint = tool == "recording" ? NativeStrings.text("recording.hint") : tool == "screenshot" ? (capturePurpose.isEmpty ? NativeStrings.text("loupe.screenshot_hint") : capturePurpose) : tool == "picker" ? NativeStrings.text("loupe.picker_hint", pickerActions) : hint
     (actionHint as NSString).draw(in:NSRect(x:box.minX+14,y: sampling ? box.minY + 207 : labelY + 21,width:width-28,height:60),withAttributes:[
       .font:NSFont.systemFont(ofSize:11),.foregroundColor:NSColor.gray])
   }

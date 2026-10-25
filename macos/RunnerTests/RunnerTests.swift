@@ -116,6 +116,15 @@ class RunnerTests: XCTestCase {
       XCTAssertNil(CaptureTool(name: value))
     }
   }
+  func testQrMenuActivationUsesItsOwnEventAndReusesScreenshotCapture() {
+    XCTAssertEqual(EventKind.activateQrCode.name, "activateQrCode")
+    XCTAssertEqual(EventKind(name: "activateQrCode"), .activateQrCode)
+    let event = nativeEvent(["type": "activateQrCode"])
+    XCTAssertEqual(event.kind, .activateQrCode)
+    XCTAssertNil(event.tool)
+    XCTAssertNil(CaptureTool(name: "qrCode"))
+  }
+
   func testTypedPointerAndNudgeKeepSessionAndCoordinates() {
     let pointer = nativeEvent(["type": "pointer", "sessionId": 7, "displayId": UInt32(3),
       "x": 12.5, "y": 40.0, "phase": "drag", "button": "secondary"])

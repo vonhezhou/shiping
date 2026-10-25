@@ -1133,4 +1133,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get msgScreenshotCancelFailed =>
       'Failed to cancel the screenshot. Please try again.';
+
+  @override
+  String get uiQrCodeSelectionHint =>
+      'Drag to select a QR code · Release to recognize · Esc to cancel';
 }

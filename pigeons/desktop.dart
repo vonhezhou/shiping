@@ -47,6 +47,7 @@ enum EventKind {
   closePinnedImages,
   stopRecording,
   recordingFailed,
+  activateQrCode,
 }
 
 enum InputPhase { move, down, drag, up, start, update, end }

@@ -147,6 +147,7 @@ enum EventKind {
   closePinnedImages,
   stopRecording,
   recordingFailed,
+  activateQrCode,
 }
 
 enum InputPhase {
