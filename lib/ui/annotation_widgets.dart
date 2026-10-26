@@ -1928,9 +1928,53 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
               ),
             ],
             if (loadFailed) Text(context.l10n.uiScreenshotLoadingFailed),
-            if (c.error != null)
-              Text(c.error!, style: const TextStyle(color: Colors.orange)),
           ],
+        ),
+      ),
+    ),
+  );
+
+  Widget errorFeedback() => Positioned(
+    top: 24,
+    left: 24,
+    right: 24,
+    child: IgnorePointer(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Semantics(
+            liveRegion: true,
+            child: toolbarPanel(
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        c.error!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              key: const ValueKey('screenshot-error-feedback'),
+            ),
+          ),
         ),
       ),
     ),
@@ -2223,7 +2267,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           var feedbackHeight = 0.0;
           for (final message in [
             if (loadFailed) context.l10n.uiScreenshotLoadingFailed,
-            if (c.error != null) c.error!,
           ]) {
             final painter = TextPainter(
               text: TextSpan(
@@ -2428,6 +2471,11 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                               screenPointer!.dy >= activeRect.top &&
                               screenPointer!.dy <= activeRect.bottom)))
                     pickerFeedback(constraints),
+                  // 独立提示不挤压工具栏，也不拦截下面的选区调整。
+                  if (c.error != null &&
+                      !c.qrCodeBusy &&
+                      c.qrCodeResults.isEmpty)
+                    errorFeedback(),
                   if (c.qrCodeBusy || c.qrCodeResults.isNotEmpty) qrCodePanel(),
                   if (colorPicking)
                     const Positioned.fill(

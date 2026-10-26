@@ -461,6 +461,28 @@ void main() {
         return PixelRect(left: tl.x, top: tl.y, right: br.x, bottom: br.y);
       }
 
+      void expectErrorFeedback() {
+        final feedback = find.byKey(
+          const ValueKey('screenshot-error-feedback'),
+        );
+        expect(feedback, findsOneWidget);
+        final bounds = tester.getRect(feedback);
+        final overlay = tester.getRect(
+          find.ancestor(of: feedback, matching: find.byType(Stack)).first,
+        );
+        expect(bounds.top, closeTo(overlay.top + 24, 1));
+        expect(bounds.center.dx, closeTo(overlay.center.dx, 1));
+        expect(bounds.width, lessThanOrEqualTo(560));
+        expect(find.text(c.error!), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('annotation-toolbar')),
+            matching: find.text(c.error!),
+          ),
+          findsNothing,
+        );
+      }
+
       final first = await begin();
       final session = desktop.lastCapture!.id;
       final left = pixels(
@@ -523,8 +545,13 @@ void main() {
         'fruler:keep-clipboard',
       );
       expect(c.error, isNotNull);
+      expectErrorFeedback();
       await c.adjustScreenshotSelection(left);
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('screenshot-error-feedback')),
+        findsNothing,
+      );
       await click(tester, find.byKey(const ValueKey('recognize-qr-code')));
       await waitFor(tester, () => !c.busy);
       expect(
@@ -598,6 +625,7 @@ void main() {
       );
       await begin(fromMenu: true);
       expect(c.error, isNotNull);
+      expectErrorFeedback();
       expect(c.screenshotEditing, true);
       expect(
         await driver.invokeMethod<String>('clipboardText'),
