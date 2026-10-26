@@ -89,6 +89,20 @@ void main() {
       expect(toolbar.top, greaterThanOrEqualTo(0));
       expect(toolbar.bottom, lessThanOrEqualTo(size.height));
       expect(toolbar.contains(tester.getCenter(pin)), true);
+      for (final key in [
+        'pin-screenshot',
+        'recognize-qr-code',
+        'save-screenshot',
+        'copy-screenshot',
+      ]) {
+        final button = find.byKey(ValueKey(key));
+        expect(
+          tester.getRect(button).right,
+          lessThanOrEqualTo(toolbar.right),
+          reason: '贴图和二维码同时存在时，所有导出按钮都应完整显示：$key',
+        );
+        expect(button.hitTestable(), findsOneWidget);
+      }
       await tester.tap(
         find.byKey(const ValueKey('annotation-tool-text')),
         kind: ui.PointerDeviceKind.mouse,
