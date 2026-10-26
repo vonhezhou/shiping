@@ -72,6 +72,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       !c.imageLoading &&
       !c.imageSaving &&
       !colorPicking &&
+      !c.textMode &&
       !c.qrCodeBusy &&
       c.qrCodeResults.isEmpty;
   List<Annotation> get visibleItems {
@@ -289,6 +290,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     finishText();
     finishLine();
     c.exportScreenshot(save: save, pin: pin);
+  }
+
+  void recognizeText() {
+    finishText();
+    finishLine();
+    cancelGesture();
+    c.recognizeText();
   }
 
   void recognizeQrCodes() {
@@ -898,6 +906,13 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   }
 
   KeyEventResult key(FocusNode node, KeyEvent event) {
+    if (c.textMode) {
+      if (event is KeyDownEvent &&
+          event.logicalKey == LogicalKeyboardKey.escape) {
+        c.dismissText();
+      }
+      return KeyEventResult.handled;
+    }
     if (event is KeyDownEvent && (c.qrCodeBusy || c.qrCodeResults.isNotEmpty)) {
       if (event.logicalKey == LogicalKeyboardKey.escape) {
         if (!c.qrCodeBusy || c.qrCodeRecognizing) {
@@ -1859,6 +1874,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           image == null ? null : () => export(false, pin: true),
         ),
         toolbarButton(
+          'recognize-text',
+          context.l10n.uiRecognizeText,
+          Icons.text_fields,
+          recognizeText,
+        ),
+        toolbarButton(
           'recognize-qr-code',
           context.l10n.uiRecognizeQrCode,
           Icons.qr_code_scanner,
@@ -2208,9 +2229,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 14 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
+          // 15 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
           final toolbarWidth = math.min(
-            14 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
+            15 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
           var feedbackHeight = 0.0;
@@ -2397,7 +2418,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   ],
                   if (showBrushCursor) brushCursor(rect),
                   if (textEditing) inlineText(rect),
-                  if (toolbarVisible && selectionDrag == null)
+                  if (toolbarVisible && selectionDrag == null && !c.textMode)
                     Positioned(
                       left: 12,
                       top: top.toDouble(),
@@ -2420,6 +2441,14 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                               screenPointer!.dy >= activeRect.top &&
                               screenPointer!.dy <= activeRect.bottom)))
                     pickerFeedback(constraints),
+                  if (c.textMode)
+                    Positioned.fill(
+                      child: _TextRecognitionOverlay(
+                        controller: c,
+                        rect: rect,
+                        toolbarTop: top.toDouble(),
+                      ),
+                    ),
                   // 独立提示不挤压工具栏，也不拦截下面的选区调整。
                   if (c.error != null &&
                       !c.qrCodeBusy &&

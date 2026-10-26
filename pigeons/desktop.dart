@@ -119,6 +119,29 @@ class PixelBounds {
   int bottom;
 }
 
+class TextGlyph {
+  TextGlyph({
+    required this.start,
+    required this.end,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+  int start;
+  int end;
+  double left;
+  double top;
+  double right;
+  double bottom;
+}
+
+class TextLine {
+  TextLine({required this.text, required this.glyphs});
+  String text;
+  List<TextGlyph> glyphs;
+}
+
 class NativeColor {
   NativeColor({required this.red, required this.green, required this.blue});
   int red;
@@ -319,6 +342,8 @@ abstract class DesktopHostApi {
   void reselectScreenshot(int sessionId);
   @async
   List<String> recognizeQrCodes(int sessionId, int displayId, PixelBounds rect);
+  @async
+  List<TextLine> recognizeText(int sessionId, int displayId, PixelBounds rect);
   @async
   String? loadState();
   @async

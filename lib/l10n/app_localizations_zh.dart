@@ -1035,4 +1035,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String uiQrCodeResultIndex(int index) {
     return '二维码 $index';
   }
+
+  @override
+  String get uiRecognizeText => '识别文字';
+
+  @override
+  String get uiTextRecognizing => '正在识别文字…';
+
+  @override
+  String get uiTextSelectionHint => '拖动选字 · ⌘A 全选 · ⌘C 复制 · Esc 返回';
+
+  @override
+  String get uiCopyAllTextAndFinish => '复制全部并完成';
+
+  @override
+  String get uiExitTextSelection => '返回标注';
+
+  @override
+  String get msgTextNotFound => '选区中未发现文字。';
+
+  @override
+  String get msgTextRecognitionFailed => '文字识别失败，请重试。';
+
+  @override
+  String get msgTextCopyFailed => '文字复制失败，请重试。';
+
+  @override
+  String get msgTextCopied => '文字已复制。';
 }

@@ -483,6 +483,98 @@ struct PixelBounds: Hashable {
 }
 
 /// Generated class from Pigeon that represents data sent in messages.
+struct TextGlyph: Hashable {
+  var start: Int64
+  var end: Int64
+  var left: Double
+  var top: Double
+  var right: Double
+  var bottom: Double
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> TextGlyph? {
+    let start = pigeonVar_list[0] as! Int64
+    let end = pigeonVar_list[1] as! Int64
+    let left = pigeonVar_list[2] as! Double
+    let top = pigeonVar_list[3] as! Double
+    let right = pigeonVar_list[4] as! Double
+    let bottom = pigeonVar_list[5] as! Double
+
+    return TextGlyph(
+      start: start,
+      end: end,
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      start,
+      end,
+      left,
+      top,
+      right,
+      bottom,
+    ]
+  }
+  static func == (lhs: TextGlyph, rhs: TextGlyph) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return deepEqualsDesktop(lhs.start, rhs.start) && deepEqualsDesktop(lhs.end, rhs.end) && deepEqualsDesktop(lhs.left, rhs.left) && deepEqualsDesktop(lhs.top, rhs.top) && deepEqualsDesktop(lhs.right, rhs.right) && deepEqualsDesktop(lhs.bottom, rhs.bottom)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("TextGlyph")
+    deepHashDesktop(value: start, hasher: &hasher)
+    deepHashDesktop(value: end, hasher: &hasher)
+    deepHashDesktop(value: left, hasher: &hasher)
+    deepHashDesktop(value: top, hasher: &hasher)
+    deepHashDesktop(value: right, hasher: &hasher)
+    deepHashDesktop(value: bottom, hasher: &hasher)
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
+struct TextLine: Hashable {
+  var text: String
+  var glyphs: [TextGlyph]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> TextLine? {
+    let text = pigeonVar_list[0] as! String
+    let glyphs = pigeonVar_list[1] as! [TextGlyph]
+
+    return TextLine(
+      text: text,
+      glyphs: glyphs
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      text,
+      glyphs,
+    ]
+  }
+  static func == (lhs: TextLine, rhs: TextLine) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return deepEqualsDesktop(lhs.text, rhs.text) && deepEqualsDesktop(lhs.glyphs, rhs.glyphs)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("TextLine")
+    deepHashDesktop(value: text, hasher: &hasher)
+    deepHashDesktop(value: glyphs, hasher: &hasher)
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
 struct NativeColor: Hashable {
   var red: Int64
   var green: Int64
@@ -1027,18 +1119,22 @@ private class DesktopPigeonCodecReader: FlutterStandardReader {
     case 137:
       return PixelBounds.fromList(self.readValue() as! [Any?])
     case 138:
-      return NativeColor.fromList(self.readValue() as! [Any?])
+      return TextGlyph.fromList(self.readValue() as! [Any?])
     case 139:
-      return NativeChord.fromList(self.readValue() as! [Any?])
+      return TextLine.fromList(self.readValue() as! [Any?])
     case 140:
-      return NativeBindings.fromList(self.readValue() as! [Any?])
+      return NativeColor.fromList(self.readValue() as! [Any?])
     case 141:
-      return MeasurementPin.fromList(self.readValue() as! [Any?])
+      return NativeChord.fromList(self.readValue() as! [Any?])
     case 142:
-      return OverlayState.fromList(self.readValue() as! [Any?])
+      return NativeBindings.fromList(self.readValue() as! [Any?])
     case 143:
-      return NativeEvent.fromList(self.readValue() as! [Any?])
+      return MeasurementPin.fromList(self.readValue() as! [Any?])
     case 144:
+      return OverlayState.fromList(self.readValue() as! [Any?])
+    case 145:
+      return NativeEvent.fromList(self.readValue() as! [Any?])
+    case 146:
       return NativeLogEntry.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -1075,26 +1171,32 @@ private class DesktopPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? PixelBounds {
       super.writeByte(137)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeColor {
+    } else if let value = value as? TextGlyph {
       super.writeByte(138)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeChord {
+    } else if let value = value as? TextLine {
       super.writeByte(139)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeBindings {
+    } else if let value = value as? NativeColor {
       super.writeByte(140)
       super.writeValue(value.toList())
-    } else if let value = value as? MeasurementPin {
+    } else if let value = value as? NativeChord {
       super.writeByte(141)
       super.writeValue(value.toList())
-    } else if let value = value as? OverlayState {
+    } else if let value = value as? NativeBindings {
       super.writeByte(142)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeEvent {
+    } else if let value = value as? MeasurementPin {
       super.writeByte(143)
       super.writeValue(value.toList())
-    } else if let value = value as? NativeLogEntry {
+    } else if let value = value as? OverlayState {
       super.writeByte(144)
+      super.writeValue(value.toList())
+    } else if let value = value as? NativeEvent {
+      super.writeByte(145)
+      super.writeValue(value.toList())
+    } else if let value = value as? NativeLogEntry {
+      super.writeByte(146)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1135,6 +1237,7 @@ protocol DesktopHostApi {
   func editScreenshot(sessionId: Int64, displayId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func reselectScreenshot(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func recognizeQrCodes(sessionId: Int64, displayId: Int64, rect: PixelBounds, completion: @escaping (Result<[String], Error>) -> Void)
+  func recognizeText(sessionId: Int64, displayId: Int64, rect: PixelBounds, completion: @escaping (Result<[TextLine], Error>) -> Void)
   func loadState(completion: @escaping (Result<String?, Error>) -> Void)
   func saveState(json: String, completion: @escaping (Result<Void, Error>) -> Void)
   func openPaletteFile(completion: @escaping (Result<String?, Error>) -> Void)
@@ -1419,6 +1522,25 @@ class DesktopHostApiSetup {
       }
     } else {
       recognizeQrCodesChannel.setMessageHandler(nil)
+    }
+    let recognizeTextChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.recognizeText\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      recognizeTextChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let sessionIdArg = args[0] as! Int64
+        let displayIdArg = args[1] as! Int64
+        let rectArg = args[2] as! PixelBounds
+        api.recognizeText(sessionId: sessionIdArg, displayId: displayIdArg, rect: rectArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      recognizeTextChannel.setMessageHandler(nil)
     }
     let loadStateChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.loadState\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

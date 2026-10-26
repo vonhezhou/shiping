@@ -496,5 +496,14 @@
   "uiQrCodeResultCount": "识别到 {count} 个二维码",
   "@uiQrCodeResultCount": {"placeholders": {"count": {"type": "int"}}},
   "uiQrCodeResultIndex": "二维码 {index}",
-  "@uiQrCodeResultIndex": {"placeholders": {"index": {"type": "int"}}}
+  "@uiQrCodeResultIndex": {"placeholders": {"index": {"type": "int"}}},
+  "uiRecognizeText": "识别文字",
+  "uiTextRecognizing": "正在识别文字…",
+  "uiTextSelectionHint": "拖动选字 · ⌘A 全选 · ⌘C 复制 · Esc 返回",
+  "uiCopyAllTextAndFinish": "复制全部并完成",
+  "uiExitTextSelection": "返回标注",
+  "msgTextNotFound": "选区中未发现文字。",
+  "msgTextRecognitionFailed": "文字识别失败，请重试。",
+  "msgTextCopyFailed": "文字复制失败，请重试。",
+  "msgTextCopied": "文字已复制。"
 }

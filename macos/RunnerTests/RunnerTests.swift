@@ -240,4 +240,60 @@ class RunnerTests: XCTestCase {
     }
   }
 
+  private func textCanvas(scale: Int) throws -> CGImage {
+    let image = NSImage(size: NSSize(width: 800, height: 400))
+    image.lockFocus()
+    NSColor.white.setFill()
+    NSRect(x: 0, y: 0, width: 800, height: 400).fill()
+    let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 32), .foregroundColor: NSColor.black]
+    ("Hello World" as NSString).draw(at: NSPoint(x: 30, y: 310), withAttributes: attributes)
+    ("你好世界" as NSString).draw(at: NSPoint(x: 30, y: 230), withAttributes: attributes)
+    ("OUTSIDE" as NSString).draw(at: NSPoint(x: 490, y: 310), withAttributes: attributes)
+    image.unlockFocus()
+    let source = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    let context = try XCTUnwrap(CGContext(data: nil, width: 800 * scale, height: 400 * scale,
+      bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.draw(source, in: CGRect(x: 0, y: 0, width: 800 * scale, height: 400 * scale))
+    return try XCTUnwrap(context.makeImage())
+  }
+
+  func testTextRecognitionUsesSelectedOriginalPixelsAtBothScales() throws {
+    for scale: Int64 in [1, 2] {
+      let image = try textCanvas(scale: Int(scale))
+      let lines = try TextRecognizer.recognize(image: image, rect: qrBounds(0, 0, 430 * scale, 230 * scale))
+      XCTAssertEqual(lines.map(\.text), ["Hello World", "你好世界"])
+      XCTAssertTrue(lines.allSatisfy { !$0.glyphs.isEmpty })
+      for line in lines {
+        XCTAssertEqual(line.glyphs.first?.start, 0)
+        XCTAssertEqual(line.glyphs.last?.end, Int64(line.text.utf16.count))
+        for glyph in line.glyphs {
+          XCTAssertGreaterThan(glyph.end, glyph.start)
+          XCTAssertGreaterThan(glyph.right, glyph.left)
+          XCTAssertGreaterThan(glyph.bottom, glyph.top)
+          XCTAssertGreaterThanOrEqual(glyph.left, 0)
+          XCTAssertLessThanOrEqual(glyph.right, Double(430 * scale))
+          XCTAssertGreaterThanOrEqual(glyph.top, 0)
+          XCTAssertLessThanOrEqual(glyph.bottom, Double(230 * scale))
+        }
+      }
+      let hello = lines[0].glyphs
+      XCTAssertEqual(hello[0].start, 0)
+      XCTAssertEqual(hello[0].end, 5, "英文单词整体作为选择单元")
+      XCTAssertLessThan(hello[0].right, hello.last!.right)
+      let blank = try TextRecognizer.recognize(image: image, rect: qrBounds(0, 250 * scale, 430 * scale, 400 * scale))
+      XCTAssertTrue(blank.isEmpty)
+    }
+  }
+
+  func testTextRecognitionRejectsInvalidBounds() throws {
+    let image = try textCanvas(scale: 1)
+    for rect in [qrBounds(-1, 0, 20, 20), qrBounds(0, 0, 801, 20),
+      qrBounds(0, 0, 20, 401), qrBounds(0, 0, 0, 20), qrBounds(20, 0, 0, 20),
+      qrBounds(Int64.min, 0, Int64.max, 20)] {
+      XCTAssertThrowsError(try TextRecognizer.recognize(image: image, rect: rect)) { error in
+        XCTAssertEqual((error as? PigeonError)?.code, "invalid_text_region")
+      }
+    }
+  }
+
 }

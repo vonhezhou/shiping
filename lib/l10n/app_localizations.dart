@@ -1970,6 +1970,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'QR code {index}'**
   String uiQrCodeResultIndex(int index);
+
+  /// No description provided for @uiRecognizeText.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognize Text'**
+  String get uiRecognizeText;
+
+  /// No description provided for @uiTextRecognizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Recognizing text…'**
+  String get uiTextRecognizing;
+
+  /// No description provided for @uiTextSelectionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to select · ⌘A Select all · ⌘C Copy · Esc Back'**
+  String get uiTextSelectionHint;
+
+  /// No description provided for @uiCopyAllTextAndFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy All and Finish'**
+  String get uiCopyAllTextAndFinish;
+
+  /// No description provided for @uiExitTextSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Back to Annotation'**
+  String get uiExitTextSelection;
+
+  /// No description provided for @msgTextNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No text found in the selection.'**
+  String get msgTextNotFound;
+
+  /// No description provided for @msgTextRecognitionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Text recognition failed. Please try again.'**
+  String get msgTextRecognitionFailed;
+
+  /// No description provided for @msgTextCopyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not copy text. Please try again.'**
+  String get msgTextCopyFailed;
+
+  /// No description provided for @msgTextCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Text copied.'**
+  String get msgTextCopied;
 }
 
 class _AppLocalizationsDelegate

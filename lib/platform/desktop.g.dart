@@ -456,6 +456,116 @@ class PixelBounds {
   int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
 }
 
+class TextGlyph {
+  TextGlyph({
+    required this.start,
+    required this.end,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  int start;
+
+  int end;
+
+  double left;
+
+  double top;
+
+  double right;
+
+  double bottom;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      start,
+      end,
+      left,
+      top,
+      right,
+      bottom,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static TextGlyph decode(Object result) {
+    result as List<Object?>;
+    return TextGlyph(
+      start: result[0]! as int,
+      end: result[1]! as int,
+      left: result[2]! as double,
+      top: result[3]! as double,
+      right: result[4]! as double,
+      bottom: result[5]! as double,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! TextGlyph || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(start, other.start) && _deepEquals(end, other.end) && _deepEquals(left, other.left) && _deepEquals(top, other.top) && _deepEquals(right, other.right) && _deepEquals(bottom, other.bottom);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
+class TextLine {
+  TextLine({
+    required this.text,
+    required this.glyphs,
+  });
+
+  String text;
+
+  List<TextGlyph> glyphs;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      text,
+      glyphs,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static TextLine decode(Object result) {
+    result as List<Object?>;
+    return TextLine(
+      text: result[0]! as String,
+      glyphs: (result[1]! as List<Object?>).cast<TextGlyph>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! TextLine || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(text, other.text) && _deepEquals(glyphs, other.glyphs);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+}
+
 class NativeColor {
   NativeColor({
     required this.red,
@@ -1061,26 +1171,32 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is PixelBounds) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeColor) {
+    }    else if (value is TextGlyph) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeChord) {
+    }    else if (value is TextLine) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeBindings) {
+    }    else if (value is NativeColor) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    }    else if (value is MeasurementPin) {
+    }    else if (value is NativeChord) {
       buffer.putUint8(141);
       writeValue(buffer, value.encode());
-    }    else if (value is OverlayState) {
+    }    else if (value is NativeBindings) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeEvent) {
+    }    else if (value is MeasurementPin) {
       buffer.putUint8(143);
       writeValue(buffer, value.encode());
-    }    else if (value is NativeLogEntry) {
+    }    else if (value is OverlayState) {
       buffer.putUint8(144);
+      writeValue(buffer, value.encode());
+    }    else if (value is NativeEvent) {
+      buffer.putUint8(145);
+      writeValue(buffer, value.encode());
+    }    else if (value is NativeLogEntry) {
+      buffer.putUint8(146);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -1113,18 +1229,22 @@ class _PigeonCodec extends StandardMessageCodec {
       case 137:
         return PixelBounds.decode(readValue(buffer)!);
       case 138:
-        return NativeColor.decode(readValue(buffer)!);
+        return TextGlyph.decode(readValue(buffer)!);
       case 139:
-        return NativeChord.decode(readValue(buffer)!);
+        return TextLine.decode(readValue(buffer)!);
       case 140:
-        return NativeBindings.decode(readValue(buffer)!);
+        return NativeColor.decode(readValue(buffer)!);
       case 141:
-        return MeasurementPin.decode(readValue(buffer)!);
+        return NativeChord.decode(readValue(buffer)!);
       case 142:
-        return OverlayState.decode(readValue(buffer)!);
+        return NativeBindings.decode(readValue(buffer)!);
       case 143:
-        return NativeEvent.decode(readValue(buffer)!);
+        return MeasurementPin.decode(readValue(buffer)!);
       case 144:
+        return OverlayState.decode(readValue(buffer)!);
+      case 145:
+        return NativeEvent.decode(readValue(buffer)!);
+      case 146:
         return NativeLogEntry.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -1438,6 +1558,25 @@ class DesktopHostApi {
     )
     ;
     return (pigeonVar_replyValue! as List<Object?>).cast<String>();
+  }
+
+  Future<List<TextLine>> recognizeText(int sessionId, int displayId, PixelBounds rect) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.fruler.DesktopHostApi.recognizeText$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, displayId, rect]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<TextLine>();
   }
 
   Future<String?> loadState() async {

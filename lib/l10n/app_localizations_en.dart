@@ -1155,4 +1155,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String uiQrCodeResultIndex(int index) {
     return 'QR code $index';
   }
+
+  @override
+  String get uiRecognizeText => 'Recognize Text';
+
+  @override
+  String get uiTextRecognizing => 'Recognizing text…';
+
+  @override
+  String get uiTextSelectionHint =>
+      'Drag to select · ⌘A Select all · ⌘C Copy · Esc Back';
+
+  @override
+  String get uiCopyAllTextAndFinish => 'Copy All and Finish';
+
+  @override
+  String get uiExitTextSelection => 'Back to Annotation';
+
+  @override
+  String get msgTextNotFound => 'No text found in the selection.';
+
+  @override
+  String get msgTextRecognitionFailed =>
+      'Text recognition failed. Please try again.';
+
+  @override
+  String get msgTextCopyFailed => 'Could not copy text. Please try again.';
+
+  @override
+  String get msgTextCopied => 'Text copied.';
 }

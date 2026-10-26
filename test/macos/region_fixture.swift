@@ -112,6 +112,38 @@ let qrObserver = DistributedNotificationCenter.default().addObserver(
     qrWindow.makeKeyAndOrderFront(nil)
   }
 }
+// 真实 AppKit 文字夹具与二维码共用独立进程，不经过被测识别或渲染逻辑。
+final class TextFixtureView: NSView {
+  override func draw(_ dirtyRect: NSRect) {
+    NSColor.white.setFill(); bounds.fill()
+    let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 30), .foregroundColor: NSColor.black]
+    ("Hello World" as NSString).draw(at: NSPoint(x: 30, y: 280), withAttributes: attributes)
+    ("你好世界" as NSString).draw(at: NSPoint(x: 30, y: 200), withAttributes: attributes)
+    ("OUTSIDE" as NSString).draw(at: NSPoint(x: 400, y: 280), withAttributes: attributes)
+  }
+}
+let textWindow = NSWindow(contentRect: NSRect(x: screen.minX + 80, y: screen.maxY - 500, width: 640, height: 360),
+  styleMask: [.titled], backing: .buffered, defer: false)
+textWindow.title = "fruler-text-fixture"
+textWindow.isReleasedWhenClosed = false
+textWindow.contentView = TextFixtureView(frame: NSRect(x: 0, y: 0, width: 640, height: 360))
+let textObserver = DistributedNotificationCenter.default().addObserver(
+  forName: Notification.Name("dev.fruler.integration.textFixture"), object: nil, queue: .main) { note in
+  guard let payload = note.object as? String, let data = payload.data(using: .utf8),
+    let args = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+    let token = args["token"] else { return }
+  if args["action"] == "hide" { textWindow.orderOut(nil) }
+  else {
+    app.activate(ignoringOtherApps: true)
+    textWindow.makeKeyAndOrderFront(nil)
+    textWindow.displayIfNeeded()
+  }
+  // 显示完成后回复，避免测试在异步通知尚未送达时就开始采集。
+  DispatchQueue.main.async {
+    DistributedNotificationCenter.default().postNotificationName(
+      Notification.Name("dev.fruler.integration.textFixtureReply.\(token)"), object: "ok", userInfo: nil, deliverImmediately: true)
+  }
+}
 window.orderFrontRegardless()
 print("ready");fflush(stdout)
 app.run()

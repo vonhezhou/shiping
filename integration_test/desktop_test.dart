@@ -91,6 +91,20 @@ class NativeScrollDispatcher implements HitTestDispatcher {
   }
 }
 
+/// OCR 测试将真实 Cocoa 鼠标生命周期转交测试绑定，仍由 Flutter 完成命中和拖选。
+class NativeTextPointerDispatcher implements HitTestDispatcher {
+  NativeTextPointerDispatcher(this.binding);
+  final IntegrationTestWidgetsFlutterBinding binding;
+  @override
+  void dispatchEvent(PointerEvent event, HitTestResult result) {
+    // ignore: invalid_use_of_protected_member
+    binding.withPointerEventSource(
+      TestBindingEventSource.test,
+      () => binding.dispatchEvent(event, result),
+    );
+  }
+}
+
 Future<void> nativeWheel(
   WidgetTester tester,
   Offset position,
@@ -372,6 +386,158 @@ void main() {
     });
     return;
   }
+  testWidgets('真实屏幕 OCR 按词跨行拖选、连续复制与完成后回原应用', (tester) async {
+    final desktop = NativeDesktop();
+    final c = AppController(desktop);
+    await c.initialize();
+    await driver.invokeMethod<void>('backupClipboard');
+    final binding = tester.binding as IntegrationTestWidgetsFlutterBinding;
+    try {
+      expect(c.permissionGranted, true, reason: '真实 OCR 截图集成测试需要录屏权限');
+      await tester.pumpWidget(FrulerApp(controller: c));
+      await driver.invokeMethod<void>('textFixture', {'action': 'show'});
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await c.startScreenshot();
+      expect(c.error, isNull, reason: 'OCR 测试必须成功开始真实截图会话');
+      final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      Map? target;
+      int? displayId;
+      for (final view in (status['rulerViews'] as List).cast<Map>()) {
+        for (final region in (view['regions'] as List).cast<Map>()) {
+          if (region['title'] == 'fruler-text-fixture') {
+            target = region;
+            displayId = (view['displayId'] as num).toInt();
+          }
+        }
+      }
+      expect(
+        target,
+        isNotNull,
+        reason:
+            '必须采集独立 AppKit 文字夹具的真实像素；panels=${status['panels']}，测试窗口=${(status['rulerViews'] as List).cast<Map>().expand((v) => (v['regions'] as List).cast<Map>()).map((v) => v['title']).where((v) => v.toString().startsWith('fruler')).toList()}',
+      );
+      final content = Rect.fromLTWH(
+        (target!['x'] as num).toDouble(),
+        (target['y'] as num).toDouble() +
+            (target['height'] as num).toDouble() -
+            360,
+        640,
+        360,
+      );
+      final region = Rect.fromLTWH(
+        content.left + 15,
+        content.top + 20,
+        350,
+        200,
+      );
+      for (final phase in ['down', 'drag', 'up']) {
+        await driver.invokeMethod<void>('pointer', {
+          'displayId': displayId,
+          'x': phase == 'down' ? region.left : region.right,
+          'y': phase == 'down' ? region.top : region.bottom,
+          'phase': phase,
+          'warp': true,
+        });
+        await tester.pump();
+      }
+      await waitFor(
+        tester,
+        () =>
+            desktop.screenshotHosted && c.screenshotEditing && !c.imageLoading,
+      );
+      await tester.pumpAndSettle();
+      await desktop.writeClipboard('fruler:before-ocr');
+      await click(tester, find.byKey(const ValueKey('recognize-text')));
+      await waitFor(tester, () => !c.textRecognizing);
+      expect(c.recognizedText?.text, 'Hello World\n你好世界');
+      expect(
+        await driver.invokeMethod<String>('clipboardText'),
+        'fruler:before-ocr',
+      );
+      expect(c.canAdjustScreenshotSelection, false);
+      final document = c.recognizedText!;
+      final view = tester.binding.renderViews.firstWhere(
+        (view) => view.flutterView.viewId == tester.view.viewId,
+      );
+      Offset nativeAt(Offset pixel) => tester.binding.localToGlobal(
+        Offset(
+          (c.screenshotSelection!.left + pixel.dx) / c.screenshotScaleX,
+          (c.screenshotSelection!.top + pixel.dy) / c.screenshotScaleY,
+        ),
+        view,
+      );
+      binding.deviceEventDispatcher = NativeTextPointerDispatcher(binding);
+      Future<void> drag(Offset from, Offset to) async {
+        for (final (phase, point) in [
+          ('move', from),
+          ('down', from),
+          ('drag', to),
+          ('up', to),
+        ]) {
+          final position = nativeAt(point);
+          await driver.invokeMethod<void>('pointer', {
+            'displayId': displayId,
+            'x': position.dx,
+            'y': position.dy,
+            'phase': phase,
+          });
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 30)),
+          );
+          await tester.pump();
+        }
+      }
+
+      final first = document.lines.first.glyphs.first.bounds;
+      await drag(
+        Offset(first.left + 1, first.center.dy),
+        Offset(first.right - 1, first.center.dy),
+      );
+      await driver.invokeMethod<void>('key', {'keyCode': 8, 'command': true});
+      await tester.pumpAndSettle();
+      expect(await driver.invokeMethod<String>('clipboardText'), 'Hello');
+      expect(c.textMode, true);
+      final last = document.lines.last.glyphs.last.bounds;
+      await drag(
+        Offset(first.left + 1, first.center.dy),
+        Offset(last.right - 1, last.center.dy),
+      );
+      await driver.invokeMethod<void>('key', {'keyCode': 8, 'command': true});
+      await tester.pumpAndSettle();
+      expect(await driver.invokeMethod<String>('clipboardText'), document.text);
+      await desktop.writeClipboard('fruler:before-select-all');
+      await driver.invokeMethod<void>('key', {'keyCode': 0, 'command': true});
+      await driver.invokeMethod<void>('key', {'keyCode': 8, 'command': true});
+      await tester.pumpAndSettle();
+      expect(await driver.invokeMethod<String>('clipboardText'), document.text);
+      await driver.invokeMethod<void>('key', {'keyCode': 53});
+      await tester.pumpAndSettle();
+      expect(c.textMode, false);
+      expect(c.screenshotEditing, true);
+      binding.deviceEventDispatcher = null;
+      await click(tester, find.byKey(const ValueKey('recognize-text')));
+      await waitFor(tester, () => !c.textRecognizing);
+      await click(tester, find.byKey(const ValueKey('copy-all-text-finish')));
+      await waitFor(tester, () => !c.busy);
+      expect(await driver.invokeMethod<String>('clipboardText'), document.text);
+      final finished = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      expect(finished['panels'], 0);
+      expect(finished['mainVisible'], false);
+      expect(finished['applicationActive'], false, reason: '完成后应返回夹具应用');
+      expect(tester.takeException(), isNull);
+    } finally {
+      binding.deviceEventDispatcher = null;
+      await c.cancelScreenshot();
+      await tester.pumpWidget(const SizedBox.shrink());
+      c.dispose();
+      await driver.invokeMethod<void>('textFixture', {'action': 'hide'});
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
   testWidgets('真实屏幕二维码严格限定选区，保留内容查看后主动复制并回原应用', (tester) async {
     final desktop = NativeDesktop();
     final c = AppController(desktop);

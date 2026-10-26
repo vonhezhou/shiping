@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show Locale, PlatformDispatcher;
+import 'dart:ui' show Locale, PlatformDispatcher, Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -68,6 +68,11 @@ abstract class DesktopService {
   Future<void> editScreenshot(int sessionId, int displayId) async {}
   Future<void> reselectScreenshot(int sessionId) async {}
   Future<List<String>> recognizeQrCodes(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+  ) async => throw UnsupportedError('platform_unsupported');
+  Future<List<RecognizedTextLine>> recognizeText(
     int sessionId,
     int displayId,
     PixelRect rect,
@@ -208,6 +213,40 @@ class MacDesktopService extends DesktopService {
   @override
   Future<void> reselectScreenshot(int sessionId) =>
       _api.reselectScreenshot(sessionId);
+  @override
+  Future<List<RecognizedTextLine>> recognizeText(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+  ) async {
+    final lines = await _api.recognizeText(
+      sessionId,
+      displayId,
+      boundsToWire(rect.toJson()),
+    );
+    return lines
+        .map(
+          (line) => RecognizedTextLine(
+            text: line.text,
+            glyphs: line.glyphs
+                .map(
+                  (glyph) => RecognizedTextGlyph(
+                    glyph.start,
+                    glyph.end,
+                    Rect.fromLTRB(
+                      glyph.left,
+                      glyph.top,
+                      glyph.right,
+                      glyph.bottom,
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        )
+        .toList();
+  }
+
   @override
   Future<List<String>> recognizeQrCodes(
     int sessionId,

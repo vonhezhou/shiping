@@ -614,5 +614,14 @@
   "uiQrCodeResultCount": "{count, plural, =1{1 QR code found} other{{count} QR codes found}}",
   "@uiQrCodeResultCount": {"placeholders": {"count": {"type": "int"}}},
   "uiQrCodeResultIndex": "QR code {index}",
-  "@uiQrCodeResultIndex": {"placeholders": {"index": {"type": "int"}}}
+  "@uiQrCodeResultIndex": {"placeholders": {"index": {"type": "int"}}},
+  "uiRecognizeText": "Recognize Text",
+  "uiTextRecognizing": "Recognizing text…",
+  "uiTextSelectionHint": "Drag to select · ⌘A Select all · ⌘C Copy · Esc Back",
+  "uiCopyAllTextAndFinish": "Copy All and Finish",
+  "uiExitTextSelection": "Back to Annotation",
+  "msgTextNotFound": "No text found in the selection.",
+  "msgTextRecognitionFailed": "Text recognition failed. Please try again.",
+  "msgTextCopyFailed": "Could not copy text. Please try again.",
+  "msgTextCopied": "Text copied."
 }

@@ -243,7 +243,8 @@ class AppController extends ChangeNotifier {
         imageLoading ||
         screenshotExporting ||
         _screenshotCancelling ||
-        qrCodeBusy) {
+        qrCodeBusy ||
+        textMode) {
       return;
     }
     _clearQrCodes();
@@ -316,6 +317,111 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
+  bool textMode = false, textRecognizing = false, textCopying = false;
+  RecognizedTextDocument? recognizedText;
+  int _textRequest = 0;
+
+  void _clearText() {
+    _textRequest++;
+    textMode = false;
+    textRecognizing = false;
+    textCopying = false;
+    recognizedText = null;
+  }
+
+  void dismissText() {
+    if (textCopying) return;
+    _clearText();
+    error = null;
+    _notify();
+  }
+
+  bool _isTextRequestCurrent(int request, int sessionId) =>
+      !_disposed &&
+      _textRequest == request &&
+      _session?.id == sessionId &&
+      screenshotEditing;
+
+  Future<void> recognizeText() async {
+    final sessionId = _session?.id, displayId = screenshotDisplayId;
+    final rect = screenshotSelection;
+    if (sessionId == null ||
+        displayId == null ||
+        rect == null ||
+        !screenshotEditing ||
+        imageLoading ||
+        imageSaving ||
+        qrCodeBusy ||
+        qrCodeResults.isNotEmpty ||
+        textMode) {
+      return;
+    }
+    _clearText();
+    final request = _textRequest;
+    textMode = textRecognizing = true;
+    error = null;
+    _notify();
+    try {
+      final lines = await desktop.recognizeText(sessionId, displayId, rect);
+      if (!_isTextRequestCurrent(request, sessionId)) return;
+      if (lines.isEmpty || lines.every((line) => line.text.isEmpty)) {
+        _clearText();
+        error = strings.msgTextNotFound;
+      } else {
+        recognizedText = RecognizedTextDocument(lines);
+      }
+    } catch (e) {
+      // 识别内容与原生异常详情不写入日志。
+      _logger.warning('Text recognition failed: type=${e.runtimeType}.');
+      if (_isTextRequestCurrent(request, sessionId)) {
+        _clearText();
+        error = strings.msgTextRecognitionFailed;
+      }
+    } finally {
+      if (_isTextRequestCurrent(request, sessionId)) textRecognizing = false;
+      _notify();
+    }
+  }
+
+  Future<void> copyRecognizedText({
+    String? selectedText,
+    bool finish = false,
+  }) async {
+    final sessionId = _session?.id;
+    final value = finish ? recognizedText?.text : selectedText;
+    if (sessionId == null ||
+        !textMode ||
+        textRecognizing ||
+        textCopying ||
+        recognizedText == null ||
+        value == null ||
+        value.isEmpty) {
+      return;
+    }
+    final request = _textRequest;
+    textCopying = true;
+    error = null;
+    _notify();
+    try {
+      await desktop.writeClipboard(value);
+      if (!_isTextRequestCurrent(request, sessionId)) return;
+      if (finish) {
+        await desktop.finish(sessionId);
+        if (!_isTextRequestCurrent(request, sessionId)) return;
+        _resetSession();
+      }
+      notice = strings.msgTextCopied;
+    } catch (e) {
+      _logger.warning('Text copy failed: type=${e.runtimeType}.');
+      if (_isTextRequestCurrent(request, sessionId)) {
+        error = strings.msgTextCopyFailed;
+      }
+    } finally {
+      if (_isTextRequestCurrent(request, sessionId)) textCopying = false;
+      _notify();
+    }
+  }
+
   final List<Uint8List> _screenshots = [];
   List<Uint8List> get screenshots => List.unmodifiable(_screenshots);
   int _screenshotBytes = 0;
@@ -329,7 +435,11 @@ class AppController extends ChangeNotifier {
   }
 
   bool get canAdjustScreenshotSelection =>
-      screenshotEditing && !imageLoading && !imageSaving && !qrCodeBusy;
+      screenshotEditing &&
+      !imageLoading &&
+      !imageSaving &&
+      !qrCodeBusy &&
+      !textMode;
 
   Future<void> adjustScreenshotSelection(PixelRect rect) async {
     final session = _session;
@@ -380,6 +490,7 @@ class AppController extends ChangeNotifier {
         imageLoading ||
         screenshotExporting ||
         qrCodeBusy ||
+        textMode ||
         qrCodeResults.isNotEmpty ||
         _screenshotCancelling ||
         !screenshotEditing) {
@@ -487,11 +598,17 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> cancelScreenshot() async {
-    if (screenshotExporting || qrCodeCopying || _screenshotCancelling) return;
+    if (screenshotExporting ||
+        qrCodeCopying ||
+        textCopying ||
+        _screenshotCancelling) {
+      return;
+    }
     final id = _session?.id;
     _screenshotCancelling = true;
     // 取消意图立即生效，不能等原生关闭浮层后才丢弃已在途的识别回复。
     _clearQrCodes();
+    _clearText();
     _notify();
     try {
       if (id != null) await desktop.finish(id);
@@ -506,7 +623,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> reselectScreenshot() async {
-    if (!screenshotEditing || imageLoading || imageSaving || qrCodeBusy) {
+    if (!screenshotEditing ||
+        imageLoading ||
+        imageSaving ||
+        qrCodeBusy ||
+        textMode) {
       return;
     }
     _clearQrCodes();
@@ -1116,7 +1237,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> sampleCaptureColor(int displayId, double x, double y) async {
-    if (_session == null || _committing || imageSaving || qrCodeBusy) return;
+    if (_session == null ||
+        _committing ||
+        imageSaving ||
+        qrCodeBusy ||
+        textMode) {
+      return;
+    }
     final display = _session!.displays
         .where((d) => d.id == displayId)
         .firstOrNull;
@@ -1129,7 +1256,13 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> copyCaptureSize(int displayId, PixelRect rect) async {
-    if (_session == null || _committing || imageSaving || qrCodeBusy) return;
+    if (_session == null ||
+        _committing ||
+        imageSaving ||
+        qrCodeBusy ||
+        textMode) {
+      return;
+    }
     final display = _session!.displays
         .where((d) => d.id == displayId)
         .firstOrNull;
@@ -2042,6 +2175,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _resetSession() {
+    _clearText();
     _recognizeQrCodeAfterSelection = false;
     _clearQrCodes();
     imageCodec.clearCaptureImages();

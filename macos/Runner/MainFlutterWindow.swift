@@ -403,6 +403,33 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         self.integrationPixelFixture?.unpublish()
         self.integrationPixelFixture = nil
         result(nil)
+      case "textFixture":
+        let token = UUID().uuidString
+        let center = DistributedNotificationCenter.default()
+        final class TextFixtureReply {
+          var observer: NSObjectProtocol?
+          var completed = false
+        }
+        let pending = TextFixtureReply()
+        let reply = Notification.Name("dev.fruler.integration.textFixtureReply.\(token)")
+        pending.observer = center.addObserver(forName: reply, object: nil, queue: .main) { _ in
+          guard !pending.completed else { return }
+          pending.completed = true
+          if let observer = pending.observer { center.removeObserver(observer) }
+          pending.observer = nil
+          result(nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+          guard !pending.completed else { return }
+          pending.completed = true
+          if let observer = pending.observer { center.removeObserver(observer) }
+          pending.observer = nil
+          result(FlutterError(code: "test_text_fixture_timeout", message: "Text fixture did not reply", details: nil))
+        }
+        let payload = ["action": args["action"] as? String ?? "show", "token": token]
+        let bytes = try! JSONSerialization.data(withJSONObject: payload)
+        center.postNotificationName(Notification.Name("dev.fruler.integration.textFixture"),
+          object: String(data: bytes, encoding: .utf8), userInfo: nil, deliverImmediately: true)
       case "qrFixture":
         DistributedNotificationCenter.default().postNotificationName(
           Notification.Name("dev.fruler.integration.qrFixture"), object: args["action"] as? String ?? "show",
@@ -589,7 +616,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         self.flutterController?.scrollWheel(with:event)
         result(nil)
       case "key":
-        let keyCharacters: [UInt16:String] = [51:"\u{7f}",117:"\u{f728}",6:"z",16:"y",8:"c",46:"m",17:"t"]
+        let keyCharacters: [UInt16:String] = [51:"\u{7f}",117:"\u{f728}",6:"z",16:"y",8:"c",0:"a",46:"m",17:"t"]
         guard let panel=self.overlays.values.first(where:{$0.isKeyWindow}) ?? self.overlays.values.first,
           let code=args["keyCode"] as? UInt16,
           let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:
@@ -1029,6 +1056,24 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           nativeLogs.log(1000, "qr", "QR recognition failed: errorType=\(String(reflecting: type(of: error))).")
           completion(.failure(error))
         }
+      }
+    }
+  }
+
+  func recognizeText(sessionId: Int64, displayId: Int64, rect: PixelBounds,
+                     completion: @escaping (Result<[TextLine], Error>) -> Void) {
+    guard Int(sessionId) == session,
+          let display = UInt32(exactly: displayId), let panel = overlays[display] else {
+      completion(.failure(PigeonError(code: "capture_cancelled", message: nil, details: nil))); return
+    }
+    let image = panel.overlay.snapshot.image
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let result = Result { try TextRecognizer.recognize(image: image, rect: rect) }
+      DispatchQueue.main.async {
+        guard let self = self, self.session == Int(sessionId) else {
+          completion(.failure(PigeonError(code: "capture_cancelled", message: nil, details: nil))); return
+        }
+        completion(result)
       }
     }
   }
@@ -2502,6 +2547,72 @@ enum QrCodeRecognizer {
             seen.insert(value).inserted else { return nil }
       return value
     }
+  }
+}
+
+/// OCR 只读取冻结快照；所有范围使用 UTF-16，坐标为选区内左上原点的像素。
+enum TextRecognizer {
+  static func recognize(image: CGImage, rect: PixelBounds) throws -> [TextLine] {
+    guard rect.left >= 0, rect.top >= 0,
+          rect.right <= Int64(image.width), rect.bottom <= Int64(image.height),
+          rect.right > rect.left, rect.bottom > rect.top,
+          let cropped = image.cropping(to: CGRect(x: CGFloat(rect.left), y: CGFloat(rect.top),
+            width: CGFloat(rect.right - rect.left), height: CGFloat(rect.bottom - rect.top))) else {
+      throw PigeonError(code: "invalid_text_region", message: nil, details: nil)
+    }
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+    request.usesLanguageCorrection = true
+    try VNImageRequestHandler(cgImage: cropped, orientation: .up).perform([request])
+    // 先按顶部归入同排，再按横向位置排列，避免同排文字细小的基线误差改变顺序。
+    let observations = (request.results ?? []).sorted { $0.boundingBox.maxY > $1.boundingBox.maxY }
+    var rows: [[VNRecognizedTextObservation]] = []
+    for observation in observations {
+      if let index = rows.firstIndex(where: { row in
+        let box = row[0].boundingBox
+        return abs(box.midY - observation.boundingBox.midY) <= min(box.height, observation.boundingBox.height) * 0.5
+      }) { rows[index].append(observation) }
+      else { rows.append([observation]) }
+    }
+    return rows.flatMap { $0.sorted { $0.boundingBox.minX < $1.boundingBox.minX } }.compactMap { observation in
+      guard let candidate = observation.topCandidates(1).first, !candidate.string.isEmpty else { return nil }
+      return line(candidate: candidate, fallback: observation.boundingBox, width: cropped.width, height: cropped.height)
+    }
+  }
+
+  static func line(candidate: VNRecognizedText, fallback: CGRect, width: Int, height: Int) -> TextLine {
+    let text = candidate.string
+    var words: [Range<String.Index>] = []
+    text.enumerateSubstrings(in: text.startIndex..<text.endIndex,
+      options: [.byWords, .substringNotRequired]) { _, range, _, _ in words.append(range) }
+    // 标点也保留为选择单元；空格不建立命中框，复制时按原文范围保留。
+    var ranges: [Range<String.Index>] = []
+    func appendGap(_ range: Range<String.Index>) {
+      var start: String.Index?
+      for index in text[range].indices {
+        if text[index].isWhitespace {
+          if let begin = start { ranges.append(begin..<index); start = nil }
+        } else if start == nil { start = index }
+      }
+      if let begin = start { ranges.append(begin..<range.upperBound) }
+    }
+    var cursor = text.startIndex
+    for word in words {
+      appendGap(cursor..<word.lowerBound)
+      ranges.append(word)
+      cursor = word.upperBound
+    }
+    appendGap(cursor..<text.endIndex)
+    let glyphs = ranges.map { range -> TextGlyph in
+      let detected = (try? candidate.boundingBox(for: range))?.boundingBox
+      let box = detected.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+      return TextGlyph(start: Int64(range.lowerBound.utf16Offset(in: text)),
+        end: Int64(range.upperBound.utf16Offset(in: text)),
+        left: box.minX * Double(width), top: (1 - box.maxY) * Double(height),
+        right: box.maxX * Double(width), bottom: (1 - box.minY) * Double(height))
+    }
+    return TextLine(text: text, glyphs: glyphs)
   }
 }
 
