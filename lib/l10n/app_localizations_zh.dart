@@ -365,8 +365,8 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String uiCaptureRegion(int width, int height) {
-    return '区域: $width × $height px';
+  String uiCaptureRegion(String dimensions) {
+    return '区域: $dimensions';
   }
 
   @override

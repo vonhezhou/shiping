@@ -44,3 +44,20 @@ enum NativeStrings {
     }
   }
 }
+
+/// 浮层以逻辑点展示，像素定位仍与取色采样对齐。
+enum ScreenPointFormat {
+  static func number(_ value: CGFloat) -> String {
+    value == value.rounded() ? String(format: "%.0f", Double(value)) : String(format: "%.1f", Double(value))
+  }
+
+  static func position(_ pointer: NSPoint, size: NSSize, width: Int, height: Int) -> String {
+    let x = min(max(floor(pointer.x / size.width * CGFloat(width)), 0), CGFloat(width - 1))
+    let y = min(max(floor(pointer.y / size.height * CGFloat(height)), 0), CGFloat(height - 1))
+    return "X: \(number(x * size.width / CGFloat(width)))  Y: \(number(y * size.height / CGFloat(height))) pt"
+  }
+
+  static func dimensions(_ rect: NSRect) -> String {
+    "\(number(rect.width)) × \(number(rect.height)) pt"
+  }
+}

@@ -2180,11 +2180,22 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   ],
                 ),
                 Text(sample?.rgb ?? ''),
-                Text('X: ${pixel.x}  Y: ${pixel.y}'),
+                Text(
+                  ScreenUnits.position(
+                    pixel.x,
+                    pixel.y,
+                    scaleX: c.screenshotScaleX,
+                    scaleY: c.screenshotScaleY,
+                  ),
+                ),
                 Text(
                   context.l10n.uiCaptureRegion(
-                    selection.width,
-                    selection.height,
+                    ScreenUnits.dimensions(
+                      selection.width,
+                      selection.height,
+                      scaleX: c.screenshotScaleX,
+                      scaleY: c.screenshotScaleY,
+                    ),
                   ),
                 ),
                 Text(context.l10n.uiCaptureCopyHint),
@@ -2406,7 +2417,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                           borderRadius: BorderRadius.circular(3),
                         ),
                         child: Text(
-                          '${activeSelection.width} × ${activeSelection.height} px',
+                          ScreenUnits.dimensions(
+                            activeSelection.width,
+                            activeSelection.height,
+                            scaleX: c.screenshotScaleX,
+                            scaleY: c.screenshotScaleY,
+                          ),
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.white,

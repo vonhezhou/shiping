@@ -181,14 +181,11 @@
       }
     }
   },
-  "uiCaptureRegion": "Region: {width} × {height} px",
+  "uiCaptureRegion": "Region: {dimensions}",
   "@uiCaptureRegion": {
     "placeholders": {
-      "width": {
-        "type": "int"
-      },
-      "height": {
-        "type": "int"
+      "dimensions": {
+        "type": "String"
       }
     }
   },

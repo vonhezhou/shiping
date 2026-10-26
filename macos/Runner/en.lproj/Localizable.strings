@@ -23,7 +23,7 @@
 "instance.failure_detail" = "%@\nQuit other fruler instances and try again.";
 "instance.failure_title" = "Unable to check running fruler instances";
 "loupe.anchored_hint" = "Release to keep · Arrow keys to adjust";
-"loupe.area" = "\nArea: %d × %d px";
+"loupe.area" = "\nArea: %@";
 "loupe.continuous_hint" = "Click / Enter to keep picking · Esc to finish";
 "loupe.copy_hint" = "Click / Enter to copy · Arrow keys to adjust · Esc to cancel";
 "loupe.picker_hint" = "%@\nEnter for left-click action · Arrow keys to adjust · Esc to cancel";

@@ -13,6 +13,8 @@ import '../platform/desktop_service.dart';
 import '../platform/image_document.dart';
 import '../platform/annotation_renderer.dart';
 
+import 'screen_units.dart';
+
 enum AppSection { picker, ruler, image, recording, settings }
 
 class MeasurementRecord {
@@ -1824,13 +1826,22 @@ class AppController extends ChangeNotifier {
     if (_tool == 'screenshot' || _tool == 'recording') {
       _captureMeasurement = measurement;
     }
+    final position = ScreenUnits.position(
+      pixel.x,
+      pixel.y,
+      scaleX: frame.scaleX,
+      scaleY: frame.scaleY,
+    );
+    final dimensions = measurement == null
+        ? null
+        : ScreenUnits.measurement(measurement);
     final label = _tool == 'picker'
-        ? '${color.hex}  ·  ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y}'
+        ? '${color.hex}  ·  ${color.rgb}\n$position'
         : _tool == 'recording'
-        ? measurement?.label ?? strings.msgRecordingSelectRegion
+        ? dimensions ?? strings.msgRecordingSelectRegion
         : _tool == 'screenshot'
-        ? '${color.hex} · ${color.rgb}\nX: ${pixel.x}  Y: ${pixel.y} · ${measurement?.label ?? strings.msgDragScreenshot}'
-        : measurement?.label ?? strings.msgDragMeasurement;
+        ? '${color.hex} · ${color.rgb}\n$position · ${dimensions ?? strings.msgDragScreenshot}'
+        : dimensions ?? strings.msgDragMeasurement;
     _updateOverlay({
       ..._overlayOptions,
       'displayId': display.id,
@@ -1956,7 +1967,7 @@ class AppController extends ChangeNotifier {
         'id': ++_nextPinId,
         'displayId': display.id,
         'rect': measurement.rect.toJson(),
-        'label': measurement.label,
+        'label': ScreenUnits.measurement(measurement),
       });
       _selectedPin = _nextPinId;
       _anchor = null;
@@ -2037,13 +2048,15 @@ class AppController extends ChangeNotifier {
     _pins[index] = {
       ..._pins[index],
       'rect': rect.toJson(),
-      'label': RulerMeasurement.fromRect(
-        _session!.displays
-            .firstWhere((d) => d.id == _pins[index]['displayId'])
-            .frame,
-        rect,
-        RulerMode.rectangle,
-      ).label,
+      'label': ScreenUnits.measurement(
+        RulerMeasurement.fromRect(
+          _session!.displays
+              .firstWhere((d) => d.id == _pins[index]['displayId'])
+              .frame,
+          rect,
+          RulerMode.rectangle,
+        ),
+      ),
     };
   }
 

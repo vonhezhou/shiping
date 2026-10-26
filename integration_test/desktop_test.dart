@@ -1777,6 +1777,17 @@ void main() {
       });
       await tester.pumpAndSettle();
       final p = display.frame.logicalToPixel(60, 180);
+      final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      final view = (status['rulerViews'] as List).cast<Map>().singleWhere(
+        (view) => view['displayId'] == id,
+      );
+      String number(double value) => value == value.roundToDouble()
+          ? value.toInt().toString()
+          : value.toStringAsFixed(1);
+      expect(
+        view['positionText'],
+        'X: ${number(p.x / display.frame.scaleX)}  Y: ${number(p.y / display.frame.scaleY)} pt',
+      );
       final expected = c.formatColor(display.frame.pixelAt(p.x, p.y));
       await driver.invokeMethod<void>('key', {'keyCode': 8});
       await waitFor(tester, () => !c.busy);
@@ -1807,6 +1818,15 @@ void main() {
             (d.overlay?['rect'] as Map?)?['right'] ==
                 second.frame.logicalToBoundary(240, 280).x,
       );
+      final selectedStatus = (await driver.invokeMapMethod<String, Object?>(
+        'status',
+      ))!;
+      final selectedView = (selectedStatus['rulerViews'] as List)
+          .cast<Map>()
+          .singleWhere((view) => view['displayId'] == second.id);
+      expect(selectedView['areaText'], contains('200 × 100 pt'));
+      expect(selectedView['label'], contains('200 × 100 pt'));
+      expect(selectedView['label'], isNot(contains(' px')));
       await driver.invokeMethod<void>('key', {'keyCode': 46});
       await waitFor(tester, () => !c.busy);
       expect(c.measurements.first.measurement.logicalWidth, 200);

@@ -379,8 +379,8 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String uiCaptureRegion(int width, int height) {
-    return 'Region: $width × $height px';
+  String uiCaptureRegion(String dimensions) {
+    return 'Region: $dimensions';
   }
 
   @override

@@ -768,8 +768,8 @@ abstract class AppLocalizations {
   /// No description provided for @uiCaptureRegion.
   ///
   /// In en, this message translates to:
-  /// **'Region: {width} × {height} px'**
-  String uiCaptureRegion(int width, int height);
+  /// **'Region: {dimensions}'**
+  String uiCaptureRegion(String dimensions);
 
   /// No description provided for @uiParameterTooltip.
   ///

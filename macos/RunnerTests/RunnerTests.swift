@@ -5,6 +5,14 @@ import XCTest
 @testable import fruler
 
 class RunnerTests: XCTestCase {
+  func testScreenGeometryUsesPointsAndIndependentAxisScales() {
+    XCTAssertEqual(ScreenPointFormat.position(NSPoint(x: 160.9, y: 240.9),
+      size: NSSize(width: 640, height: 480), width: 1280, height: 720), "X: 160.5  Y: 240.7 pt")
+    XCTAssertEqual(ScreenPointFormat.position(NSPoint(x: -1, y: 481),
+      size: NSSize(width: 640, height: 480), width: 1280, height: 720), "X: 0  Y: 479.3 pt")
+    XCTAssertEqual(ScreenPointFormat.dimensions(NSRect(x: 100, y: 180, width: 200, height: 120)), "200 × 120 pt")
+  }
+
   func testNativeLanguageResolutionPreservesExplicitChoiceAndSystemFallback() {
     XCTAssertEqual(NativeStrings.resolve(savedLanguage: "en", preferredLanguages: ["zh-Hans-CN"]), "en")
     XCTAssertEqual(NativeStrings.resolve(savedLanguage: "zh", preferredLanguages: ["en-US"]), "zh")

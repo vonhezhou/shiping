@@ -23,7 +23,7 @@
 "instance.failure_detail" = "%@\n请退出其他 fruler 后重试。";
 "instance.failure_title" = "无法检查 fruler 的运行实例";
 "loupe.anchored_hint" = "松手保留 · 方向键微调";
-"loupe.area" = "\n区域: %d × %d px";
+"loupe.area" = "\n区域: %@";
 "loupe.continuous_hint" = "点击 / Enter 连续采集 · Esc 结束";
 "loupe.copy_hint" = "点击 / Enter 复制 · 方向键微调 · Esc 取消";
 "loupe.picker_hint" = "%@\nEnter 按左键动作 · 方向键微调 · Esc 取消";

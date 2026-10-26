@@ -53,7 +53,8 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
       children: [
         _SectionTitle(
           title: context.l10n.uiMeasurementRecords,
-          subtitle: '${records.length} / ${c.measurements.length} · px / pt',
+          subtitle:
+              '${records.length} / ${c.measurements.length} · ${ScreenUnits.symbol}',
           onClear: c.measurements.isEmpty ? null : c.clearMeasurements,
         ),
         const SizedBox(height: 12),
@@ -110,14 +111,14 @@ class _MeasurementHistoryState extends State<_MeasurementHistory> {
                       c.updateMeasurement(r, favorite: !r.favorite),
                 ),
                 title: Text(
-                  '${r.name.isEmpty ? '' : '${r.name} · '}${r.measurement.pixelLabel}',
+                  '${r.name.isEmpty ? '' : '${r.name} · '}${r.imageSource ? r.measurement.pixelLabel : ScreenUnits.measurement(r.measurement)}',
                   overflow: TextOverflow.ellipsis,
                 ),
                 subtitle: Text(
                   context.l10n.uiMeasurementDetails(
-                    r.imageSource
+                    r.imageSource || !ScreenUnits.usesPoints
                         ? context.l10n.uiOriginalPixels
-                        : r.measurement.pointLabel,
+                        : r.measurement.pixelLabel,
                     _modeLabel(context, r.measurement.mode),
                     r.displayName,
                     r.scaleX.toStringAsFixed(2),

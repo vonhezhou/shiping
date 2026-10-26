@@ -110,7 +110,7 @@
   "uiMeasurementDetails": "{dimensions} · {mode} · {display}\n缩放 {scaleX} × {scaleY} · {date}",
   "uiLineWidthTooltip": "线宽 {width} pt · 滚轮 / 1、2 / [、]",
   "uiFontFamilyTooltip": "字体：{family}",
-  "uiCaptureRegion": "区域: {width} × {height} px",
+  "uiCaptureRegion": "区域: {dimensions}",
   "uiParameterTooltip": "{label} · {value}{unit}",
   "uiParameterValue": "{label} {value}",
   "uiLanguage": "语言",

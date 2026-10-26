@@ -2053,6 +2053,15 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
     needsDisplay = true
   }
 
+  private var positionText: String {
+    ScreenPointFormat.position(pointer, size: bounds.size, width: snapshot.width, height: snapshot.height)
+  }
+
+  private var areaText: String {
+    guard (tool == "screenshot" || tool == "recording"), let rect = measuredRect else { return "" }
+    return NativeStrings.text("loupe.area", ScreenPointFormat.dimensions(rect))
+  }
+
   #if FRULER_INTEGRATION_TEST
   func integrationSetTolerance(_ value: String) -> Bool {
     guard !toleranceGroup.isHidden else { return false }
@@ -2096,7 +2105,8 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       ["hasImage": button.image != nil, "title": button.title, "hidden": button.isHidden,
        "tooltip": button.toolTip ?? "", "selected": button.accessibilityValue() as? String ?? ""]
     }
-    return ["toolbarWidth": toolbar.frame.width,
+    return ["positionText": positionText, "areaText": areaText, "label": label,
+     "toolbarWidth": toolbar.frame.width,
      "toolbarContentWidth": toolbar.subviews.first?.frame.width ?? 0,
      "editbarVisible": !editbar.isHidden, "toleranceVisible": !toleranceGroup.isHidden,
      "tolerance": tolerance, "toolbarTop": toolbar.frame.minY, "editbarTop": editbar.frame.minY,
@@ -2490,14 +2500,8 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       let r = Int((rgb.redComponent * 255).rounded()), g = Int((rgb.greenComponent * 255).rounded()), b = Int((rgb.blueComponent * 255).rounded())
       let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white]
       (String(format: "#%02X%02X%02X", r, g, b) as NSString).draw(at: NSPoint(x: box.minX + 32, y: labelY), withAttributes: attrs)
-      let px = Int((pointer.x / bounds.width * Double(snapshot.width)).rounded(.down)).clamped(0, snapshot.width - 1)
-      let py = Int((pointer.y / bounds.height * Double(snapshot.height)).rounded(.down)).clamped(0, snapshot.height - 1)
-      var details = "RGB: \(r), \(g), \(b)\nX: \(px)  Y: \(py)"
-      if (tool == "screenshot" || tool == "recording"), let rect = measuredRect {
-        let w = Int((rect.width / bounds.width * Double(snapshot.width)).rounded())
-        let h = Int((rect.height / bounds.height * Double(snapshot.height)).rounded())
-        details += NativeStrings.text("loupe.area", w, h)
-      }
+      var details = "RGB: \(r), \(g), \(b)\n\(positionText)"
+      details += areaText
       (details as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY + 18), withAttributes: attrs)
     } else {
       (label as NSString).draw(at: NSPoint(x: box.minX + 14, y: labelY), withAttributes: [
