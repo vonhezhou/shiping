@@ -1,0 +1,28 @@
+name: 缺陷报告
+description: 报告可复现的问题
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: fruler 版本或提交号、macOS 版本、Apple Silicon / Intel、显示器与缩放配置。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 描述从哪个入口启动、进行了哪些鼠标或键盘操作。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 预期与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图或日志（可选）
+      description: 请先移除个人信息、剪贴板内容及敏感屏幕内容；安全漏洞请勿公开详细信息，参见贡献指南。

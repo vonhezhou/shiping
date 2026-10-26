@@ -47,3 +47,17 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Local SDK configuration and signing credentials
+.fvm/
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+
+# Local Python tooling
+__pycache__/
+.venv/

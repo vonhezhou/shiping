@@ -1,0 +1,17 @@
+name: 功能建议
+description: 描述希望解决的使用问题
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景与问题
+      description: 现在如何操作，遇到了什么困难？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 描述期望的行为，以及考虑过的替代方式。
+    validations:
+      required: true

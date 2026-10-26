@@ -1,0 +1,40 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        run: flutter --no-version-check pub get --enforce-lockfile
+      - name: Check localizations
+        run: python3 tool/check_localizations.py
+      - name: Check generated protocol
+        run: python3 tool/check_protocol.py
+      - name: Analyze
+        run: flutter --no-version-check analyze --no-pub
+      - name: Unit and UI tests
+        run: flutter --no-version-check test --no-pub --reporter expanded
+      - name: Native PNG export
+        run: python3 tool/test_annotation_export.py
