@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/core/core.dart';
@@ -108,6 +109,115 @@ void main() {
   });
 
   for (final size in [const Size(1100, 760), const Size(920, 680)]) {
+    testWidgets('多码切换共用内容区和主操作，长文本滚动不挤走底部操作 $size', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final desktop = QrUiDesktop()
+        ..results = [
+          'https://first.example/二维码',
+          List.generate(60, (i) => '第 $i 行：二维码中的多行文本').join('\n'),
+        ];
+      await editor(tester, desktop);
+      await tester.tap(
+        find.byKey(const ValueKey('recognize-qr-code')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('qr-code-selector')), findsOneWidget);
+      expect(find.byKey(const ValueKey('qr-content-0')), findsOneWidget);
+      expect(find.byKey(const ValueKey('qr-content-1')), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('qr-select-1')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('qr-content-0')), findsNothing);
+      expect(
+        tester
+            .widget<SelectableText>(find.byKey(const ValueKey('qr-content-1')))
+            .data,
+        desktop.results[1],
+      );
+      final primary = find.byKey(const ValueKey('qr-result-1'));
+      final adjust = find.byKey(const ValueKey('dismiss-qr-codes'));
+      expect(primary.hitTestable(), findsOneWidget);
+      expect(adjust.hitTestable(), findsOneWidget);
+      expect(tester.getRect(primary).bottom, lessThan(size.height));
+      expect(find.byKey(const ValueKey('qr-result-0')), findsNothing);
+      final position = tester.getCenter(
+        find.byKey(const ValueKey('qr-content-scroll')),
+      );
+      final mouse = TestGesture(
+        dispatcher: tester.sendEventToBinding,
+        device: 900,
+        pointer: 900,
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: position);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          device: 900,
+          position: position,
+          scrollDelta: const Offset(0, 300),
+          kind: ui.PointerDeviceKind.mouse,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await mouse.removePointer();
+      expect(
+        tester
+            .widget<SingleChildScrollView>(
+              find.byKey(const ValueKey('qr-content-scroll')),
+            )
+            .controller!
+            .offset,
+        greaterThan(0),
+      );
+      expect(primary.hitTestable(), findsOneWidget);
+      expect(adjust.hitTestable(), findsOneWidget);
+      expect(desktop.clipboard, isNull, reason: '切换和阅读不能自动复制');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(desktop.clipboard, desktop.results[1]);
+      expect(desktop.finishCalls, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('单码没有切换条，调整选区与关闭识别语义独立 $size', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final desktop = QrUiDesktop()..results = ['https://single.example/'];
+      final controller = await editor(tester, desktop);
+      Future<void> recognize() async {
+        await tester.tap(
+          find.byKey(const ValueKey('recognize-qr-code')),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await recognize();
+      expect(find.byKey(const ValueKey('qr-code-selector')), findsNothing);
+      expect(find.byKey(const ValueKey('qr-result-0')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('dismiss-qr-codes')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(controller.canAdjustScreenshotSelection, true);
+      expect(desktop.finishCalls, 0);
+      await recognize();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(desktop.finishCalls, 1);
+      expect(desktop.clipboard, isNull);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('识别等待与失败不弹中心窗口，单码结果保留供查看和主动复制 $size', (tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -264,6 +374,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('qr-code-results')), findsOneWidget);
       expect(desktop.clipboard, isNull);
+      await tester.tap(
+        find.byKey(const ValueKey('qr-select-1')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
       desktop.clipboardError = StateError('clipboard unavailable');
       await tester.tap(
         find.byKey(const ValueKey('qr-result-1')),

@@ -1106,18 +1106,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get uiQrCodeResults => 'QR code results';
 
   @override
-  String get uiQrCodeResultsDescription =>
-      'The selection contains multiple QR codes. Review or select the text, then copy the result you need.';
-
-  @override
-  String get uiQrCodeSingleResultDescription =>
-      'Review or select the text below, then choose Copy and finish.';
-
-  @override
   String get uiQrCodeCopyAndFinish => 'Copy and finish';
 
   @override
-  String get uiQrCodeAdjustSelection => 'Back to selection';
+  String get uiQrCodeAdjustSelection => 'Adjust selection';
 
   @override
   String get msgQrCodeNotFound =>
@@ -1141,4 +1133,26 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get uiQrCodeSelectionHint =>
       'Drag to select a QR code · Release to recognize · Esc to cancel';
+
+  @override
+  String get uiQrCodeContent => 'Content';
+
+  @override
+  String get uiQrCodeClose => 'Close recognition (Esc)';
+
+  @override
+  String uiQrCodeResultCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count QR codes found',
+      one: '1 QR code found',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String uiQrCodeResultIndex(int index) {
+    return 'QR code $index';
+  }
 }

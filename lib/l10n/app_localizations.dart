@@ -1899,18 +1899,6 @@ abstract class AppLocalizations {
   /// **'QR code results'**
   String get uiQrCodeResults;
 
-  /// No description provided for @uiQrCodeResultsDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'The selection contains multiple QR codes. Review or select the text, then copy the result you need.'**
-  String get uiQrCodeResultsDescription;
-
-  /// No description provided for @uiQrCodeSingleResultDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Review or select the text below, then choose Copy and finish.'**
-  String get uiQrCodeSingleResultDescription;
-
   /// No description provided for @uiQrCodeCopyAndFinish.
   ///
   /// In en, this message translates to:
@@ -1920,7 +1908,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiQrCodeAdjustSelection.
   ///
   /// In en, this message translates to:
-  /// **'Back to selection'**
+  /// **'Adjust selection'**
   String get uiQrCodeAdjustSelection;
 
   /// No description provided for @msgQrCodeNotFound.
@@ -1958,6 +1946,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Drag to select a QR code · Release to recognize · Esc to cancel'**
   String get uiQrCodeSelectionHint;
+
+  /// No description provided for @uiQrCodeContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Content'**
+  String get uiQrCodeContent;
+
+  /// No description provided for @uiQrCodeClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close recognition (Esc)'**
+  String get uiQrCodeClose;
+
+  /// No description provided for @uiQrCodeResultCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 QR code found} other{{count} QR codes found}}'**
+  String uiQrCodeResultCount(int count);
+
+  /// No description provided for @uiQrCodeResultIndex.
+  ///
+  /// In en, this message translates to:
+  /// **'QR code {index}'**
+  String uiQrCodeResultIndex(int index);
 }
 
 class _AppLocalizationsDelegate

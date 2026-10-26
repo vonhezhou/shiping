@@ -483,14 +483,18 @@
   "uiQrCodeRecognizing": "正在识别选区内的二维码…",
   "uiQrCodeCopying": "正在复制二维码内容…",
   "uiQrCodeResults": "二维码识别结果",
-  "uiQrCodeResultsDescription": "选区内有多个二维码，可查看或选中文本，再复制需要的内容。",
-  "uiQrCodeSingleResultDescription": "请查看或选中下方内容，确认后点击「复制并完成」。",
   "uiQrCodeCopyAndFinish": "复制并完成",
-  "uiQrCodeAdjustSelection": "返回调整选区",
+  "uiQrCodeAdjustSelection": "调整选区",
   "msgQrCodeNotFound": "选区内未识别到二维码，请调整范围并保留二维码完整边缘后重试。",
   "msgQrCodeRecognitionFailed": "二维码识别失败，请重试。",
   "msgQrCodeCopyFailed": "二维码内容复制失败，请重试。",
   "msgQrCodeCopied": "已复制二维码内容",
   "msgScreenshotCancelFailed": "截图取消失败，请重试。",
-  "uiQrCodeSelectionHint": "拖动框选二维码 · 松开识别 · Esc 取消"
+  "uiQrCodeSelectionHint": "拖动框选二维码 · 松开识别 · Esc 取消",
+  "uiQrCodeContent": "识别内容",
+  "uiQrCodeClose": "关闭识别（Esc）",
+  "uiQrCodeResultCount": "识别到 {count} 个二维码",
+  "@uiQrCodeResultCount": {"placeholders": {"count": {"type": "int"}}},
+  "uiQrCodeResultIndex": "二维码 {index}",
+  "@uiQrCodeResultIndex": {"placeholders": {"index": {"type": "int"}}}
 }

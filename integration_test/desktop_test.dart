@@ -506,6 +506,7 @@ void main() {
         );
         expect(c.screenshotEditing, true);
         expect(c.qrCodeResults, [value]);
+        expect(find.text(c.strings.uiQrCodeResultCount(1)), findsOneWidget);
         expect(find.byKey(const ValueKey('qr-code-results')), findsOneWidget);
         expect(
           tester
@@ -655,6 +656,13 @@ void main() {
         reason: '多个结果不能自动挑一个覆盖剪贴板',
       );
       expect(c.screenshotEditing, true);
+      await click(tester, find.byKey(const ValueKey('qr-select-1')));
+      expect(
+        tester
+            .widget<SelectableText>(find.byKey(const ValueKey('qr-content-1')))
+            .data,
+        'fruler:outside-right',
+      );
       await click(tester, find.byKey(const ValueKey('qr-result-1')));
       await waitFor(tester, () => !c.busy);
       expect(
@@ -683,6 +691,13 @@ void main() {
       expect(
         await driver.invokeMethod<String>('clipboardText'),
         'fruler:before-menu-selection',
+      );
+      await click(tester, find.byKey(const ValueKey('qr-select-1')));
+      expect(
+        tester
+            .widget<SelectableText>(find.byKey(const ValueKey('qr-content-1')))
+            .data,
+        'fruler:outside-right',
       );
       await click(tester, find.byKey(const ValueKey('qr-result-1')));
       await waitFor(tester, () => !c.busy);

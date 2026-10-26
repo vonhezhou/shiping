@@ -900,9 +900,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   KeyEventResult key(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent && (c.qrCodeBusy || c.qrCodeResults.isNotEmpty)) {
       if (event.logicalKey == LogicalKeyboardKey.escape) {
-        if (c.qrCodeResults.isNotEmpty && !c.qrCodeBusy) {
-          c.dismissQrCodes();
-        } else if (c.qrCodeRecognizing) {
+        if (!c.qrCodeBusy || c.qrCodeRecognizing) {
           c.cancelScreenshot();
         }
       }
@@ -2001,95 +1999,17 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   );
 
   Widget qrCodePanel() => Positioned.fill(
+    // 光标放大镜会动态插入同一 Stack，固定身份以保留当前结果和滚动位置。
+    key: const ValueKey('qr-code-panel'),
     child: Material(
-      color: Colors.black45,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 580),
-          child: AlertDialog(
-            key: const ValueKey('qr-code-results'),
-            title: Text(context.l10n.uiQrCodeResults),
-            content: SizedBox(
-              width: 480,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 340),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        c.qrCodeResults.length > 1
-                            ? context.l10n.uiQrCodeResultsDescription
-                            : context.l10n.uiQrCodeSingleResultDescription,
-                      ),
-                      const SizedBox(height: 12),
-                      for (var i = 0; i < c.qrCodeResults.length; i++)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              border: Border.all(color: _line),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  SelectableText(
-                                    c.qrCodeResults[i],
-                                    key: ValueKey('qr-content-$i'),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: OutlinedButton.icon(
-                                      key: ValueKey('qr-result-$i'),
-                                      onPressed: c.qrCodeBusy
-                                          ? null
-                                          : () => c.copyQrCode(
-                                              c.qrCodeResults[i],
-                                            ),
-                                      icon: const Icon(
-                                        Icons.copy_outlined,
-                                        size: 18,
-                                      ),
-                                      label: Text(
-                                        context.l10n.uiQrCodeCopyAndFinish,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (c.error != null)
-                        Text(
-                          c.error!,
-                          style: const TextStyle(color: Colors.orange),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              if (c.qrCodeCopying) Text(context.l10n.uiQrCodeCopying),
-              TextButton(
-                key: const ValueKey('cancel-qr-code'),
-                onPressed: c.qrCodeBusy ? null : c.cancelScreenshot,
-                child: Text(context.l10n.uiCancel),
-              ),
-              TextButton(
-                key: const ValueKey('dismiss-qr-codes'),
-                onPressed: c.qrCodeBusy ? null : c.dismissQrCodes,
-                child: Text(context.l10n.uiQrCodeAdjustSelection),
-              ),
-            ],
-          ),
-        ),
+      color: Colors.black54,
+      child: _QrCodeResultsDialog(
+        results: c.qrCodeResults,
+        copying: c.qrCodeCopying,
+        error: c.error,
+        onCopy: c.copyQrCode,
+        onAdjust: c.dismissQrCodes,
+        onClose: c.cancelScreenshot,
       ),
     ),
   );

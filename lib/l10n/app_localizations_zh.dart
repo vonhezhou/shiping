@@ -997,16 +997,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiQrCodeResults => '二维码识别结果';
 
   @override
-  String get uiQrCodeResultsDescription => '选区内有多个二维码，可查看或选中文本，再复制需要的内容。';
-
-  @override
-  String get uiQrCodeSingleResultDescription => '请查看或选中下方内容，确认后点击「复制并完成」。';
-
-  @override
   String get uiQrCodeCopyAndFinish => '复制并完成';
 
   @override
-  String get uiQrCodeAdjustSelection => '返回调整选区';
+  String get uiQrCodeAdjustSelection => '调整选区';
 
   @override
   String get msgQrCodeNotFound => '选区内未识别到二维码，请调整范围并保留二维码完整边缘后重试。';
@@ -1025,4 +1019,20 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get uiQrCodeSelectionHint => '拖动框选二维码 · 松开识别 · Esc 取消';
+
+  @override
+  String get uiQrCodeContent => '识别内容';
+
+  @override
+  String get uiQrCodeClose => '关闭识别（Esc）';
+
+  @override
+  String uiQrCodeResultCount(int count) {
+    return '识别到 $count 个二维码';
+  }
+
+  @override
+  String uiQrCodeResultIndex(int index) {
+    return '二维码 $index';
+  }
 }
