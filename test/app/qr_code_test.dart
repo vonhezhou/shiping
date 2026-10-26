@@ -82,7 +82,7 @@ void selectQrRegion(QrDesktop desktop) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('状态栏二维码入口使用截图框选，松手并托管浮层后自动识别复制', () async {
+  test('状态栏二维码入口托管浮层后显示结果，等待用户确认复制', () async {
     final desktop = QrDesktop()
       ..results = ['menu-selection']
       ..pendingHosting = Completer<void>();
@@ -98,7 +98,14 @@ void main() {
     await waitUntil(() => controller.screenshotEditing);
     expect(desktop.requests, isEmpty, reason: '原生尚未托管编辑器时不能开始识别');
     desktop.pendingHosting!.complete();
-    await waitUntil(() => desktop.clipboard != null && !controller.busy);
+    await waitUntil(
+      () => controller.qrCodeResults.isNotEmpty && !controller.qrCodeBusy,
+    );
+    expect(controller.qrCodeResults, ['menu-selection']);
+    expect(controller.screenshotEditing, true);
+    expect(desktop.clipboard, isNull);
+    expect(desktop.finishCalls, 0);
+    await controller.copyQrCode('menu-selection');
     expect(desktop.clipboard, 'menu-selection');
     expect(desktop.requests.single.$3.toJson(), {
       'left': 2,
@@ -157,7 +164,7 @@ void main() {
     });
   }
 
-  test('精确传递冻结会话、显示器与Retina像素选区，唯一结果复制后退出', () async {
+  test('精确传递像素选区，单结果保留显示直到用户复制', () async {
     final desktop = QrDesktop()..results = ['https://example.test/选中的二维码'];
     final controller = await selection(desktop);
     addTearDown(controller.dispose);
@@ -175,6 +182,11 @@ void main() {
     expect(desktop.requests.single.$1, 7);
     expect(desktop.requests.single.$2, 1);
     expect(desktop.requests.single.$3.toJson(), rect.toJson());
+    expect(controller.qrCodeResults, desktop.results);
+    expect(controller.screenshotEditing, true);
+    expect(desktop.clipboard, isNull);
+    expect(desktop.finishCalls, 0);
+    await controller.copyQrCode(desktop.results.single);
     expect(desktop.clipboard, desktop.results.single);
     expect(desktop.finishCalls, 1);
     expect(desktop.showMainCalls, 0);
@@ -223,6 +235,8 @@ void main() {
     desktop.clipboardError = StateError('clipboard unavailable');
     await controller.recognizeQrCodes();
     expect(controller.qrCodeResults, ['retry']);
+    expect(controller.error, isNull);
+    await controller.copyQrCode('retry');
     expect(controller.error, contains('复制失败'));
     expect(controller.qrCodeBusy, false);
     expect(desktop.finishCalls, 0);

@@ -1896,20 +1896,26 @@ abstract class AppLocalizations {
   /// No description provided for @uiQrCodeResults.
   ///
   /// In en, this message translates to:
-  /// **'Choose a QR code to copy'**
+  /// **'QR code results'**
   String get uiQrCodeResults;
 
   /// No description provided for @uiQrCodeResultsDescription.
   ///
   /// In en, this message translates to:
-  /// **'The selection contains multiple QR codes. Check the content before choosing.'**
+  /// **'The selection contains multiple QR codes. Review or select the text, then copy the result you need.'**
   String get uiQrCodeResultsDescription;
 
-  /// No description provided for @uiQrCodeRetryDescription.
+  /// No description provided for @uiQrCodeSingleResultDescription.
   ///
   /// In en, this message translates to:
-  /// **'Click the content to retry copying.'**
-  String get uiQrCodeRetryDescription;
+  /// **'Review or select the text below, then choose Copy and finish.'**
+  String get uiQrCodeSingleResultDescription;
+
+  /// No description provided for @uiQrCodeCopyAndFinish.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy and finish'**
+  String get uiQrCodeCopyAndFinish;
 
   /// No description provided for @uiQrCodeAdjustSelection.
   ///

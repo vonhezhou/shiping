@@ -1934,11 +1934,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ),
   );
 
-  Widget errorFeedback() => Positioned(
+  Widget captureFeedback({bool recognizing = false}) => Positioned(
     top: 24,
     left: 24,
     right: 24,
     child: IgnorePointer(
+      ignoring: !recognizing,
       child: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
@@ -1953,15 +1954,23 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.info_outline,
-                      color: Colors.orange,
-                      size: 20,
-                    ),
+                    if (recognizing)
+                      const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      const Icon(
+                        Icons.info_outline,
+                        color: Colors.orange,
+                        size: 20,
+                      ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        c.error!,
+                        recognizing
+                            ? context.l10n.uiQrCodeRecognizing
+                            : c.error!,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -1969,10 +1978,21 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                         ),
                       ),
                     ),
+                    if (recognizing) ...[
+                      const SizedBox(width: 8),
+                      toolbarButton(
+                        'cancel-qr-code',
+                        context.l10n.uiCancelScreenshot,
+                        Icons.close,
+                        c.cancelScreenshot,
+                      ),
+                    ],
                   ],
                 ),
               ),
-              key: const ValueKey('screenshot-error-feedback'),
+              key: ValueKey(
+                recognizing ? 'qr-code-progress' : 'screenshot-error-feedback',
+              ),
             ),
           ),
         ),
@@ -1987,77 +2007,86 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 580),
           child: AlertDialog(
-            key: ValueKey(
-              c.qrCodeBusy ? 'qr-code-progress' : 'qr-code-results',
-            ),
-            title: Text(
-              c.qrCodeBusy
-                  ? (c.qrCodeRecognizing
-                        ? context.l10n.uiQrCodeRecognizing
-                        : context.l10n.uiQrCodeCopying)
-                  : context.l10n.uiQrCodeResults,
-            ),
-            content: c.qrCodeBusy
-                ? const SizedBox(
-                    height: 48,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : SizedBox(
-                    width: 480,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 340),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              c.qrCodeResults.length > 1
-                                  ? context.l10n.uiQrCodeResultsDescription
-                                  : context.l10n.uiQrCodeRetryDescription,
-                            ),
-                            const SizedBox(height: 12),
-                            for (var i = 0; i < c.qrCodeResults.length; i++)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: OutlinedButton(
-                                  key: ValueKey('qr-result-$i'),
-                                  style: OutlinedButton.styleFrom(
-                                    alignment: Alignment.centerLeft,
-                                  ),
-                                  onPressed: () =>
-                                      c.copyQrCode(c.qrCodeResults[i]),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 10,
-                                    ),
-                                    child: Text(c.qrCodeResults[i]),
-                                  ),
-                                ),
-                              ),
-                            if (c.error != null)
-                              Text(
-                                c.error!,
-                                style: const TextStyle(color: Colors.orange),
-                              ),
-                          ],
-                        ),
+            key: const ValueKey('qr-code-results'),
+            title: Text(context.l10n.uiQrCodeResults),
+            content: SizedBox(
+              width: 480,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 340),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        c.qrCodeResults.length > 1
+                            ? context.l10n.uiQrCodeResultsDescription
+                            : context.l10n.uiQrCodeSingleResultDescription,
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      for (var i = 0; i < c.qrCodeResults.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: _line),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SelectableText(
+                                    c.qrCodeResults[i],
+                                    key: ValueKey('qr-content-$i'),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: OutlinedButton.icon(
+                                      key: ValueKey('qr-result-$i'),
+                                      onPressed: c.qrCodeBusy
+                                          ? null
+                                          : () => c.copyQrCode(
+                                              c.qrCodeResults[i],
+                                            ),
+                                      icon: const Icon(
+                                        Icons.copy_outlined,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        context.l10n.uiQrCodeCopyAndFinish,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (c.error != null)
+                        Text(
+                          c.error!,
+                          style: const TextStyle(color: Colors.orange),
+                        ),
+                    ],
                   ),
-            actions: [
-              if (c.qrCodeRecognizing)
-                TextButton(
-                  key: const ValueKey('cancel-qr-code'),
-                  onPressed: c.cancelScreenshot,
-                  child: Text(context.l10n.uiCancelScreenshot),
-                )
-              else if (!c.qrCodeCopying)
-                TextButton(
-                  key: const ValueKey('dismiss-qr-codes'),
-                  onPressed: c.dismissQrCodes,
-                  child: Text(context.l10n.uiQrCodeAdjustSelection),
                 ),
+              ),
+            ),
+            actions: [
+              if (c.qrCodeCopying) Text(context.l10n.uiQrCodeCopying),
+              TextButton(
+                key: const ValueKey('cancel-qr-code'),
+                onPressed: c.qrCodeBusy ? null : c.cancelScreenshot,
+                child: Text(context.l10n.uiCancel),
+              ),
+              TextButton(
+                key: const ValueKey('dismiss-qr-codes'),
+                onPressed: c.qrCodeBusy ? null : c.dismissQrCodes,
+                child: Text(context.l10n.uiQrCodeAdjustSelection),
+              ),
             ],
           ),
         ),
@@ -2475,8 +2504,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                   if (c.error != null &&
                       !c.qrCodeBusy &&
                       c.qrCodeResults.isEmpty)
-                    errorFeedback(),
-                  if (c.qrCodeBusy || c.qrCodeResults.isNotEmpty) qrCodePanel(),
+                    captureFeedback(),
+                  if (c.qrCodeRecognizing) captureFeedback(recognizing: true),
+                  if (c.qrCodeResults.isNotEmpty) qrCodePanel(),
                   if (colorPicking)
                     const Positioned.fill(
                       child: ModalBarrier(

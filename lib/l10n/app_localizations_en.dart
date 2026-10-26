@@ -1103,14 +1103,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get uiQrCodeCopying => 'Copying QR code content…';
 
   @override
-  String get uiQrCodeResults => 'Choose a QR code to copy';
+  String get uiQrCodeResults => 'QR code results';
 
   @override
   String get uiQrCodeResultsDescription =>
-      'The selection contains multiple QR codes. Check the content before choosing.';
+      'The selection contains multiple QR codes. Review or select the text, then copy the result you need.';
 
   @override
-  String get uiQrCodeRetryDescription => 'Click the content to retry copying.';
+  String get uiQrCodeSingleResultDescription =>
+      'Review or select the text below, then choose Copy and finish.';
+
+  @override
+  String get uiQrCodeCopyAndFinish => 'Copy and finish';
 
   @override
   String get uiQrCodeAdjustSelection => 'Back to selection';

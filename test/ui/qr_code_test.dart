@@ -14,6 +14,7 @@ import 'controller_test_host.dart';
 class QrUiDesktop extends FakeDesktop {
   List<String> results = [];
   Completer<List<String>>? pendingRecognition;
+
   @override
   Future<List<String>> recognizeQrCodes(
     int sessionId,
@@ -107,6 +108,76 @@ void main() {
   });
 
   for (final size in [const Size(1100, 760), const Size(920, 680)]) {
+    testWidgets('识别等待与失败不弹中心窗口，单码结果保留供查看和主动复制 $size', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final desktop = QrUiDesktop()
+        ..pendingRecognition = Completer<List<String>>();
+      final controller = await editor(tester, desktop);
+      final recognize = find.byKey(const ValueKey('recognize-qr-code'));
+      await tester.tap(recognize, kind: ui.PointerDeviceKind.mouse);
+      await tester.pump();
+      expect(
+        find.byType(AlertDialog),
+        findsNothing,
+        reason: '识别中不能弹出会一闪而过的中心窗口',
+      );
+      expect(
+        tester.getRect(find.byKey(const ValueKey('qr-code-progress'))).top,
+        24,
+      );
+      desktop.pendingRecognition!.complete([]);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(
+        find.byKey(const ValueKey('screenshot-error-feedback')),
+        findsOneWidget,
+      );
+      expect(controller.screenshotEditing, true);
+      desktop.pendingRecognition = Completer<List<String>>();
+      await tester.tap(recognize, kind: ui.PointerDeviceKind.mouse);
+      await tester.pump();
+      expect(find.byType(AlertDialog), findsNothing);
+      const payload = 'https://example.test/查看二维码内容?value=123';
+      desktop.pendingRecognition!.complete([payload]);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      final panel = find.byKey(const ValueKey('qr-code-results'));
+      expect(panel, findsOneWidget);
+      expect(
+        find.byWidgetPredicate((w) => w is SelectableText && w.data == payload),
+        findsOneWidget,
+      );
+      expect(desktop.clipboard, isNull);
+      expect(desktop.finishCalls, 0);
+      expect(controller.screenshotEditing, true);
+      final originalPanel = tester.element(panel);
+      desktop.pendingClipboard = Completer<void>();
+      await tester.tap(
+        find.byKey(const ValueKey('qr-result-0')),
+        kind: ui.PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(
+        identical(tester.element(panel), originalPanel),
+        true,
+        reason: '复制中保留内容面板，不能切换成等待弹窗',
+      );
+      expect(find.byKey(const ValueKey('qr-code-progress')), findsNothing);
+      expect(
+        find.byWidgetPredicate((w) => w is SelectableText && w.data == payload),
+        findsOneWidget,
+      );
+      desktop.pendingClipboard!.complete();
+      await tester.pumpAndSettle();
+      expect(desktop.clipboard, payload);
+      expect(desktop.finishCalls, 1);
+      expect(desktop.showMainCalls, 0);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('未识别提示固定顶部居中且不阻挡选区拖动 $size', (tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -235,6 +306,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byKey(const ValueKey('qr-code-progress')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
       await tester.tap(
         find.byKey(const ValueKey('cancel-qr-code')),
         kind: ui.PointerDeviceKind.mouse,

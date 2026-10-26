@@ -994,13 +994,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiQrCodeCopying => '正在复制二维码内容…';
 
   @override
-  String get uiQrCodeResults => '选择要复制的二维码';
+  String get uiQrCodeResults => '二维码识别结果';
 
   @override
-  String get uiQrCodeResultsDescription => '选区内有多个二维码，请核对内容后选择。';
+  String get uiQrCodeResultsDescription => '选区内有多个二维码，可查看或选中文本，再复制需要的内容。';
 
   @override
-  String get uiQrCodeRetryDescription => '点击内容重试复制。';
+  String get uiQrCodeSingleResultDescription => '请查看或选中下方内容，确认后点击「复制并完成」。';
+
+  @override
+  String get uiQrCodeCopyAndFinish => '复制并完成';
 
   @override
   String get uiQrCodeAdjustSelection => '返回调整选区';

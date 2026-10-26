@@ -265,8 +265,6 @@ class AppController extends ChangeNotifier {
       qrCodeRecognizing = false;
       if (_qrCodeResults.isEmpty) {
         error = strings.msgQrCodeNotFound;
-      } else if (_qrCodeResults.length == 1) {
-        await copyQrCode(_qrCodeResults.single);
       }
     } catch (e, stackTrace) {
       _logFailure('QR recognition', e, stackTrace);

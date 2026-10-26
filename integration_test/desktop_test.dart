@@ -130,6 +130,19 @@ class NativeDesktop extends MacDesktopService {
   @override
   Locale get systemLocale => const Locale('zh');
 
+  // 只暂停结果投递以观察等待界面，二维码仍由真实 Vision 识别。
+  Completer<void>? qrResultDelivery;
+  @override
+  Future<List<String>> recognizeQrCodes(
+    int sessionId,
+    int displayId,
+    PixelRect rect,
+  ) async {
+    final results = await super.recognizeQrCodes(sessionId, displayId, rect);
+    await qrResultDelivery?.future;
+    return results;
+  }
+
   CaptureSession? lastCapture;
   int captureCount = 0;
   Map<String, Object?>? overlay;
@@ -359,7 +372,7 @@ void main() {
     });
     return;
   }
-  testWidgets('真实屏幕二维码严格限定选区，单码复制、多码选择并回原应用', (tester) async {
+  testWidgets('真实屏幕二维码严格限定选区，保留内容查看后主动复制并回原应用', (tester) async {
     final desktop = NativeDesktop();
     final c = AppController(desktop);
     await c.initialize();
@@ -483,6 +496,39 @@ void main() {
         );
       }
 
+      Future<void> reviewAndCopySingle(
+        String value,
+        String originalClipboard,
+      ) async {
+        await waitFor(
+          tester,
+          () => !c.qrCodeBusy && c.qrCodeResults.isNotEmpty,
+        );
+        expect(c.screenshotEditing, true);
+        expect(c.qrCodeResults, [value]);
+        expect(find.byKey(const ValueKey('qr-code-results')), findsOneWidget);
+        expect(
+          tester
+              .widget<SelectableText>(
+                find.byKey(const ValueKey('qr-content-0')),
+              )
+              .data,
+          value,
+        );
+        expect(
+          await driver.invokeMethod<String>('clipboardText'),
+          originalClipboard,
+          reason: '单个结果也必须等待用户确认，不能自动复制并关闭浮层',
+        );
+        final status = (await driver.invokeMapMethod<String, Object?>(
+          'status',
+        ))!;
+        expect(status['editing'], true);
+        expect(status['mainVisible'], false);
+        await click(tester, find.byKey(const ValueKey('qr-result-0')));
+        await waitFor(tester, () => !c.busy);
+      }
+
       final first = await begin();
       final session = desktop.lastCapture!.id;
       final left = pixels(
@@ -537,8 +583,23 @@ void main() {
       await Clipboard.setData(
         const ClipboardData(text: 'fruler:keep-clipboard'),
       );
-      await click(tester, find.byKey(const ValueKey('recognize-qr-code')));
-      await waitFor(tester, () => !c.qrCodeBusy);
+      desktop.qrResultDelivery = Completer<void>();
+      final recognition = c.recognizeQrCodes();
+      await tester.pump();
+      expect(
+        find.byType(AlertDialog),
+        findsNothing,
+        reason: '真实原生识别等待期间也不能弹出中心窗口',
+      );
+      expect(
+        tester.getRect(find.byKey(const ValueKey('qr-code-progress'))).top,
+        24,
+      );
+      desktop.qrResultDelivery!.complete();
+      await recognition;
+      desktop.qrResultDelivery = null;
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing, reason: '失败后只显示顶部提示');
       expect(c.screenshotEditing, true, reason: '空白选区必须保留浮层供调整');
       expect(
         await driver.invokeMethod<String>('clipboardText'),
@@ -553,7 +614,10 @@ void main() {
         findsNothing,
       );
       await click(tester, find.byKey(const ValueKey('recognize-qr-code')));
-      await waitFor(tester, () => !c.busy);
+      await reviewAndCopySingle(
+        'fruler:selected-left',
+        'fruler:keep-clipboard',
+      );
       expect(
         await driver.invokeMethod<String>('clipboardText'),
         'fruler:selected-left',
@@ -606,7 +670,10 @@ void main() {
 
       // 从真实状态栏入口启动，松开框选立即识别，不再点工具栏按钮。
       await begin(fromMenu: true, area: 'left');
-      await waitFor(tester, () => !c.busy);
+      await reviewAndCopySingle(
+        'fruler:selected-left',
+        'fruler:before-menu-selection',
+      );
       expect(
         await driver.invokeMethod<String>('clipboardText'),
         'fruler:selected-left',
@@ -642,6 +709,10 @@ void main() {
     } finally {
       await c.cancelScreenshot();
       c.dispose();
+      if (desktop.qrResultDelivery != null &&
+          !desktop.qrResultDelivery!.isCompleted) {
+        desktop.qrResultDelivery!.complete();
+      }
       await driver.invokeMethod<void>('qrFixture', {'action': 'hide'});
       await driver.invokeMethod<void>('restoreClipboard');
       await tester.pumpWidget(const SizedBox.shrink());
