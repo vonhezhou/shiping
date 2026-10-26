@@ -10,6 +10,16 @@ import 'desktop.g.dart' as wire;
 import 'desktop_protocol.dart';
 import 'native_pixel_buffer.dart';
 
+enum DesktopFeature {
+  picker,
+  ruler,
+  screenshot,
+  recording,
+  qrCode,
+  textRecognition,
+  pinnedImages,
+}
+
 class DesktopStatus {
   const DesktopStatus({
     required this.permission,
@@ -40,6 +50,9 @@ class CaptureSession {
 
 /// Platform boundary: Windows/Linux implementations can replace this adapter.
 abstract class DesktopService {
+  // 适配器显式声明已实现的能力；权限不足不代表能力不支持。
+  Set<DesktopFeature> get capabilities => const {};
+
   static DesktopService create() =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS
       ? MacDesktopService()
@@ -105,6 +118,17 @@ abstract class DesktopService {
 }
 
 class MacDesktopService extends DesktopService {
+  @override
+  Set<DesktopFeature> get capabilities => const {
+    DesktopFeature.picker,
+    DesktopFeature.ruler,
+    DesktopFeature.screenshot,
+    DesktopFeature.recording,
+    DesktopFeature.qrCode,
+    DesktopFeature.textRecognition,
+    DesktopFeature.pinnedImages,
+  };
+
   MacDesktopService({PixelFrame Function(wire.DisplayFrame)? readFrame})
     : _readFrame = readFrame ?? NativePixelBuffers.read {
     wire.DesktopFlutterApi.setUp(_NativeCallbacks(_events));

@@ -287,16 +287,20 @@ class _ScreenshotHistory extends StatelessWidget {
                               i + 1,
                             ),
                           ),
-                          TextButton.icon(
-                            key: ValueKey('pin-history-$i'),
-                            onPressed: controller.pinningImage
-                                ? null
-                                : () => controller.pinScreenshotFromHistory(
-                                    screenshots[i],
-                                  ),
-                            icon: const Icon(Icons.push_pin_outlined, size: 16),
-                            label: Text(context.l10n.uiPinHistory),
-                          ),
+                          if (controller.supports(DesktopFeature.pinnedImages))
+                            TextButton.icon(
+                              key: ValueKey('pin-history-$i'),
+                              onPressed: controller.pinningImage
+                                  ? null
+                                  : () => controller.pinScreenshotFromHistory(
+                                      screenshots[i],
+                                    ),
+                              icon: const Icon(
+                                Icons.push_pin_outlined,
+                                size: 16,
+                              ),
+                              label: Text(context.l10n.uiPinHistory),
+                            ),
                         ],
                       ),
                     ),

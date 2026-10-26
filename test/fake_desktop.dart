@@ -7,6 +7,9 @@ import 'package:fruler/platform/desktop_service.dart';
 
 class FakeDesktop extends DesktopService {
   @override
+  Set<DesktopFeature> capabilities = DesktopFeature.values.toSet();
+
+  @override
   Locale get systemLocale => const Locale('zh');
 
   Completer<int?>? colorChoice;

@@ -1867,24 +1867,27 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           Icons.close,
           c.cancelScreenshot,
         ),
-        toolbarButton(
-          'pin-screenshot',
-          context.l10n.uiPinScreenshot,
-          Icons.push_pin_outlined,
-          image == null ? null : () => export(false, pin: true),
-        ),
-        toolbarButton(
-          'recognize-text',
-          context.l10n.uiRecognizeText,
-          Icons.text_fields,
-          recognizeText,
-        ),
-        toolbarButton(
-          'recognize-qr-code',
-          context.l10n.uiRecognizeQrCode,
-          Icons.qr_code_scanner,
-          recognizeQrCodes,
-        ),
+        if (c.supports(DesktopFeature.pinnedImages))
+          toolbarButton(
+            'pin-screenshot',
+            context.l10n.uiPinScreenshot,
+            Icons.push_pin_outlined,
+            image == null ? null : () => export(false, pin: true),
+          ),
+        if (c.supports(DesktopFeature.textRecognition))
+          toolbarButton(
+            'recognize-text',
+            context.l10n.uiRecognizeText,
+            Icons.text_fields,
+            recognizeText,
+          ),
+        if (c.supports(DesktopFeature.qrCode))
+          toolbarButton(
+            'recognize-qr-code',
+            context.l10n.uiRecognizeQrCode,
+            Icons.qr_code_scanner,
+            recognizeQrCodes,
+          ),
         toolbarButton(
           'save-screenshot',
           context.l10n.uiSavePng,
@@ -2229,9 +2232,16 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       onKeyEvent: key,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // 15 个按钮、两处分隔和两侧内边距；选中标注时增加删除按钮。
+          // 按平台能力收紧工具栏；选中标注时增加删除按钮。
+          final buttonCount =
+              12 +
+              [
+                DesktopFeature.pinnedImages,
+                DesktopFeature.textRecognition,
+                DesktopFeature.qrCode,
+              ].where(c.supports).length;
           final toolbarWidth = math.min(
-            15 * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
+            buttonCount * 30.0 + 2 * 8 + 2 * 3 + (selected != null ? 30 : 0),
             constraints.maxWidth - 24,
           );
           var feedbackHeight = 0.0;

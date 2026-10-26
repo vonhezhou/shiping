@@ -386,6 +386,30 @@ void main() {
     });
     return;
   }
+  testWidgets('平台能力保留真实 macOS 工具入口', (tester) async {
+    final desktop = MacDesktopService();
+    final controller = AppController(desktop);
+    try {
+      await controller.initialize();
+      expect(controller.error, isNull);
+      for (final feature in DesktopFeature.values) {
+        expect(controller.supports(feature), isTrue, reason: feature.name);
+      }
+      await tester.pumpWidget(FrulerApp(controller: controller));
+      await tester.pumpAndSettle();
+      for (final section in AppSection.values) {
+        expect(find.byKey(ValueKey('nav-${section.name}')), findsOneWidget);
+      }
+      controller.selectSection(AppSection.image);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('start-screenshot')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pin-clipboard')), findsOneWidget);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    }
+  });
+
   testWidgets('真实屏幕 OCR 按词跨行拖选、连续复制与完成后回原应用', (tester) async {
     final desktop = NativeDesktop();
     final c = AppController(desktop);

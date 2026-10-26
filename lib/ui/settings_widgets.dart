@@ -112,15 +112,23 @@ class _GeneralSettingsPage extends StatelessWidget {
         icon: Icons.keyboard_rounded,
         child: Column(
           children: [
-            _editableShortcut(context, true),
-            const SizedBox(height: 15),
-            _editableShortcut(context, false),
-            const SizedBox(height: 10),
-            _editableShortcut(context, false, screenshot: true),
-            const SizedBox(height: 10),
-            _editableShortcut(context, false, pinClipboard: true),
-            const SizedBox(height: 10),
-            _editableShortcut(context, false, togglePins: true),
+            if (controller.supports(DesktopFeature.picker)) ...[
+              _editableShortcut(context, true),
+              const SizedBox(height: 15),
+            ],
+            if (controller.supports(DesktopFeature.ruler)) ...[
+              _editableShortcut(context, false),
+              const SizedBox(height: 10),
+            ],
+            if (controller.supports(DesktopFeature.screenshot)) ...[
+              _editableShortcut(context, false, screenshot: true),
+              const SizedBox(height: 10),
+            ],
+            if (controller.supports(DesktopFeature.pinnedImages)) ...[
+              _editableShortcut(context, false, pinClipboard: true),
+              const SizedBox(height: 10),
+              _editableShortcut(context, false, togglePins: true),
+            ],
             const SizedBox(height: 15),
             _shortcut(context.l10n.uiCancelTool, context.l10n.uiCancelToolKeys),
             if (!controller.shortcutsAvailable)
@@ -561,45 +569,51 @@ class _ScreenshotOptionsPage extends StatelessWidget {
           ],
         ),
       ),
-      const SizedBox(height: 24),
-      _SettingsCard(
-        title: context.l10n.uiPinnedImages,
-        icon: Icons.push_pin_outlined,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              context.l10n.uiPinDescription,
-              style: const TextStyle(color: _muted, fontSize: 12, height: 1.6),
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  key: const ValueKey('pin-clipboard'),
-                  onPressed: controller.pinningImage
-                      ? null
-                      : controller.pinClipboard,
-                  icon: const Icon(Icons.push_pin_outlined, size: 16),
-                  label: Text(context.l10n.uiPinClipboard),
+      if (controller.supports(DesktopFeature.pinnedImages)) ...[
+        const SizedBox(height: 24),
+        _SettingsCard(
+          title: context.l10n.uiPinnedImages,
+          icon: Icons.push_pin_outlined,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                context.l10n.uiPinDescription,
+                style: const TextStyle(
+                  color: _muted,
+                  fontSize: 12,
+                  height: 1.6,
                 ),
-                OutlinedButton(
-                  key: const ValueKey('toggle-pins'),
-                  onPressed: controller.togglePinnedImages,
-                  child: Text(context.l10n.uiTogglePins),
-                ),
-                TextButton(
-                  key: const ValueKey('close-pins'),
-                  onPressed: controller.closePinnedImages,
-                  child: Text(context.l10n.uiClosePins),
-                ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    key: const ValueKey('pin-clipboard'),
+                    onPressed: controller.pinningImage
+                        ? null
+                        : controller.pinClipboard,
+                    icon: const Icon(Icons.push_pin_outlined, size: 16),
+                    label: Text(context.l10n.uiPinClipboard),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('toggle-pins'),
+                    onPressed: controller.togglePinnedImages,
+                    child: Text(context.l10n.uiTogglePins),
+                  ),
+                  TextButton(
+                    key: const ValueKey('close-pins'),
+                    onPressed: controller.closePinnedImages,
+                    child: Text(context.l10n.uiClosePins),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
       const SizedBox(height: 24),
       _ScreenshotHistory(controller: controller),
     ],

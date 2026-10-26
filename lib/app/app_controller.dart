@@ -233,6 +233,7 @@ class AppController extends ChangeNotifier {
       screenshotEditing;
 
   Future<void> recognizeQrCodes() async {
+    if (!supports(DesktopFeature.qrCode)) return;
     final sessionId = _session?.id;
     final displayId = screenshotDisplayId;
     final rect = screenshotSelection;
@@ -343,6 +344,7 @@ class AppController extends ChangeNotifier {
       screenshotEditing;
 
   Future<void> recognizeText() async {
+    if (!supports(DesktopFeature.textRecognition)) return;
     final sessionId = _session?.id, displayId = screenshotDisplayId;
     final rect = screenshotSelection;
     if (sessionId == null ||
@@ -485,6 +487,7 @@ class AppController extends ChangeNotifier {
   Future<void> pinScreenshot() => exportScreenshot(save: false, pin: true);
 
   Future<void> exportScreenshot({required bool save, bool pin = false}) async {
+    if (pin && !supports(DesktopFeature.pinnedImages)) return;
     final doc = imageDocument;
     if (doc == null ||
         imageLoading ||
@@ -547,6 +550,7 @@ class AppController extends ChangeNotifier {
   bool pinningImage = false;
 
   Future<void> _pinAction(Future<void> Function() action) async {
+    if (!supports(DesktopFeature.pinnedImages)) return;
     if (busy ||
         pinningImage ||
         initializing ||
@@ -932,6 +936,23 @@ class AppController extends ChangeNotifier {
   bool screenshotPermissionRequired = false;
   bool shortcutsAvailable = false;
   bool supported = true;
+
+  bool supports(DesktopFeature feature) {
+    if (!supported || !desktop.capabilities.contains(feature)) return false;
+    return switch (feature) {
+      DesktopFeature.qrCode || DesktopFeature.textRecognition =>
+        desktop.capabilities.contains(DesktopFeature.screenshot),
+      _ => true,
+    };
+  }
+
+  bool supportsSection(AppSection value) => switch (value) {
+    AppSection.settings => true,
+    AppSection.picker => supports(DesktopFeature.picker),
+    AppSection.ruler => supports(DesktopFeature.ruler),
+    AppSection.image => supports(DesktopFeature.screenshot),
+    AppSection.recording => supports(DesktopFeature.recording),
+  };
   bool busy = false;
   bool initializing = true;
   String? error;
@@ -967,6 +988,7 @@ class AppController extends ChangeNotifier {
       permissionGranted = status.permission;
       shortcutsAvailable = status.shortcuts;
       supported = status.supported;
+      if (!supportsSection(section)) section = AppSection.settings;
       final saved = await desktop.loadState();
       if (saved != null) _restore(saved);
       try {
@@ -1012,6 +1034,7 @@ class AppController extends ChangeNotifier {
   }
 
   void selectSection(AppSection value) {
+    if (!supportsSection(value)) return;
     section = value;
     _notify();
   }
@@ -1348,6 +1371,16 @@ class AppController extends ChangeNotifier {
     }
     if (!supported) {
       _fail(strings.msgMacOSRequired);
+      return;
+    }
+    final feature = switch (tool) {
+      'picker' => DesktopFeature.picker,
+      'screenshot' => DesktopFeature.screenshot,
+      'recording' => DesktopFeature.recording,
+      _ => DesktopFeature.ruler,
+    };
+    if (!supports(feature) ||
+        (recognizeQrCodeAfterSelection && !supports(DesktopFeature.qrCode))) {
       return;
     }
     _recognizeQrCodeAfterSelection = recognizeQrCodeAfterSelection;

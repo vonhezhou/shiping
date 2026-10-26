@@ -15,6 +15,7 @@ import '../l10n/app_localizations.dart';
 import '../l10n/localizations_context.dart';
 import '../platform/annotation_renderer.dart';
 import '../platform/pixel_frame_image.dart';
+import '../platform/desktop_service.dart' show DesktopFeature;
 
 import 'font_family_picker.dart';
 
@@ -290,7 +291,7 @@ class _OptionsNavigation extends StatelessWidget {
             AppSection.ruler,
             AppSection.image,
             AppSection.recording,
-          ])
+          ].where(controller.supportsSection))
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
               child: ListTile(
