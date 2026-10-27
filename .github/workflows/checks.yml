@@ -2,6 +2,10 @@ name: Checks
 
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
   pull_request:
   workflow_dispatch:
 
@@ -38,3 +42,94 @@ jobs:
         run: flutter --no-version-check test --no-pub --reporter expanded
       - name: Native PNG export
         run: python3 tool/test_annotation_export.py
+
+  macos-release:
+    name: macOS Release (ad hoc, not notarized)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: checks
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Validate version tag
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          source = pathlib.Path('pubspec.yaml').read_text()
+          version = re.search(r'^version:\s*(\S+)', source, re.MULTILINE).group(1)
+          expected = 'v' + version.split('+', 1)[0]
+          if os.environ['GITHUB_REF_NAME'] != expected:
+              raise SystemExit(f'Version tag must match pubspec.yaml: {expected}')
+          PY
+      - name: Install dependencies
+        run: flutter --no-version-check pub get --enforce-lockfile
+      - name: Build macOS Release with ad hoc signing
+        run: |
+          cat > "$RUNNER_TEMP/release-adhoc.xcconfig" <<'CONFIG'
+          CODE_SIGN_IDENTITY = -
+          CODE_SIGN_STYLE = Manual
+          DEVELOPMENT_TEAM =
+          PROVISIONING_PROFILE_SPECIFIER =
+          CONFIG
+          XCODE_XCCONFIG_FILE="$RUNNER_TEMP/release-adhoc.xcconfig" \
+            flutter --no-version-check build macos --release --no-pub
+      - name: Verify signing and create DMG
+        run: |
+          app="build/macos/Build/Products/Release/拾屏.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=4 "$app" 2> "$RUNNER_TEMP/signature.txt"
+          cat "$RUNNER_TEMP/signature.txt"
+          grep -Fx 'Signature=adhoc' "$RUNNER_TEMP/signature.txt"
+
+          package="shiping-${GITHUB_REF_NAME}-macos-adhoc"
+          staging=$(mktemp -d "$RUNNER_TEMP/shiping-dmg.XXXXXX")
+          trap 'rm -rf "$staging"' EXIT
+          mkdir -p dist
+          ditto "$app" "$staging/拾屏.app"
+          ln -s /Applications "$staging/应用程序"
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+          architectures=$(lipo -archs "$app/Contents/MacOS/$executable")
+          cat > "$staging/BUILD-INFO.txt" <<INFO
+          拾屏 macOS Release — ad hoc 签名构建
+          Tag: $GITHUB_REF_NAME
+          Commit: $GITHUB_SHA
+          Architectures: $architectures
+          Minimum macOS: 14.0
+
+          此构建仅使用 ad hoc 签名，没有 Developer ID 签名，未公证，未 stapling。
+          macOS Gatekeeper 可能阻止打开；此产物用于测试，不是已公证发行版。
+          安装：打开 DMG，将「拾屏.app」拖到旁边的「应用程序」快捷方式，再推出磁盘镜像。
+          从「应用程序」启动拾屏后，从菜单栏进入设置。
+          截图、取色、测量与录屏需在系统设置中为实际运行的应用授权屏幕录制。
+          CI 检查不包含需要已授权、解锁桌面的真实 macOS 集成测试及人工验收。
+          Developer ID 签名、公证和 stapling 将在后续配置。
+          INFO
+          hdiutil create -volname "拾屏 ${GITHUB_REF_NAME}" -srcfolder "$staging" \
+            -ov -format UDZO -fs HFS+ "dist/$package.dmg"
+          python3 tool/test_macos_dmg.py "dist/$package.dmg"
+          (cd dist && shasum -a 256 "$package.dmg" > "$package.dmg.sha256")
+          {
+            echo '## macOS Release — ad hoc 签名，未公证'
+            echo
+            cat "$staging/BUILD-INFO.txt"
+            echo
+            echo "下载下方 Artifacts 中的 ${package}；包含安装 DMG 和 SHA-256 校验文件。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PACKAGE_NAME=$package" >> "$GITHUB_ENV"
+      - name: Upload macOS Release (ad hoc, not notarized)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          if-no-files-found: error
+          compression-level: 0
