@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
-  /// **'fruler'**
+  /// **'拾屏'**
   String get appTitle;
 
   /// No description provided for @uiModeRectangle.
@@ -221,7 +221,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiScreenPermissionNeeded.
   ///
   /// In en, this message translates to:
-  /// **'Allow fruler to record the screen'**
+  /// **'Allow 拾屏 to record the screen'**
   String get uiScreenPermissionNeeded;
 
   /// No description provided for @uiScreenPrivacy.
@@ -329,7 +329,7 @@ abstract class AppLocalizations {
   /// No description provided for @uiAbout.
   ///
   /// In en, this message translates to:
-  /// **'fruler 0.10.0 · macOS 14+'**
+  /// **'拾屏 0.10.0 · macOS 14+'**
   String get uiAbout;
 
   /// No description provided for @uiScreenshotAndAnnotate.
@@ -858,7 +858,7 @@ abstract class AppLocalizations {
   /// No description provided for @msgDesktopDisconnected.
   ///
   /// In en, this message translates to:
-  /// **'The system tools disconnected. Reopen fruler.'**
+  /// **'The system tools disconnected. Reopen 拾屏.'**
   String get msgDesktopDisconnected;
 
   /// No description provided for @msgPlatformUnsupported.
@@ -876,7 +876,7 @@ abstract class AppLocalizations {
   /// No description provided for @msgPermissionDenied.
   ///
   /// In en, this message translates to:
-  /// **'Allow fruler to record the screen in System Settings, then try again.'**
+  /// **'Allow 拾屏 to record the screen in System Settings, then try again.'**
   String get msgPermissionDenied;
 
   /// No description provided for @msgScreenshotFailed.
@@ -1248,7 +1248,7 @@ abstract class AppLocalizations {
   /// No description provided for @validationPaletteVersion.
   ///
   /// In en, this message translates to:
-  /// **'Choose a version 1 JSON file exported by fruler'**
+  /// **'Choose a version 1 JSON file exported by 拾屏'**
   String get validationPaletteVersion;
 
   /// No description provided for @validationPaletteLimit.

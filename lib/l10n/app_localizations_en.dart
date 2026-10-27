@@ -10,7 +10,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'fruler';
+  String get appTitle => '拾屏';
 
   @override
   String get uiModeRectangle => 'Rectangle';
@@ -74,7 +74,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get uiScreenPermissionGranted => 'Screen recording access granted';
 
   @override
-  String get uiScreenPermissionNeeded => 'Allow fruler to record the screen';
+  String get uiScreenPermissionNeeded => 'Allow 拾屏 to record the screen';
 
   @override
   String get uiScreenPrivacy =>
@@ -132,7 +132,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Some global shortcuts could not be registered. Another app may be using them. You can still start tools from this window or the menu bar.';
 
   @override
-  String get uiAbout => 'fruler 0.10.0 · macOS 14+';
+  String get uiAbout => '拾屏 0.10.0 · macOS 14+';
 
   @override
   String get uiScreenshotAndAnnotate => 'Screenshot and annotate';
@@ -437,7 +437,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get msgDesktopDisconnected =>
-      'The system tools disconnected. Reopen fruler.';
+      'The system tools disconnected. Reopen 拾屏.';
 
   @override
   String get msgPlatformUnsupported =>
@@ -449,7 +449,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get msgPermissionDenied =>
-      'Allow fruler to record the screen in System Settings, then try again.';
+      'Allow 拾屏 to record the screen in System Settings, then try again.';
 
   @override
   String msgScreenshotFailed(String detail) {
@@ -728,7 +728,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get validationPaletteVersion =>
-      'Choose a version 1 JSON file exported by fruler';
+      'Choose a version 1 JSON file exported by 拾屏';
 
   @override
   String get validationPaletteLimit => 'Import up to 4096 colors at a time';

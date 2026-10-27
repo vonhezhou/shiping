@@ -10,7 +10,7 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
-  String get appTitle => 'fruler';
+  String get appTitle => '拾屏';
 
   @override
   String get uiModeRectangle => '矩形';
@@ -70,7 +70,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiScreenPermissionGranted => '已获得屏幕录制权限';
 
   @override
-  String get uiScreenPermissionNeeded => '需要允许 fruler 录制屏幕';
+  String get uiScreenPermissionNeeded => '需要允许 拾屏 录制屏幕';
 
   @override
   String get uiScreenPrivacy =>
@@ -125,7 +125,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uiShortcutsUnavailable => '全局快捷键未全部注册，可能已被其他应用占用。仍可使用窗口或菜单栏入口。';
 
   @override
-  String get uiAbout => 'fruler 0.10.0 · macOS 14+';
+  String get uiAbout => '拾屏 0.10.0 · macOS 14+';
 
   @override
   String get uiScreenshotAndAnnotate => '截图并标注';
@@ -420,7 +420,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get msgOutputRequired => '至少保留一种启用的颜色格式';
 
   @override
-  String get msgDesktopDisconnected => '系统工具连接中断，请重新打开 fruler。';
+  String get msgDesktopDisconnected => '系统工具连接中断，请重新打开 拾屏。';
 
   @override
   String get msgPlatformUnsupported => '当前版本支持 macOS 14 及以上，其他平台的适配尚未实现。';
@@ -429,7 +429,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get msgPermissionGranted => '屏幕访问已授权，可以开始使用。';
 
   @override
-  String get msgPermissionDenied => '请在系统设置中允许 fruler 录制屏幕，然后返回重试。';
+  String get msgPermissionDenied => '请在系统设置中允许 拾屏 录制屏幕，然后返回重试。';
 
   @override
   String msgScreenshotFailed(String detail) {
@@ -655,7 +655,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get validationPaletteEntry => '调色板颜色条目无效';
 
   @override
-  String get validationPaletteVersion => '请选择 fruler 导出的 version 1 JSON 文件';
+  String get validationPaletteVersion => '请选择 拾屏 导出的 version 1 JSON 文件';
 
   @override
   String get validationPaletteLimit => '一次最多导入 4096 个颜色';

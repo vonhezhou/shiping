@@ -36,8 +36,8 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>CFBundleDisplayName</key>
-	<string>fruler</string>
+	<string>拾屏</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>fruler reads screen pixels for screenshots, color picking, and measurement. Capture starts only when you launch a tool and is never uploaded. Annotated images are saved only when you choose to export them.</string>
+	<string>拾屏 reads screen pixels for screenshots, color picking, and measurement. Capture starts only when you launch a tool and is never uploaded. Annotated images are saved only when you choose to export them.</string>
 </dict>
 </plist>

@@ -2416,7 +2416,7 @@ class AppController extends ChangeNotifier {
     if (entries.isEmpty) return;
     try {
       if (await desktop.saveTextFile(
-        'fruler-${saved ? 'palette' : 'recent'}.${format.name}',
+        '拾屏-${saved ? 'palette' : 'recent'}.${format.name}',
         exportPalette(entries, format),
       )) {
         notice = strings.msgColorsExported;
@@ -2562,7 +2562,7 @@ class AppController extends ChangeNotifier {
           });
     try {
       if (await desktop.saveTextFile(
-        'fruler-measurements.${csv ? 'csv' : 'json'}',
+        '拾屏-measurements.${csv ? 'csv' : 'json'}',
         text,
       )) {
         notice = strings.msgMeasurementsExported(records.length);

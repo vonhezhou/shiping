@@ -389,7 +389,7 @@ final class PinnedImagePanel: NSPanel {
       case "save":
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "fruler-pin.png"
+        panel.nameFieldStringValue = "拾屏-pin.png"
         // 临时激活以显示系统面板；取消保存仍保留原贴图。
         previousApplication = NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)

@@ -63,7 +63,7 @@ String exportPalette(List<PaletteEntry> entries, PaletteExport format) {
     });
   }
   // Names stay in JSON; numeric CSS identifiers avoid injection and duplicate names.
-  return ':root {\n${[for (var i = 0; i < entries.length; i++) '  --fruler-${i + 1}: ${entries[i].color.hex};'].join('\n')}\n}\n';
+  return ':root {\n${[for (var i = 0; i < entries.length; i++) '  --shiping-${i + 1}: ${entries[i].color.hex};'].join('\n')}\n}\n';
 }
 
 /// Strictly validate the whole file before showing a merge preview.

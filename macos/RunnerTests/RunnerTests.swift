@@ -33,6 +33,9 @@ class RunnerTests: XCTestCase {
                                      ("zh", "编辑", "清除全部测量框（3）")] {
       NativeStrings.configure(language)
       NativeStrings.localizeMenu(menu)
+      XCTAssertEqual(NativeStrings.text("menu.application"), "拾屏")
+      XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String, "拾屏")
+      XCTAssertEqual(Bundle.main.bundleURL.lastPathComponent, "拾屏.app")
       XCTAssertEqual(item.title, title)
       XCTAssertEqual(item.submenu?.title, title)
       XCTAssertEqual(NativeStrings.text("overlay.clear_count", 3), count)

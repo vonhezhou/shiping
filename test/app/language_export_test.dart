@@ -31,6 +31,7 @@ void main() {
       await controller.exportMeasurements([record], csv: csv);
       final before = desktop.exportedText!;
       final filename = desktop.exportedName;
+      expect(filename, '拾屏-measurements.${csv ? 'csv' : 'json'}');
       await controller.setLanguage(AppLanguage.en);
       await controller.exportMeasurements([record], csv: csv);
       expect(desktop.exportedText, before);

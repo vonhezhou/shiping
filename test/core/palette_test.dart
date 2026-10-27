@@ -47,7 +47,7 @@ void main() {
     expect(json['colors'][0]['hex'], '#010FFF');
     expect(
       exportPalette(entries, PaletteExport.css),
-      ':root {\n  --fruler-1: #010FFF;\n  --fruler-2: #000000;\n}\n',
+      ':root {\n  --shiping-1: #010FFF;\n  --shiping-2: #000000;\n}\n',
     );
     expect(
       PaletteEntry.fromJson(entries.first.toJson()).color,

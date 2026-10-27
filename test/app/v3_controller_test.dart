@@ -112,12 +112,12 @@ void main() {
       favorite: true,
     );
     await controller.exportColors(PaletteExport.json, saved: true);
-    expect(desktop.exportedName, 'fruler-palette.json');
+    expect(desktop.exportedName, '拾屏-palette.json');
     expect(jsonDecode(desktop.exportedText!)['colors'][0]['hex'], '#040506');
     controller.dismissMessage();
     desktop.fileResult = false;
     await controller.exportColors(PaletteExport.css, saved: false);
-    expect(desktop.exportedText, contains('--fruler-1: #010203;'));
+    expect(desktop.exportedText, contains('--shiping-1: #010203;'));
     expect(controller.notice, isNull);
   });
   test('选择删除、清空和撤销标注，测量历史不被误删', () async {

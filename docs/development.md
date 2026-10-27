@@ -17,7 +17,7 @@ flutter --no-version-check run -d macos
 flutter --no-version-check build macos --release --no-pub
 ```
 
-构建结果位于 `build/macos/Build/Products/Release/fruler.app`。分发给其他用户前仍需正式签名与公证。SDK 镜像缺少引擎文件时，可在单次命令前设置可用的 `FLUTTER_STORAGE_BASE_URL`；不需要修改全局设置。
+构建结果位于 `build/macos/Build/Products/Release/拾屏.app`。分发给其他用户前仍需正式签名与公证。SDK 镜像缺少引擎文件时，可在单次命令前设置可用的 `FLUTTER_STORAGE_BASE_URL`；不需要修改全局设置。
 
 ## 依赖与生成文件
 

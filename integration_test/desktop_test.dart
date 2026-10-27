@@ -1244,6 +1244,13 @@ void main() {
           'Screen Ruler',
         ],
       );
+      final englishBrand = await status();
+      expect(englishBrand['applicationName'], '拾屏');
+      expect(englishBrand['mainTitle'], '拾屏');
+      expect(
+        (englishBrand['menu'] as List).cast<Map>().map((item) => item['title']),
+        contains('Quit 拾屏'),
+      );
       const sample = RgbColor(13, 127, 255);
       await controller.copyColor(sample);
       final englishCopy = (await Clipboard.getData('text/plain'))!.text;
@@ -1255,6 +1262,12 @@ void main() {
       );
       await controller.setLanguage(AppLanguage.zh);
       final chinese = await status();
+      expect(chinese['applicationName'], '拾屏');
+      expect(chinese['mainTitle'], '拾屏');
+      expect(
+        (chinese['menu'] as List).cast<Map>().map((item) => item['title']),
+        contains('退出 拾屏'),
+      );
       view = (chinese['rulerViews'] as List).cast<Map>().first;
       expect(
         ((view['modes'] as Map)['rectangle'] as Map)['tooltip'],

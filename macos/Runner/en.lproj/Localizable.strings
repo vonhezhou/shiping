@@ -1,4 +1,4 @@
-/* fruler 原生界面文案；日志和协议标识不参与翻译。 */
+/* 拾屏 原生界面文案；日志和协议标识不参与翻译。 */
 "color.cancel" = "Cancel";
 "color.confirm" = "OK";
 "color.title" = "Color";
@@ -17,11 +17,11 @@
 "error.locale_invalid" = "The language code is invalid.";
 "error.no_listener" = "The tool is not ready yet.";
 "error.palette_import" = "Palette import failed: %@";
-"error.screen_permission" = "Allow fruler to record the screen first.";
+"error.screen_permission" = "Allow 拾屏 to record the screen first.";
 "error.shortcut_conflict" = "This shortcut is already in use.";
 "error.shortcut_invalid" = "Use different letter or number shortcuts, avoiding system quit, editing, and screenshot shortcuts.";
-"instance.failure_detail" = "%@\nQuit other fruler instances and try again.";
-"instance.failure_title" = "Unable to check running fruler instances";
+"instance.failure_detail" = "%@\nQuit other 拾屏 instances and try again.";
+"instance.failure_title" = "Unable to check running 拾屏 instances";
 "loupe.anchored_hint" = "Release to keep · Arrow keys to adjust";
 "loupe.area" = "\nArea: %@";
 "loupe.continuous_hint" = "Click / Enter to keep picking · Esc to finish";
@@ -29,8 +29,8 @@
 "loupe.picker_hint" = "%@\nEnter for left-click action · Arrow keys to adjust · Esc to cancel";
 "loupe.rectangle_hint" = "Drag to add · Move or resize rectangles · Enter to copy and finish";
 "loupe.screenshot_hint" = "C copy color · M copy size\nOption to pause snapping";
-"menu.about" = "About fruler";
-"menu.application" = "fruler";
+"menu.about" = "About 拾屏";
+"menu.application" = "拾屏";
 "menu.bring_front" = "Bring All to Front";
 "menu.capitalize" = "Capitalize";
 "menu.check_document" = "Check Document Now";
@@ -50,7 +50,7 @@
 "menu.find_selection" = "Use Selection for Find";
 "menu.fullscreen" = "Enter Full Screen";
 "menu.help" = "Help";
-"menu.hide" = "Hide fruler";
+"menu.hide" = "Hide 拾屏";
 "menu.hide_others" = "Hide Others";
 "menu.history" = "History";
 "menu.jump_selection" = "Jump to Selection";
@@ -59,7 +59,7 @@
 "menu.paste" = "Paste";
 "menu.paste_match_style" = "Paste and Match Style";
 "menu.preferences" = "Preferences…";
-"menu.quit" = "Quit fruler";
+"menu.quit" = "Quit 拾屏";
 "menu.redo" = "Redo";
 "menu.select_all" = "Select All";
 "menu.services" = "Services";

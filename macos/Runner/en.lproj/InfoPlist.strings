@@ -1,3 +1,3 @@
-"CFBundleDisplayName" = "fruler";
-"NSScreenCaptureUsageDescription" = "fruler reads screen pixels for screenshots, color picking, and measurement. Capture starts only when you launch a tool and is never uploaded. Annotated images are saved only when you choose to export them.";
+"CFBundleDisplayName" = "拾屏";
+"NSScreenCaptureUsageDescription" = "拾屏 reads screen pixels for screenshots, color picking, and measurement. Capture starts only when you launch a tool and is never uploaded. Annotated images are saved only when you choose to export them.";
 "NSHumanReadableCopyright" = "Copyright © 2026 dev.fruler. All rights reserved.";

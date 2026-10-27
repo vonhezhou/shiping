@@ -1,4 +1,4 @@
-# fruler
+# 拾屏
 
 macOS 菜单栏屏幕工具，集取色、测量、截图标注、区域录屏、OCR、二维码识别与贴图于一体。支持简体中文和 English，使用 Flutter 与 Swift 构建。
 
@@ -27,7 +27,7 @@ flutter --no-version-check pub get
 flutter --no-version-check run -d macos
 ```
 
-首次启动只显示菜单栏图标。通过菜单打开设置，在「常规」中请求屏幕录制权限，并在系统设置中允许实际运行的 fruler 应用，必要时重启。剪贴板贴图无需屏幕录制权限。
+首次启动只显示菜单栏图标。通过菜单打开设置，在「常规」中请求屏幕录制权限，并在系统设置中允许实际运行的拾屏应用，必要时重启。剪贴板贴图无需屏幕录制权限。
 
 构建 Release：
 
@@ -35,7 +35,7 @@ flutter --no-version-check run -d macos
 flutter --no-version-check build macos --release --no-pub
 ```
 
-产物为 `build/macos/Build/Products/Release/fruler.app`。本地构建不代表已完成正式签名与公证，分发前请阅读[发布说明](docs/releasing.md)。
+产物为 `build/macos/Build/Products/Release/拾屏.app`。本地构建不代表已完成正式签名与公证，分发前请阅读[发布说明](docs/releasing.md)。
 
 ## 数据与限制
 
@@ -61,7 +61,7 @@ GitHub Actions 仅覆盖可自动运行的检查，不替代需要录屏权限�
 
 ## 致谢
 
-部分交互设计参考 [PowerToys Screen Ruler](https://learn.microsoft.com/windows/powertoys/screen-ruler)、[Color Picker](https://learn.microsoft.com/windows/powertoys/color-picker) 和 [Snipaste](https://github.com/Snipaste/feedback/wiki/基础操作)。fruler 是独立项目。
+部分交互设计参考 [PowerToys Screen Ruler](https://learn.microsoft.com/windows/powertoys/screen-ruler)、[Color Picker](https://learn.microsoft.com/windows/powertoys/color-picker) 和 [Snipaste](https://github.com/Snipaste/feedback/wiki/基础操作)。拾屏是独立项目。
 
 ## 许可证
 

@@ -115,6 +115,6 @@ void main() {
     expect(replace.first.name, '新名');
     expect(replace.first.favorite, false);
     expect(copyPalette(keep, flutter: true), contains('Color(0xFF010203)'));
-    expect(copyPalette(keep, flutter: false), contains('--fruler-2: #040506;'));
+    expect(copyPalette(keep, flutter: false), contains('--shiping-2: #040506;'));
   });
 }

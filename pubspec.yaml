@@ -1,5 +1,5 @@
 name: fruler
-description: "A Flutter desktop screenshot, annotation, color picker and screen ruler."
+description: "拾屏 — a macOS toolkit for screenshots, annotations, recording, color picking, measurement and text recognition."
 publish_to: 'none'
 version: 0.10.0+10
 

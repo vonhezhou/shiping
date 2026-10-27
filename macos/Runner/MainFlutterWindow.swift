@@ -81,7 +81,7 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
     // Start the engine even though the history window stays hidden at launch.
     _ = flutterViewController.view
-    title = "fruler"
+    title = "拾屏"
     setContentSize(NSSize(width: 1100, height: 760))
     minSize = NSSize(width: 920, height: 680)
     center()
@@ -450,6 +450,8 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       case "status":
         result(["panels":self.overlays.count,"active":self.session != nil,
           "applicationActive":NSApp.isActive,
+          "applicationName":Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "",
+          "mainTitle":self.mainWindow?.title ?? "",
           "permission":CGPreflightScreenCaptureAccess(),"bundleId":Bundle.main.bundleIdentifier ?? "",
           "mainVisible":self.mainWindow?.isVisible == true,"editing":self.screenshotHost != nil,
           "menu": self.statusItem?.menu?.items.map { entry -> [String: Any] in
@@ -826,7 +828,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
       }
       let panel = NSSavePanel()
-      panel.nameFieldStringValue = "fruler-screenshot.png"
+      panel.nameFieldStringValue = "拾屏-screenshot.png"
       #if FRULER_INTEGRATION_TEST
       if cancelNextSave {
         cancelNextSave = false
@@ -968,7 +970,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
         }
       }
       let panel = NSSavePanel()
-      panel.nameFieldStringValue = "fruler-measurement.png"
+      panel.nameFieldStringValue = "拾屏-measurement.png"
       panel.allowedContentTypes = [.png]
       panel.canCreateDirectories = true
       NSApp.activate(ignoringOtherApps: true)
@@ -1164,7 +1166,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
       case .success(let recording):
         while true {
           let panel = NSSavePanel()
-          panel.nameFieldStringValue = "fruler-recording-\(Int(Date().timeIntervalSince1970)).mp4"
+          panel.nameFieldStringValue = "拾屏-recording-\(Int(Date().timeIntervalSince1970)).mp4"
           panel.allowedContentTypes = [.mpeg4Movie]
           panel.canCreateDirectories = true
           panel.title = NativeStrings.text("recording.save")
@@ -1397,7 +1399,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private func setupMenu() {
     let item = statusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.length = recorder.isRecording ? NSStatusItem.variableLength : NSStatusItem.squareLength
-    item.button?.image = NSImage(systemSymbolName: "ruler", accessibilityDescription: "fruler")
+    item.button?.image = NSImage(systemSymbolName: "ruler", accessibilityDescription: "拾屏")
     item.button?.contentTintColor = recorder.isRecording ? .systemRed : nil
     let menu = NSMenu()
     // 常用工具独立成组，快捷键靠右；管理入口和退出另起分组。

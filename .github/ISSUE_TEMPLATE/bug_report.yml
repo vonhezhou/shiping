@@ -5,7 +5,7 @@ body:
     id: environment
     attributes:
       label: 运行环境
-      description: fruler 版本或提交号、macOS 版本、Apple Silicon / Intel、显示器与缩放配置。
+      description: 拾屏版本或提交号、macOS 版本、Apple Silicon / Intel、显示器与缩放配置。
     validations:
       required: true
   - type: textarea

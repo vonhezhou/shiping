@@ -5,7 +5,9 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = fruler
+PRODUCT_NAME = 拾屏
+// 产品显示名称独立于内部 Swift 模块名。
+PRODUCT_MODULE_NAME = fruler
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = dev.fruler.app
