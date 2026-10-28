@@ -14,13 +14,13 @@
 
 ### 当前 CI 产物：ad hoc 签名测试版
 
-`Checks` 工作流保留分支 push / PR / 手动检查，仅在推送 `v版本号` tag 且检查通过后构建 Release。tag 必须对应 `pubspec.yaml` 去掉 `+构建号` 的版本，例如 `0.10.0+10` 对应 `v0.10.0`。
+`Checks` 工作流保留分支 push / PR / 手动检查，仅在推送 `v版本号` tag 且检查通过后构建 Release 并发布独立安装包附件。tag 必须对应 `pubspec.yaml` 去掉 `+构建号` 的版本，例如 `0.10.0+10` 对应 `v0.10.0`。
 
-Release 构建通过临时 xcconfig 显式使用 ad hoc 签名，不使用 `tool/integration.xcconfig`。打包前验证应用签名完整性及 `Signature=adhoc`，使用 `hdiutil` 生成 HFS+ / UDZO 压缩 DMG，然后上传名为 `shiping-<tag>-macos-adhoc` 的 Actions artifact，包含 `.dmg` 与 `.dmg.sha256` 校验文件，不再额外制作应用 ZIP。GitHub 下载 artifact 时可能自动包装为 ZIP，解压即可得到上述文件。
+Release 构建通过临时 xcconfig 显式使用 ad hoc 签名，不使用 `tool/integration.xcconfig`。打包前验证应用签名完整性及 `Signature=adhoc`，使用 `hdiutil` 生成 HFS+ / UDZO 压缩 DMG，然后上传名为 `shiping-<tag>-macos-adhoc` 的 Actions artifact，包含 `.dmg` 与 `.dmg.sha256` 校验文件，作为 CI 备份。随后的 `publish-release` 任务校验 SHA-256，并创建该 tag 的 GitHub Release，将 DMG 和校验文件分别上传为附件，设置清晰的安装包与校验文件标签。仅发布任务拥有 `contents: write` 权限；已有 Release 的说明保留，同名附件会被替换。
 
 上传前运行 `python3 tool/test_macos_dmg.py <镜像路径>`：验证镜像完整性、真实只读挂载、安装快捷方式及说明文件，并将应用复制到临时目录验证签名仍有效；结束后卸载镜像并清理临时安装，不修改本机「应用程序」。此包装集成检查不替代应用功能的真实桌面回归。
 
-DMG 根目录包含「拾屏.app」、指向 `/Applications` 的「应用程序」快捷方式和 `BUILD-INFO.txt`。打开 DMG 后将应用拖到该快捷方式即可安装；复制完成后推出镜像，再从「应用程序」启动。包内说明和 Actions 摘要会说明签名状态、实际架构及验收限制；工作流不自动创建 GitHub Release。下载后可运行 `shasum -a 256 -c shiping-<tag>-macos-adhoc.dmg.sha256` 检查校验值。
+DMG 根目录包含「拾屏.app」、指向 `/Applications` 的「应用程序」快捷方式和 `BUILD-INFO.txt`。打开 DMG 后将应用拖到该快捷方式即可安装；复制完成后推出镜像，再从「应用程序」启动。包内说明和 Actions 摘要会说明签名状态、实际架构及验收限制。Release 正文提供安装包与校验文件的直接下载链接，说明签名状态、安装步骤，并区分 GitHub 自动生成的源码压缩包。用户应下载 `.dmg`；`Source code (zip)` 和 `Source code (tar.gz)` 不包含可直接安装的应用。下载后可运行 `shasum -a 256 -c shiping-<tag>-macos-adhoc.dmg.sha256` 检查校验值。
 
 此产物没有 Developer ID 签名，未公证，未 stapling，仅供测试，macOS Gatekeeper 可能阻止启动。后续正式发行需补齐下面的签名、公证与验收步骤，不能将当前 artifact 作为已公证发行版。
 
@@ -32,6 +32,6 @@ DMG 根目录包含「拾屏.app」、指向 `/Applications` 的「应用程序�
 4. 运行 `flutter --no-version-check build macos --release --no-pub`。发布构建不得启用 `FRULER_INTEGRATION_TEST`，不得使用 `tool/integration.xcconfig`。
 5. 使用发行者自己的 Developer ID 配置签名、公证与 stapling；仓库不提供发行证书，也不把本地构建视为已公证发行版。在另一台机器上验证启动、权限与功能。
 6. 使用 Flutter 的许可信息和依赖包所附声明核对第三方许可，随分发产物保留要求的声明。
-7. 创建对应版本标签和 GitHub Release，说明系统要求、架构、安装方式、权限、验收范围及已知问题，仅附上验证过的分发产物。
+7. 推送对应版本标签，等待工作流创建 GitHub Release 并上传独立 DMG 与校验文件；核对附件和直接下载链接，补充架构、权限、验收范围及已知问题，仅保留验证过的分发产物。
 
 `build/` 和 `dist/` 是本地产物目录，不提交到源码仓库。真实截图集成测试需恢复剪贴板并清理测试输出，不应将测试截图或录屏一并发布。

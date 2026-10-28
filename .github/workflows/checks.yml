@@ -121,7 +121,8 @@ jobs:
             echo
             cat "$staging/BUILD-INFO.txt"
             echo
-            echo "下载下方 Artifacts 中的 ${package}；包含安装 DMG 和 SHA-256 校验文件。"
+            echo "安装包将单独发布到 https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+            echo "下方 Artifacts 保留 ${package} 作为 CI 备份，下载时 GitHub 会将其包装为 ZIP。"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "PACKAGE_NAME=$package" >> "$GITHUB_ENV"
       - name: Upload macOS Release (ad hoc, not notarized)
@@ -133,3 +134,54 @@ jobs:
             dist/*.dmg.sha256
           if-no-files-found: error
           compression-level: 0
+
+  publish-release:
+    name: Publish DMG and checksum to GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: macos-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: shiping-${{ github.ref_name }}-macos-adhoc
+          path: dist
+      - name: Publish separate installer downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          PACKAGE_NAME: shiping-${{ github.ref_name }}-macos-adhoc
+        run: |
+          (cd dist && shasum -a 256 -c "$PACKAGE_NAME.dmg.sha256")
+          cat > "$RUNNER_TEMP/release-notes.md" <<NOTES
+          ## macOS 安装包
+
+          **[下载拾屏安装包（DMG）](https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/${PACKAGE_NAME}.dmg)** · [下载 SHA-256 校验文件](https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/${PACKAGE_NAME}.dmg.sha256)
+
+          需要 macOS 14 或更新版本。打开 DMG，将「拾屏.app」拖到「应用程序」快捷方式，复制完成后推出镜像，再从「应用程序」启动。
+
+          **当前应用使用 ad hoc 签名，没有 Developer ID 签名，未公证、未 stapling，仅供测试。macOS Gatekeeper 可能阻止打开。**
+
+          Assets 中的 **.dmg** 是安装包，**.dmg.sha256** 用于校验；GitHub 自动提供的 **Source code (zip)** 和 **Source code (tar.gz)** 是源代码，不包含可直接安装的应用。
+
+          下载两个文件后，可在所在目录执行：
+
+              shasum -a 256 -c ${PACKAGE_NAME}.dmg.sha256
+
+          构建已通过 CI 检查及 DMG 挂载、安装快捷方式和复制后签名验证；不代表完整真实桌面功能回归或人工验收通过。
+          NOTES
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              "dist/$PACKAGE_NAME.dmg#拾屏 macOS 安装包（DMG，ad hoc）" \
+              "dist/$PACKAGE_NAME.dmg.sha256#SHA-256 校验文件" --clobber
+          else
+            gh release create "$RELEASE_TAG" --verify-tag \
+              --title "拾屏 ${RELEASE_TAG}（macOS · ad hoc）" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              "dist/$PACKAGE_NAME.dmg#拾屏 macOS 安装包（DMG，ad hoc）" \
+              "dist/$PACKAGE_NAME.dmg.sha256#SHA-256 校验文件"
+          fi
+          echo "安装包下载：https://github.com/${GH_REPO}/releases/tag/${RELEASE_TAG}" >> "$GITHUB_STEP_SUMMARY"

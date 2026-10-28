@@ -39,7 +39,7 @@ flutter --no-version-check build macos --release --no-pub
 
 ## macOS 自动构建
 
-GitHub Actions 的 `Checks` 工作流仅在推送版本 tag（例如 `v0.10.0`）且现有检查通过后，构建并上传 macOS Release。tag 必须为 `v` 加上 `pubspec.yaml` 中去掉 `+构建号` 的版本。普通分支 push（包括 main）、PR 和手动运行只执行检查，不构建 Release。
+GitHub Actions 的 `Checks` 工作流仅在推送版本 tag（例如 `v0.10.0`）且现有检查通过后，构建 macOS Release 并将安装包单独发布到 GitHub Release。tag 必须为 `v` 加上 `pubspec.yaml` 中去掉 `+构建号` 的版本。普通分支 push（包括 main）、PR 和手动运行只执行检查，不构建 Release。
 
 更新版本并提交代码后，推送对应 tag：
 
@@ -48,9 +48,14 @@ git tag v0.10.0
 git push origin v0.10.0
 ```
 
-在该次 Actions 运行的 **Artifacts** 中下载 `shiping-v0.10.0-macos-adhoc`。上传产物为 `shiping-v0.10.0-macos-adhoc.dmg` 和对应的 `.dmg.sha256` 校验文件。GitHub 下载 artifact 时可能会自动用 ZIP 包装，解压即可得到 DMG，工作流不再额外制作应用 ZIP。DMG 内含「拾屏.app」、指向 `/Applications` 的「应用程序」快捷方式及 `BUILD-INFO.txt`，记录版本、提交、实际构建架构和签名状态。
+前往 **[Releases 下载页面](https://github.com/vonhezhou/shiping/releases)**，选择「拾屏 macOS 安装包（DMG，ad hoc）」即可下载安装包，无需解压 ZIP。每个版本分别提供：
 
-打开 DMG，将「拾屏.app」拖到旁边的「应用程序」快捷方式，复制完成后推出磁盘镜像，再从「应用程序」启动拾屏。从菜单栏进入设置并按需授权屏幕录制。校验下载文件可在所在目录运行 `shasum -a 256 -c shiping-v0.10.0-macos-adhoc.dmg.sha256`。工作流不自动创建 GitHub Release。
+- `shiping-<版本tag>-macos-adhoc.dmg`：应用安装包。
+- `shiping-<版本tag>-macos-adhoc.dmg.sha256`：SHA-256 校验文件。
+
+GitHub 页面中的 `Source code (zip)` 和 `Source code (tar.gz)` 是自动生成的源码压缩包，不包含可直接安装的应用。Actions 的 Artifacts 仅作为 CI 备份，GitHub 下载时会将其包装为 ZIP；安装应用请优先使用上面的 Release 下载项。
+
+打开 DMG，将「拾屏.app」拖到旁边的「应用程序」快捷方式，复制完成后推出磁盘镜像，再从「应用程序」启动拾屏。从菜单栏进入设置并按需授权屏幕录制。校验下载文件可在所在目录运行 `shasum -a 256 -c shiping-v0.10.0-macos-adhoc.dmg.sha256`。DMG 内的 `BUILD-INFO.txt` 记录版本、提交、实际构建架构和签名状态。
 
 **当前产物使用 ad hoc 签名，没有 Developer ID 签名，未公证，未 stapling，仅供测试；macOS Gatekeeper 可能阻止打开。** Developer ID 签名、公证和 stapling 将在后续配置。构建成功不代表真实 macOS 集成测试或人工验收通过，Intel 仍未实机验收。
 

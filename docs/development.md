@@ -66,4 +66,4 @@ UI 回归覆盖默认 1100×760、最小 920×680 和鼠标输入。跨显示器
 
 仓库的 `Checks` 工作流在 macOS runner 上检查语言资源、Pigeon 生成文件、静态分析、Dart 单元 / UI 测试与原生 PNG 导出。此工作流不运行需要交互桌面、屏幕录制或辅助功能权限的用例，不等于完整 macOS 验收；完整门禁仍须在已授权且解锁的本机执行 `python3 tool/check.py`。
 
-推送与 `pubspec.yaml` 对应的 `v版本号` tag 后，检查通过才会执行 macOS Release 构建并上传 DMG 与 SHA-256 校验文件；分支 push、PR 和手动运行不会执行 Release 任务。DMG 包含应用和「应用程序」快捷方式，支持拖拽安装。当前应用使用 ad hoc 签名，没有 Developer ID 签名，未公证、未 stapling，详见[发布说明](releasing.md)。
+推送与 `pubspec.yaml` 对应的 `v版本号` tag 后，检查通过才会执行 macOS Release 构建并将 DMG 与 SHA-256 校验文件分别发布为 GitHub Release 附件（Actions artifact 保留作备份）；分支 push、PR 和手动运行不会执行 Release 任务。DMG 包含应用和「应用程序」快捷方式，支持拖拽安装。当前应用使用 ad hoc 签名，没有 Developer ID 签名，未公证、未 stapling，详见[发布说明](releasing.md)。
