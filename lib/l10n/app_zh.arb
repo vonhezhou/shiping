@@ -505,5 +505,11 @@
   "msgTextNotFound": "选区中未发现文字。",
   "msgTextRecognitionFailed": "文字识别失败，请重试。",
   "msgTextCopyFailed": "文字复制失败，请重试。",
-  "msgTextCopied": "文字已复制。"
+  "msgTextCopied": "文字已复制。",
+  "uiLaunchAtLogin": "随系统启动",
+  "uiLaunchAtLoginDescription": "登录 Mac 后自动运行，常驻菜单栏。",
+  "uiLaunchAtLoginApproval": "等待系统批准，请在系统设置的「登录项」中允许拾屏。",
+  "uiLaunchAtLoginUnavailable": "登录项不可用。请将应用放入「应用程序」后重试。",
+  "uiOpenLoginItemSettings": "打开登录项设置",
+  "msgLaunchAtLoginFailed": "无法读取或修改登录项，请检查系统设置后重试。"
 }

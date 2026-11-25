@@ -112,6 +112,51 @@ class AppController extends ChangeNotifier {
   ValueListenable<Locale> get localeChanges => _localeNotifier;
   AppLocalizations get strings => lookupAppLocalizations(locale);
 
+  LaunchAtLoginStatus launchAtLoginStatus = LaunchAtLoginStatus.unavailable;
+  bool savingLaunchAtLogin = false;
+
+  Future<void> refreshLaunchAtLogin() async {
+    if (!desktop.supportsLaunchAtLogin || savingLaunchAtLogin) return;
+    savingLaunchAtLogin = true;
+    _notify();
+    try {
+      launchAtLoginStatus = await desktop.getLaunchAtLogin();
+    } catch (e, stackTrace) {
+      _logFailure('Read login item', e, stackTrace);
+      error = strings.msgLaunchAtLoginFailed;
+    } finally {
+      savingLaunchAtLogin = false;
+      _notify();
+    }
+  }
+
+  Future<void> setLaunchAtLogin(bool enabled) async {
+    if (!desktop.supportsLaunchAtLogin || savingLaunchAtLogin) return;
+    savingLaunchAtLogin = true;
+    error = null;
+    _notify();
+    try {
+      // 登录项以系统状态为准，不写入本地偏好或在启动时自动注册。
+      launchAtLoginStatus = await desktop.setLaunchAtLogin(enabled);
+    } catch (e, stackTrace) {
+      _logFailure('Update login item', e, stackTrace);
+      error = strings.msgLaunchAtLoginFailed;
+    } finally {
+      savingLaunchAtLogin = false;
+      _notify();
+    }
+  }
+
+  Future<void> openLoginItemSettings() async {
+    try {
+      await desktop.openLoginItemSettings();
+    } catch (e, stackTrace) {
+      _logFailure('Open login item settings', e, stackTrace);
+      error = strings.msgLaunchAtLoginFailed;
+      _notify();
+    }
+  }
+
   Future<void> setLanguage(AppLanguage language) =>
       _queueLocaleUpdate(() => _changeLanguage(language, _systemLocale));
 
@@ -1012,6 +1057,7 @@ class AppController extends ChangeNotifier {
         notice = null;
         _persist();
       }
+      await refreshLaunchAtLogin();
       _logger.info('State loaded: present=${saved != null}.');
       if (supported) {
         try {

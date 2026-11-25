@@ -10,6 +10,8 @@ import 'desktop.g.dart' as wire;
 import 'desktop_protocol.dart';
 import 'native_pixel_buffer.dart';
 
+enum LaunchAtLoginStatus { disabled, enabled, requiresApproval, unavailable }
+
 enum DesktopFeature {
   picker,
   ruler,
@@ -63,6 +65,12 @@ abstract class DesktopService {
   Future<void> configureLocale(String languageCode) async {}
   Future<List<String>> availableFontFamilies() async => [];
   Future<int?> pickAnnotationColor(int initialColor) async => null;
+  bool get supportsLaunchAtLogin => false;
+  Future<LaunchAtLoginStatus> getLaunchAtLogin() async =>
+      LaunchAtLoginStatus.unavailable;
+  Future<LaunchAtLoginStatus> setLaunchAtLogin(bool enabled) async =>
+      throw UnsupportedError('platform_unsupported');
+  Future<void> openLoginItemSettings() async {}
   Future<DesktopStatus> initialize();
   Future<bool> requestPermission();
   Future<void> openPrivacySettings();
@@ -128,6 +136,17 @@ class MacDesktopService extends DesktopService {
     DesktopFeature.textRecognition,
     DesktopFeature.pinnedImages,
   };
+
+  @override
+  bool get supportsLaunchAtLogin => true;
+  @override
+  Future<LaunchAtLoginStatus> getLaunchAtLogin() async =>
+      LaunchAtLoginStatus.values.byName(await _api.getLaunchAtLogin());
+  @override
+  Future<LaunchAtLoginStatus> setLaunchAtLogin(bool enabled) async =>
+      LaunchAtLoginStatus.values.byName(await _api.setLaunchAtLogin(enabled));
+  @override
+  Future<void> openLoginItemSettings() => _api.openLoginItemSettings();
 
   MacDesktopService({PixelFrame Function(wire.DisplayFrame)? readFrame})
     : _readFrame = readFrame ?? NativePixelBuffers.read {

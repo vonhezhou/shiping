@@ -71,6 +71,44 @@ class _GeneralSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      if (controller.desktop.supportsLaunchAtLogin) ...[
+        _SettingsCard(
+          title: context.l10n.uiLaunchAtLogin,
+          icon: Icons.power_settings_new,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SwitchListTile(
+                key: const ValueKey('launch-at-login'),
+                contentPadding: EdgeInsets.zero,
+                title: Text(context.l10n.uiLaunchAtLogin),
+                subtitle: Text(context.l10n.uiLaunchAtLoginDescription),
+                value:
+                    controller.launchAtLoginStatus ==
+                        LaunchAtLoginStatus.enabled ||
+                    controller.launchAtLoginStatus ==
+                        LaunchAtLoginStatus.requiresApproval,
+                onChanged:
+                    controller.initializing || controller.savingLaunchAtLogin
+                    ? null
+                    : controller.setLaunchAtLogin,
+              ),
+              if (controller.launchAtLoginStatus ==
+                  LaunchAtLoginStatus.requiresApproval)
+                Text(context.l10n.uiLaunchAtLoginApproval),
+              if (controller.launchAtLoginStatus ==
+                      LaunchAtLoginStatus.unavailable &&
+                  !controller.initializing)
+                Text(context.l10n.uiLaunchAtLoginUnavailable),
+              TextButton(
+                onPressed: controller.openLoginItemSettings,
+                child: Text(context.l10n.uiOpenLoginItemSettings),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
       _SettingsCard(
         title: context.l10n.uiLanguage,
         icon: Icons.language,

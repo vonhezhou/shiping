@@ -2024,6 +2024,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Text copied.'**
   String get msgTextCopied;
+
+  /// No description provided for @uiLaunchAtLogin.
+  ///
+  /// In en, this message translates to:
+  /// **'Launch at login'**
+  String get uiLaunchAtLogin;
+
+  /// No description provided for @uiLaunchAtLoginDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Run automatically in the menu bar when you log in to your Mac.'**
+  String get uiLaunchAtLoginDescription;
+
+  /// No description provided for @uiLaunchAtLoginApproval.
+  ///
+  /// In en, this message translates to:
+  /// **'Approval required. Allow Fruler in Login Items in System Settings.'**
+  String get uiLaunchAtLoginApproval;
+
+  /// No description provided for @uiLaunchAtLoginUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Login item unavailable. Move the app to Applications and try again.'**
+  String get uiLaunchAtLoginUnavailable;
+
+  /// No description provided for @uiOpenLoginItemSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Login Items settings'**
+  String get uiOpenLoginItemSettings;
+
+  /// No description provided for @msgLaunchAtLoginFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to read or change the login item. Check System Settings and try again.'**
+  String get msgLaunchAtLoginFailed;
 }
 
 class _AppLocalizationsDelegate

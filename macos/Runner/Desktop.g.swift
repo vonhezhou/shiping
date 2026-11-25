@@ -1225,6 +1225,9 @@ protocol DesktopHostApi {
   func pickAnnotationColor(initialColor: Int64, completion: @escaping (Result<Int64?, Error>) -> Void)
   func availableFontFamilies(completion: @escaping (Result<[String], Error>) -> Void)
   func initialize(completion: @escaping (Result<NativeStatus, Error>) -> Void)
+  func getLaunchAtLogin(completion: @escaping (Result<String, Error>) -> Void)
+  func setLaunchAtLogin(enabled: Bool, completion: @escaping (Result<String, Error>) -> Void)
+  func openLoginItemSettings(completion: @escaping (Result<Void, Error>) -> Void)
   func requestPermission(completion: @escaping (Result<Bool, Error>) -> Void)
   func openPrivacySettings(completion: @escaping (Result<Void, Error>) -> Void)
   func showMainWindow(completion: @escaping (Result<Void, Error>) -> Void)
@@ -1322,6 +1325,53 @@ class DesktopHostApiSetup {
       }
     } else {
       initializeChannel.setMessageHandler(nil)
+    }
+    let getLaunchAtLoginChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.getLaunchAtLogin\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      getLaunchAtLoginChannel.setMessageHandler { _, reply in
+        api.getLaunchAtLogin { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      getLaunchAtLoginChannel.setMessageHandler(nil)
+    }
+    let setLaunchAtLoginChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.setLaunchAtLogin\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setLaunchAtLoginChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let enabledArg = args[0] as! Bool
+        api.setLaunchAtLogin(enabled: enabledArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setLaunchAtLoginChannel.setMessageHandler(nil)
+    }
+    let openLoginItemSettingsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.openLoginItemSettings\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      openLoginItemSettingsChannel.setMessageHandler { _, reply in
+        api.openLoginItemSettings { result in
+          switch result {
+          case .success:
+            reply(wrapResult(nil))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      openLoginItemSettingsChannel.setMessageHandler(nil)
     }
     let requestPermissionChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.fruler.DesktopHostApi.requestPermission\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

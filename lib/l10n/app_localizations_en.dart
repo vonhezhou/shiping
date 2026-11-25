@@ -1184,4 +1184,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get msgTextCopied => 'Text copied.';
+
+  @override
+  String get uiLaunchAtLogin => 'Launch at login';
+
+  @override
+  String get uiLaunchAtLoginDescription =>
+      'Run automatically in the menu bar when you log in to your Mac.';
+
+  @override
+  String get uiLaunchAtLoginApproval =>
+      'Approval required. Allow Fruler in Login Items in System Settings.';
+
+  @override
+  String get uiLaunchAtLoginUnavailable =>
+      'Login item unavailable. Move the app to Applications and try again.';
+
+  @override
+  String get uiOpenLoginItemSettings => 'Open Login Items settings';
+
+  @override
+  String get msgLaunchAtLoginFailed =>
+      'Unable to read or change the login item. Check System Settings and try again.';
 }

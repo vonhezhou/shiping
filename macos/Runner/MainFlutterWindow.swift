@@ -5,6 +5,7 @@ import Carbon.HIToolbox
 import UniformTypeIdentifiers
 import AVFoundation
 import Vision
+import ServiceManagement
 
 /// 启动时 Dart 通道尚未就绪，保留有限条原生日志，由 Dart 统一落盘和轮转。
 final class NativeLogBuffer {
@@ -704,6 +705,40 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
     colorDialog?.refreshLocalization()
     pinnedImages.refreshLocale()
     nativeLogs.log(800, "desktop", "Locale configured: language=\(languageCode).")
+    completion(.success(()))
+  }
+
+  private var launchAtLoginStatus: String {
+    switch SMAppService.mainApp.status {
+    case .enabled: return "enabled"
+    case .requiresApproval: return "requiresApproval"
+    case .notRegistered: return "disabled"
+    case .notFound: return "unavailable"
+    @unknown default: return "unavailable"
+    }
+  }
+
+  func getLaunchAtLogin(completion: @escaping (Result<String, Error>) -> Void) {
+    completion(.success(launchAtLoginStatus))
+  }
+
+  func setLaunchAtLogin(enabled: Bool, completion: @escaping (Result<String, Error>) -> Void) {
+    do {
+      if enabled {
+        if SMAppService.mainApp.status != .enabled && SMAppService.mainApp.status != .requiresApproval {
+          try SMAppService.mainApp.register()
+        }
+      } else if SMAppService.mainApp.status != .notRegistered {
+        try SMAppService.mainApp.unregister()
+      }
+      completion(.success(launchAtLoginStatus))
+    } catch {
+      completion(.failure(PigeonError(code: "login_item_failed", message: error.localizedDescription, details: nil)))
+    }
+  }
+
+  func openLoginItemSettings(completion: @escaping (Result<Void, Error>) -> Void) {
+    SMAppService.openSystemSettingsLoginItems()
     completion(.success(()))
   }
 

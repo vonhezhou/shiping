@@ -1062,4 +1062,22 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get msgTextCopied => '文字已复制。';
+
+  @override
+  String get uiLaunchAtLogin => '随系统启动';
+
+  @override
+  String get uiLaunchAtLoginDescription => '登录 Mac 后自动运行，常驻菜单栏。';
+
+  @override
+  String get uiLaunchAtLoginApproval => '等待系统批准，请在系统设置的「登录项」中允许拾屏。';
+
+  @override
+  String get uiLaunchAtLoginUnavailable => '登录项不可用。请将应用放入「应用程序」后重试。';
+
+  @override
+  String get uiOpenLoginItemSettings => '打开登录项设置';
+
+  @override
+  String get msgLaunchAtLoginFailed => '无法读取或修改登录项，请检查系统设置后重试。';
 }

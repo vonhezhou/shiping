@@ -620,5 +620,11 @@
   "msgTextNotFound": "No text found in the selection.",
   "msgTextRecognitionFailed": "Text recognition failed. Please try again.",
   "msgTextCopyFailed": "Could not copy text. Please try again.",
-  "msgTextCopied": "Text copied."
+  "msgTextCopied": "Text copied.",
+  "uiLaunchAtLogin": "Launch at login",
+  "uiLaunchAtLoginDescription": "Run automatically in the menu bar when you log in to your Mac.",
+  "uiLaunchAtLoginApproval": "Approval required. Allow Fruler in Login Items in System Settings.",
+  "uiLaunchAtLoginUnavailable": "Login item unavailable. Move the app to Applications and try again.",
+  "uiOpenLoginItemSettings": "Open Login Items settings",
+  "msgLaunchAtLoginFailed": "Unable to read or change the login item. Check System Settings and try again."
 }

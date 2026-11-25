@@ -961,6 +961,35 @@ void main() {
     expect(mono, isNot(orderedEquals(sans)), reason: '真实系统字体应改变导出 PNG 的字形');
   });
 
+  testWidgets('真实 macOS 登录项注册、状态查询和取消', (tester) async {
+    final desktop = MacDesktopService();
+    final original = await desktop.getLaunchAtLogin();
+    // 测试仅修改独立 integration bundle 的登录项，结束后恢复。
+    try {
+      final enabled = await desktop.setLaunchAtLogin(true);
+      expect(
+        enabled,
+        anyOf(
+          LaunchAtLoginStatus.enabled,
+          LaunchAtLoginStatus.requiresApproval,
+        ),
+      );
+      expect(await desktop.getLaunchAtLogin(), enabled);
+      expect(
+        await desktop.setLaunchAtLogin(false),
+        LaunchAtLoginStatus.disabled,
+      );
+      expect(await desktop.getLaunchAtLogin(), LaunchAtLoginStatus.disabled);
+      final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
+      expect(status['mainVisible'], false);
+    } finally {
+      await desktop.setLaunchAtLogin(
+        original == LaunchAtLoginStatus.enabled ||
+            original == LaunchAtLoginStatus.requiresApproval,
+      );
+    }
+  });
+
   testWidgets('launch stays in menu bar without opening main window', (
     tester,
   ) async {

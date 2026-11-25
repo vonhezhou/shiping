@@ -16,7 +16,7 @@ import '../l10n/app_localizations.dart';
 import '../l10n/localizations_context.dart';
 import '../platform/annotation_renderer.dart';
 import '../platform/pixel_frame_image.dart';
-import '../platform/desktop_service.dart' show DesktopFeature;
+import '../platform/desktop_service.dart' show DesktopFeature, LaunchAtLoginStatus;
 
 import 'font_family_picker.dart';
 
@@ -55,6 +55,11 @@ class _FrulerAppState extends State<FrulerApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) controller.refreshLaunchAtLogin();
   }
 
   @override

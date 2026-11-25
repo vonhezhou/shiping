@@ -314,6 +314,12 @@ abstract class DesktopHostApi {
   @async
   NativeStatus initialize();
   @async
+  String getLaunchAtLogin();
+  @async
+  String setLaunchAtLogin(bool enabled);
+  @async
+  void openLoginItemSettings();
+  @async
   bool requestPermission();
   @async
   void openPrivacySettings();
