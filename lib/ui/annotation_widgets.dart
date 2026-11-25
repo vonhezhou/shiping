@@ -29,21 +29,6 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   int? textIndex, textCommitPointer;
   final linePoints = <Offset>[];
   Offset? lineHover;
-  final styles =
-      <
-        String,
-        ({
-          double width,
-          double fontSize,
-          String fontFamily,
-          bool filled,
-          bool bold,
-          bool italic,
-          bool outlined,
-          bool effectBrush,
-          int effectStrength,
-        })
-      >{};
   int color = 0xFFFF0000;
   // Toolbar values are logical points; annotations use bitmap pixels.
   double width = 3, fontSize = 24;
@@ -102,6 +87,9 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
   void initState() {
     super.initState();
     screenPointer = c.screenshotPointer;
+    lastShape = c.annotationTool('shape');
+    lastLine = c.annotationTool('line');
+    lastEffect = c.annotationTool('effect');
     load();
     loadFonts();
   }
@@ -211,49 +199,26 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     effectStrength: effectStrength,
   );
 
-  String styleKey(String value) => ['rectangle', 'ellipse'].contains(value)
-      ? 'shape'
-      : ['line', 'arrow'].contains(value)
-      ? 'line'
-      : ['mosaic', 'blur'].contains(value)
-      ? 'effect'
-      : value;
-
   void selectTool(String value) {
     finishText();
     finishLine();
-    styles[styleKey(propertyKind)] = (
-      width: width,
-      fontSize: fontSize,
-      fontFamily: fontFamily,
-      filled: filled,
-      bold: bold,
-      italic: italic,
-      outlined: outlined,
-      effectBrush: effectBrush,
-      effectStrength: effectStrength,
-    );
     cancelGesture();
-    final next = styles[styleKey(value)];
+    final next = c.annotationOptions(value);
+    c.rememberAnnotationTool(value);
     setState(() {
       tool = value;
       selected = null;
       color = c.annotationColor(value);
-      width =
-          next?.width ??
-          (value == 'marker'
-              ? 12
-              : ['mosaic', 'blur', 'eraser'].contains(value)
-              ? 24
-              : 3);
-      fontSize = next?.fontSize ?? 24;
-      fontFamily = next?.fontFamily ?? Annotation.defaultFontFamily;
-      filled = next?.filled ?? false;
-      bold = next?.bold ?? false;
-      italic = next?.italic ?? false;
-      outlined = next?.outlined ?? false;
-      effectBrush = next?.effectBrush ?? false;
-      effectStrength = next?.effectStrength ?? 3;
+      width = next.width;
+      fontSize = next.fontSize;
+      fontFamily = next.fontFamily;
+      filled = next.filled;
+      bold = next.bold;
+      italic = next.italic;
+      outlined = next.outlined;
+      effectBrush = next.effectBrush;
+      eraserBrush = next.eraserBrush;
+      effectStrength = next.effectStrength;
       if (['rectangle', 'ellipse'].contains(value)) lastShape = value;
       if (['line', 'arrow'].contains(value)) lastLine = value;
       if (['mosaic', 'blur'].contains(value)) lastEffect = value;
@@ -325,6 +290,22 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     bool? nextOutlined,
     int? nextEffectStrength,
   }) {
+    // 仅保存本次明确修改的字段，选中旧标注不会覆盖工具的其他默认选项。
+    c.setAnnotationOptions(
+      propertyKind,
+      c
+          .annotationOptions(propertyKind)
+          .copyWith(
+            width: nextWidth,
+            fontSize: nextFont,
+            fontFamily: nextFontFamily,
+            filled: nextFilled,
+            bold: nextBold,
+            italic: nextItalic,
+            outlined: nextOutlined,
+            effectStrength: nextEffectStrength,
+          ),
+    );
     if (nextColor != null) c.setAnnotationColor(propertyKind, nextColor);
     setState(() {
       color = nextColor ?? color;
@@ -1479,6 +1460,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       focus.requestFocus();
       return;
     }
+    c.setAnnotationOptions(
+      kind,
+      c.annotationOptions(kind).copyWith(effectBrush: brush),
+    );
     cancelGesture();
     setState(() {
       tool = kind;
@@ -1490,6 +1475,10 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
 
   void setEraserMode(bool brush) {
     if (eraserBrush != brush) {
+      c.setAnnotationOptions(
+        'eraser',
+        c.annotationOptions('eraser').copyWith(eraserBrush: brush),
+      );
       cancelGesture();
       setState(() => eraserBrush = brush);
     }
@@ -1521,7 +1510,16 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     });
   }
 
-  void finishParameter() {
+  void finishParameter({required bool strength}) {
+    c.setAnnotationOptions(
+      propertyKind,
+      c
+          .annotationOptions(propertyKind)
+          .copyWith(
+            width: strength ? null : width,
+            effectStrength: strength ? effectStrength : null,
+          ),
+    );
     final next = preview, index = selected;
     cancelGesture();
     if (next != null && index != null && index < items.length) {
@@ -1584,7 +1582,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
                       context.l10n.uiParameterValue(label, v.round()),
                   onChangeStart: (_) => beginParameter(),
                   onChanged: (v) => updateParameter(v, strength: strength),
-                  onChangeEnd: (_) => finishParameter(),
+                  onChangeEnd: (_) => finishParameter(strength: strength),
                 ),
               ),
             ),

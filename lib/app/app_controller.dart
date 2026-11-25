@@ -233,6 +233,45 @@ class AppController extends ChangeNotifier {
     'text',
   };
   final _annotationColors = <String, int>{};
+  final _annotationOptions = <String, AnnotationOptions>{};
+  final _annotationTools = <String, String>{
+    'shape': 'rectangle',
+    'line': 'arrow',
+    'effect': 'mosaic',
+  };
+
+  AnnotationOptions annotationOptions(String tool) =>
+      _annotationOptions[AnnotationOptions.group(tool)] ??
+      AnnotationOptions.defaults(tool);
+
+  void setAnnotationOptions(String tool, AnnotationOptions options) {
+    final group = AnnotationOptions.group(tool);
+    if (!AnnotationOptions.groups.contains(group)) return;
+    final valid = AnnotationOptions.fromJson(options.toJson(), tool: tool);
+    if (mapEquals(annotationOptions(tool).toJson(), valid.toJson())) return;
+    _annotationOptions[group] = valid;
+    _persist();
+    _notify();
+  }
+
+  String annotationTool(String group) => _annotationTools[group]!;
+
+  void rememberAnnotationTool(String tool) {
+    final group = AnnotationOptions.group(tool);
+    if (!const {
+          'rectangle',
+          'ellipse',
+          'line',
+          'arrow',
+          'mosaic',
+          'blur',
+        }.contains(tool) ||
+        _annotationTools[group] == tool) {
+      return;
+    }
+    _annotationTools[group] = tool;
+    _persist();
+  }
 
   int annotationColor(String tool) => _annotationColors[tool] ?? 0xFFFF0000;
 
@@ -2661,6 +2700,10 @@ class AppController extends ChangeNotifier {
       'colorHistoryLimit': colorHistoryLimit,
       'measurementHistoryLimit': measurementHistoryLimit,
       'annotationColors': _annotationColors,
+      'annotationOptions': _annotationOptions.map(
+        (key, value) => MapEntry(key, value.toJson()),
+      ),
+      'annotationTools': _annotationTools,
       'format': format.name,
       'colorOutputs': _colorOutputs.map((e) => e.toJson()).toList(),
       'selectedOutputId': selectedOutputId,
@@ -2703,6 +2746,30 @@ class AppController extends ChangeNotifier {
         _measurementHistoryLimit = measurementLimit;
       }
       final annotationColors = data['annotationColors'];
+      final annotationOptions = data['annotationOptions'];
+      if (annotationOptions is Map) {
+        for (final group in AnnotationOptions.groups) {
+          if (annotationOptions.containsKey(group)) {
+            _annotationOptions[group] = AnnotationOptions.fromJson(
+              annotationOptions[group],
+              tool: group,
+            );
+          }
+        }
+      }
+      final annotationTools = data['annotationTools'];
+      if (annotationTools is Map) {
+        for (final entry in const {
+          'shape': ['rectangle', 'ellipse'],
+          'line': ['line', 'arrow'],
+          'effect': ['mosaic', 'blur'],
+        }.entries) {
+          final tool = annotationTools[entry.key];
+          if (entry.value.contains(tool)) {
+            _annotationTools[entry.key] = tool as String;
+          }
+        }
+      }
       if (annotationColors is Map) {
         for (final tool in _annotationColorTools) {
           final color = annotationColors[tool];
