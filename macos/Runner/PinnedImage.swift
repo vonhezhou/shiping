@@ -296,6 +296,14 @@ final class PinnedImagePanel: NSPanel {
   var imageView: PinnedImageView { contentView as! PinnedImageView }
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+  override func becomeKey() {
+    super.becomeKey()
+    imageView.needsDisplay = true
+  }
+  override func resignKey() {
+    super.resignKey()
+    imageView.needsDisplay = true
+  }
   override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
     // 初始位置和适屏由工具显式限制；缩放时 AppKit 的菜单栏避让会破坏鼠标锚点。
     frameRect
@@ -446,7 +454,7 @@ final class PinnedImagePanel: NSPanel {
      "scale": scale, "opacity": alphaValue, "rotation": transform.quarterTurns * 90,
      "flippedHorizontal": transform.flipHorizontal, "flippedVertical": transform.flipVertical,
      "pixelWidth": renderedImage.width, "pixelHeight": renderedImage.height,
-     "level": level.rawValue, "clickThrough": ignoresMouseEvents]
+     "level": level.rawValue, "clickThrough": ignoresMouseEvents, "selected": isKeyWindow]
   }
   #endif
 }
@@ -463,6 +471,15 @@ final class PinnedImageView: NSView {
     guard let panel = panel, let context = NSGraphicsContext.current?.cgContext else { return }
     context.interpolationQuality = .high
     context.draw(panel.renderedImage, in: bounds)
+    if panel.isKeyWindow {
+      // 白色衬线保证深浅图片上都能辨认选中状态；仅装饰视图，不改变导出像素。
+      context.setStrokeColor(NSColor.white.cgColor)
+      context.setLineWidth(6)
+      context.stroke(bounds.insetBy(dx: 3, dy: 3))
+      context.setStrokeColor(NSColor.systemBlue.cgColor)
+      context.setLineWidth(3)
+      context.stroke(bounds.insetBy(dx: 3, dy: 3))
+    }
   }
 
   override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }

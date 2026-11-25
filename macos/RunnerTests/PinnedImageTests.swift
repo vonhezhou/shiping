@@ -3,6 +3,38 @@ import XCTest
 @testable import fruler
 
 final class PinnedImageTests: XCTestCase {
+  func testSelectionBorderFollowsKeyPinWithoutChangingImageOrFrame() throws {
+    let screen = try XCTUnwrap(NSScreen.screens.first)
+    let panel = PinnedImagePanel(id: 1, image: sampleImage(), logicalSize: NSSize(width: 120, height: 80),
+      center: NSPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY), visibleFrame: screen.visibleFrame)
+    let other = PinnedImagePanel(id: 2, image: sampleImage(), logicalSize: NSSize(width: 120, height: 80),
+      center: NSPoint(x: screen.visibleFrame.midX + 160, y: screen.visibleFrame.midY), visibleFrame: screen.visibleFrame)
+    defer { panel.close(); other.close() }
+    let exported = try panel.exportPNG()
+    let frame = panel.frame
+    func appearance() throws -> [UInt8] {
+      let bitmap = try XCTUnwrap(panel.imageView.bitmapImageRepForCachingDisplay(in: panel.imageView.bounds))
+      panel.imageView.cacheDisplay(in: panel.imageView.bounds, to: bitmap)
+      return pixelBytes(try XCTUnwrap(bitmap.cgImage))
+    }
+    other.makeKeyAndOrderFront(nil)
+    panel.orderFrontRegardless()
+    let unselected = try appearance()
+    panel.imageView.needsDisplay = false
+    panel.makeKeyAndOrderFront(nil)
+    XCTAssertTrue(panel.isKeyWindow)
+    XCTAssertTrue(panel.imageView.needsDisplay, "获得焦点时应立即刷新选中边框")
+    let selected = try appearance()
+    XCTAssertFalse(selected == unselected, "选中贴图必须有可见的边框变化")
+    panel.imageView.needsDisplay = false
+    other.makeKeyAndOrderFront(nil)
+    XCTAssertFalse(panel.isKeyWindow)
+    XCTAssertTrue(panel.imageView.needsDisplay, "切换贴图应清除旧窗口的边框")
+    XCTAssertTrue(try appearance() == unselected)
+    XCTAssertEqual(panel.frame, frame)
+    XCTAssertEqual(try panel.exportPNG(), exported, "选中边框不得写入导出图片")
+  }
+
   func testZoomKeepsPointerAnchorAndClampsScale() {
     let frame = NSRect(x: -600, y: 80, width: 200, height: 100)
     let anchor = NSPoint(x: -450, y: 100)

@@ -3292,6 +3292,52 @@ void main() {
       }
     },
   );
+  testWidgets('真实鼠标切换贴图选中边框且复制不带边框', (tester) async {
+    final desktop = NativeDesktop();
+    await desktop.initialize();
+    await driver.invokeMethod<void>('backupClipboard');
+    try {
+      await desktop.closePinnedImages();
+      await driver.invokeMethod<void>('pinClipboardFixture', {'kind': 'image'});
+      final fixture = await pngPixels(
+        (await driver.invokeMethod<Uint8List>('clipboardPng'))!,
+      );
+      await desktop.pinClipboard();
+      await desktop.pinClipboard();
+      final pins = await nativePinnedImages();
+      expect(pins, hasLength(2));
+      for (final target in pins) {
+        for (final phase in ['down', 'up']) {
+          await driver.invokeMethod<void>('pinInput', {
+            'id': target['id'],
+            'action': 'mouse',
+            'phase': phase,
+          });
+        }
+        await tester.pump();
+        final selected = (await nativePinnedImages())
+            .where((pin) => pin['selected'] == true)
+            .toList();
+        expect(selected, hasLength(1));
+        expect(selected.single['id'], target['id']);
+        await driver.invokeMethod<void>('pinInput', {
+          'id': target['id'],
+          'action': 'key',
+          'keyCode': 8,
+          'command': true,
+        });
+        final copied = await pngPixels(
+          (await driver.invokeMethod<Uint8List>('clipboardPng'))!,
+        );
+        expect((copied.width, copied.height), (fixture.width, fixture.height));
+        expect(copied.pixels, orderedEquals(fixture.pixels));
+      }
+    } finally {
+      await desktop.closePinnedImages();
+      await driver.invokeMethod<void>('restoreClipboard');
+    }
+  });
+
   testWidgets(
     'real clipboard pins support Cocoa input, visibility and destruction',
     (tester) async {
