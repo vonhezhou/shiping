@@ -462,6 +462,11 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           } ?? [],
           "statusItemCount":self.statusItem == nil ? 0 : 1,"accessory":NSApp.activationPolicy() == .accessory,
           "rulerViews":self.overlays.values.map { $0.overlay.integrationState },
+          "captureWindows":self.overlays.values.map { panel in
+            ["animationDisabled": panel.animationBehavior == .none,
+             "fillsDisplay": panel.frame == panel.overlay.snapshot.frame,
+             "visible": panel.isVisible]
+          },
           "windowNumber":self.screenshotHost?.windowNumber ?? self.overlays.values.first?.windowNumber ?? -1])
       case "colorPanelState":
         guard let dialog = self.colorDialog else { result(nil); return }
@@ -1759,6 +1764,8 @@ private final class CapturePanel: NSPanel {
   init(snapshot: DisplaySnapshot, tool: String) {
     overlay = CaptureOverlayView(snapshot: snapshot, tool: tool)
     super.init(contentRect: snapshot.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    // 待选区浮层直接覆盖屏幕，避免 AppKit 出场动画造成从中心放大的跳动。
+    animationBehavior = .none
     level = .screenSaver
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
     isOpaque = true

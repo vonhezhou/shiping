@@ -2002,6 +2002,41 @@ void main() {
     }
   });
 
+  testWidgets('截图首次和再次进入待选区时直接铺满屏幕且禁用窗口动画', (tester) async {
+    final desktop = MacDesktopService();
+    final subscription = desktop.events.listen((_) {});
+    try {
+      final status = await desktop.initialize();
+      expect(status.permission, true, reason: '需要真实录屏权限验证截图浮层');
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final session = await desktop.begin('screenshot');
+        try {
+          final status = (await driver.invokeMapMethod<String, Object?>(
+            'status',
+          ))!;
+          expect(status['mainVisible'], false);
+          expect(status['editing'], false);
+          final windows = (status['captureWindows'] as List).cast<Map>();
+          expect(windows, hasLength(session.displays.length));
+          expect(windows, isNotEmpty);
+          for (final window in windows) {
+            expect(window['visible'], true);
+            expect(window['fillsDisplay'], true);
+            expect(
+              window['animationDisabled'],
+              true,
+              reason: '待选区浮层不应播放 AppKit 放大出场动画',
+            );
+          }
+        } finally {
+          await desktop.finish(session.id);
+        }
+      }
+    } finally {
+      await subscription.cancel();
+    }
+  });
+
   testWidgets(
     'native screenshot command is accepted before permission checks',
     (tester) async {
