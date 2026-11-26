@@ -581,6 +581,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       size.width,
       size.height,
       handle: drag.handle,
+      keepAspectRatio: HardwareKeyboard.instance.isShiftPressed,
     );
   }
 
@@ -607,7 +608,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     width: 10,
     height: 10,
     child: MouseRegion(
-      cursor: SystemMouseCursors.grab,
+      cursor: resizeCursor(handle),
       child: Listener(
         key: ValueKey('screenshot-handle-$handle'),
         onPointerDown: (event) => beginSelection(event, handle),
@@ -625,16 +626,29 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     ),
   );
 
-  bool selectedHandle(Offset p) {
-    if (selected == null || selected! >= items.length) return false;
+  MouseCursor resizeCursor(String handle) => switch (handle) {
+    'n' || 's' => SystemMouseCursors.resizeUpDown,
+    'w' || 'e' => SystemMouseCursors.resizeLeftRight,
+    'nw' || 'se' => SystemMouseCursors.resizeUpLeftDownRight,
+    'ne' || 'sw' => SystemMouseCursors.resizeUpRightDownLeft,
+    _ => SystemMouseCursors.grabbing,
+  };
+
+  String? annotationHandle(Offset p) {
+    if (selected == null || selected! >= items.length) return null;
     final b = items[selected!].bounds;
-    return [
-      b.topLeft,
-      b.topRight,
-      b.bottomRight,
-      b.bottomLeft,
-    ].any((corner) => (p - corner).distance < 9 / scale);
+    for (final entry in {
+      'nw': b.topLeft,
+      'ne': b.topRight,
+      'se': b.bottomRight,
+      'sw': b.bottomLeft,
+    }.entries) {
+      if ((p - entry.value).distance < 9 / scale) return entry.key;
+    }
+    return null;
   }
+
+  bool selectedHandle(Offset p) => annotationHandle(p) != null;
 
   // Pick complete objects in reverse paint order. Eraser mode always draws
   // an independent erasure, even over an existing object's edge.
@@ -656,7 +670,7 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
 
   MouseCursor get canvasCursor {
     if (!editable || image == null) return SystemMouseCursors.basic;
-    if (selectionDrag != null) return SystemMouseCursors.grabbing;
+    if (selectionDrag != null) return resizeCursor(selectionDrag!.handle);
     if (canAdjustSelection &&
         tool == 'select' &&
         selected == null &&
@@ -664,6 +678,12 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
       return SystemMouseCursors.grab;
     }
     if (pointerId != null && original != null) {
+      if (resizeAnchor != null && hoverPosition != null) {
+        final p = hoverPosition!, anchor = resizeAnchor!;
+        return resizeCursor(
+          '${p.dy < anchor.dy ? 'n' : 's'}${p.dx < anchor.dx ? 'w' : 'e'}',
+        );
+      }
       return SystemMouseCursors.grabbing;
     }
     final p = hoverPosition;
@@ -672,7 +692,8 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
           ? SystemMouseCursors.basic
           : SystemMouseCursors.precise;
     }
-    if (selectedHandle(p)) return SystemMouseCursors.grab;
+    final handle = annotationHandle(p);
+    if (handle != null) return resizeCursor(handle);
     final hit = annotationAt(p) != null;
     return hit
         ? SystemMouseCursors.grab
@@ -787,7 +808,27 @@ class _AnnotationEditorState extends State<_AnnotationEditor> {
     }
     if (original != null) {
       if (resizeAnchor != null) {
-        final b = Rect.fromPoints(resizeAnchor!, p);
+        var end = p;
+        final bounds = original!.bounds;
+        if (HardwareKeyboard.instance.isShiftPressed &&
+            bounds.width > 0 &&
+            bounds.height > 0) {
+          final anchor = resizeAnchor!;
+          final west = start!.dx < anchor.dx, north = start!.dy < anchor.dy;
+          final size = aspectRatioResize(
+            bounds.width,
+            bounds.height,
+            west ? anchor.dx - p.dx : p.dx - anchor.dx,
+            north ? anchor.dy - p.dy : p.dy - anchor.dy,
+            west ? anchor.dx : imageSize.width - anchor.dx,
+            north ? anchor.dy : imageSize.height - anchor.dy,
+          );
+          end = Offset(
+            anchor.dx + (west ? -size.width : size.width),
+            anchor.dy + (north ? -size.height : size.height),
+          );
+        }
+        final b = Rect.fromPoints(resizeAnchor!, end);
         if (b.width >= 1 && b.height >= 1) {
           preview = original!.resize(b, fontScale: c.screenshotScaleY);
         }

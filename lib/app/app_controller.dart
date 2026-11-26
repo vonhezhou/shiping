@@ -2174,6 +2174,7 @@ class AppController extends ChangeNotifier {
         display.frame.width,
         display.frame.height,
         handle: event['handle'] as String? ?? 'move',
+        keepAspectRatio: event['keep'] == true,
       );
       _replacePin(index, rect);
       if (event['phase'] == 'end') {

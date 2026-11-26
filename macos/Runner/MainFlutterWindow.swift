@@ -588,7 +588,7 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
           CGWarpMouseCursorPosition(CGPoint(x: screenPoint.x,
             y: (NSScreen.screens.first?.frame.maxY ?? 0) - screenPoint.y))
         }
-        guard var event=NSEvent.mouseEvent(with:type,location:point,modifierFlags:[],
+        guard var event=NSEvent.mouseEvent(with:type,location:point,modifierFlags: args["shift"] as? Bool == true ? [.shift] : [],
           timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:panel.windowNumber,
           context:nil,eventNumber:CaptureOverlayView.integrationEventNumber,clickCount:1,pressure:1) else {result(nil);return}
         if button == "secondary" || button == "middle" {
@@ -1906,7 +1906,7 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   }
 
   private func cursor(at location: NSPoint) -> NSCursor {
-    if pinDrag != nil { return .closedHand }
+    if let drag = pinDrag { return drag.handle == "move" ? .closedHand : Self.resizeCursor(drag.handle) }
     func control(in view: NSView) -> NSControl? {
       for child in view.subviews.reversed() where !child.isHidden {
         guard child.convert(child.bounds, to: self).contains(location) else { continue }
@@ -1923,11 +1923,56 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
       }
     }
     if tool == "rectangle" || editingPins {
+      if let selected = pins.first(where: { $0.id == selectedPin }),
+        let handle = resizeHandle(selected.rect, at: location) { return Self.resizeCursor(handle) }
       if pins.contains(where: { $0.rect.insetBy(dx: -5, dy: -5).contains(location) }) {
         return .openHand
       }
     }
     return .crosshair
+  }
+
+  private static func resizeCursor(_ handle: String) -> NSCursor {
+    if #available(macOS 15.0, *) {
+      let position: NSCursor.FrameResizePosition
+      switch handle {
+      case "n": position = .top
+      case "s": position = .bottom
+      case "w": position = .left
+      case "e": position = .right
+      case "nw": position = .topLeft
+      case "ne": position = .topRight
+      case "sw": position = .bottomLeft
+      default: position = .bottomRight
+      }
+      return .frameResize(position: position, directions: .all)
+    }
+    switch handle {
+    case "n", "s": return .resizeUpDown
+    case "w", "e": return .resizeLeftRight
+    case "nw", "se": return diagonalNWSE
+    default: return diagonalNESW
+    }
+  }
+
+  // macOS 14 没有公开的对角缩放光标，绘制带白色描边的双向箭头。
+  private static let diagonalNWSE = diagonalCursor(mirrored: false)
+  private static let diagonalNESW = diagonalCursor(mirrored: true)
+  private static func diagonalCursor(mirrored: Bool) -> NSCursor {
+    let image = NSImage(size: NSSize(width: 24, height: 24), flipped: true) { _ in
+      let path = NSBezierPath()
+      func point(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+        NSPoint(x: mirrored ? 24 - x : x, y: y)
+      }
+      path.move(to: point(5, 5)); path.line(to: point(19, 19))
+      path.move(to: point(5, 11)); path.line(to: point(5, 5)); path.line(to: point(11, 5))
+      path.move(to: point(13, 19)); path.line(to: point(19, 19)); path.line(to: point(19, 13))
+      path.lineCapStyle = .round; path.lineJoinStyle = .round
+      NSColor.white.setStroke(); path.lineWidth = 4; path.stroke()
+      NSColor.black.setStroke(); path.lineWidth = 2; path.stroke()
+      return true
+    }
+    return NSCursor(image: image, hotSpot: NSPoint(x: 12, y: 12))
   }
 
   private func applyCursor(at location: NSPoint) {
@@ -2030,7 +2075,8 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
         }
       } else if let drag = pinDrag, phase == "drag" || phase == "up" {
         onEvent?(["type": "pinDrag", "id": drag.id, "phase": phase == "up" ? "end" : "update",
-          "handle": drag.handle, "dx": location.x - drag.start.x, "dy": location.y - drag.start.y])
+          "handle": drag.handle, "dx": location.x - drag.start.x, "dy": location.y - drag.start.y,
+          "keep": event.modifierFlags.contains(.shift)])
         if phase == "up" { pinDrag = nil }
         applyCursor(at: location)
         return
@@ -2136,8 +2182,12 @@ private final class CaptureOverlayView: NSView, NSTextFieldDelegate {
   }
   var integrationState: [String: Any] {
     let current = NSCursor.current
-    let cursorName = [("openHand", NSCursor.openHand), ("closedHand", NSCursor.closedHand),
-      ("pointingHand", NSCursor.pointingHand), ("arrow", NSCursor.arrow), ("crosshair", NSCursor.crosshair)]
+    let resizeCursors = ["n", "s", "w", "e", "nw", "ne", "sw", "se"].map { handle in
+      let axis = ["n": "ns", "s": "ns", "w": "ew", "e": "ew", "nw": "nwse", "se": "nwse", "ne": "nesw", "sw": "nesw"][handle]!
+      return ("resize-" + axis, Self.resizeCursor(handle))
+    }
+    let cursorName = ([("openHand", NSCursor.openHand), ("closedHand", NSCursor.closedHand),
+      ("pointingHand", NSCursor.pointingHand), ("arrow", NSCursor.arrow), ("crosshair", NSCursor.crosshair)] + resizeCursors)
       .first { current === $0.1 || (current.hotSpot == $0.1.hotSpot &&
         current.image.tiffRepresentation == $0.1.image.tiffRepresentation) }?.0 ?? "other"
     let controls = [("delete", deleteButton), ("undo", undoButton), ("copySize", copySizeButton)]

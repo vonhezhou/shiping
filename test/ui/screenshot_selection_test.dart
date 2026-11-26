@@ -66,6 +66,27 @@ void main() {
 
         await ready();
         expect(key('reselect-screenshot'), findsNothing);
+        for (final entry in {
+          'n': SystemMouseCursors.resizeUpDown,
+          's': SystemMouseCursors.resizeUpDown,
+          'w': SystemMouseCursors.resizeLeftRight,
+          'e': SystemMouseCursors.resizeLeftRight,
+          'nw': SystemMouseCursors.resizeUpLeftDownRight,
+          'se': SystemMouseCursors.resizeUpLeftDownRight,
+          'ne': SystemMouseCursors.resizeUpRightDownLeft,
+          'sw': SystemMouseCursors.resizeUpRightDownLeft,
+        }.entries) {
+          final region = tester.widget<MouseRegion>(
+            find
+                .ancestor(
+                  of: key('screenshot-handle-${entry.key}'),
+                  matching: find.byType(MouseRegion),
+                )
+                .first,
+          );
+          expect(region.cursor, entry.value);
+        }
+
         await tester.tap(key('annotation-group-shape'));
         await tester.pumpAndSettle();
         await tester.tap(key('annotation-fill'));
@@ -179,6 +200,21 @@ void main() {
           c.markup.items.single.bounds.left,
           original.bounds.left - 20 * ratio - 1,
         );
+        final beforeRatio = c.screenshotSelection!;
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.dragFrom(
+          tester.getCenter(key('screenshot-handle-se')),
+          const Offset(40, 5),
+          kind: ui.PointerDeviceKind.mouse,
+        );
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await ready();
+        expect(
+          c.screenshotSelection!.width / c.screenshotSelection!.height,
+          closeTo(beforeRatio.width / beforeRatio.height, .02),
+        );
+        expect(c.screenshotSelection!.left, beforeRatio.left);
+        expect(c.screenshotSelection!.top, beforeRatio.top);
         expect(d.beginCalls, 1);
         expect(d.finishCalls, 0);
         expect(tester.takeException(), isNull);

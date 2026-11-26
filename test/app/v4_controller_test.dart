@@ -56,6 +56,33 @@ void main() {
     d.event('undoPins');
     expect(d.lastOverlay!['pinned'], isEmpty);
   });
+  test('测量框角点按 Shift 等比缩放，松开恢复自由缩放且整次手势可撤销', () async {
+    await pin();
+    final original = Map.of(rect());
+    d.event('pinDrag', {'id': 1, 'displayId': 1, 'phase': 'start'});
+    d.event('pinDrag', {
+      'id': 1,
+      'displayId': 1,
+      'phase': 'update',
+      'dx': 1.0,
+      'dy': .5,
+      'handle': 'se',
+      'keep': true,
+    });
+    expect(rect(), {'left': 0, 'top': 0, 'right': 6, 'bottom': 6});
+    d.event('pinDrag', {
+      'id': 1,
+      'displayId': 1,
+      'phase': 'end',
+      'dx': 1.0,
+      'dy': .5,
+      'handle': 'se',
+      'keep': false,
+    });
+    expect(rect(), {'left': 0, 'top': 0, 'right': 6, 'bottom': 5});
+    d.event('undoPins');
+    expect(rect(), original);
+  });
   test('编辑键盘移动和 Shift 缩放、屏幕边界与撤销', () async {
     await pin();
     d.event('editPins');

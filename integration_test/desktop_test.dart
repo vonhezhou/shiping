@@ -2220,10 +2220,17 @@ void main() {
                       .onPressed !=
                   null,
         );
+        final beforeResize = c.screenshotSelection!;
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
         await mouseDrag(
           tester,
           tester.getCenter(find.byKey(const ValueKey('screenshot-handle-se'))),
-          const Offset(10, 10),
+          const Offset(10, 2),
+        );
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        expect(
+          c.screenshotSelection!.width / c.screenshotSelection!.height,
+          closeTo(beforeResize.width / beforeResize.height, .02),
         );
         await waitFor(
           tester,
@@ -3627,6 +3634,8 @@ void main() {
         double endX,
         double endY, {
         bool adjust = false,
+        bool shift = false,
+        String? resize,
       }) async {
         for (final e in [
           {'phase': 'down', 'x': x, 'y': y},
@@ -3636,13 +3645,14 @@ void main() {
           await driver.invokeMethod<void>('pointer', {
             'displayId': desktop.lastCapture!.displays.first.id,
             'warp': true,
+            'shift': shift,
             ...e,
           });
           await tester.pumpAndSettle();
           if (adjust) {
             expect(
               (await state())['cursor'],
-              e['phase'] == 'up' ? 'openHand' : 'closedHand',
+              resize ?? (e['phase'] == 'up' ? 'openHand' : 'closedHand'),
               reason: '原生测量框拖动阶段 $e，当前状态 ${await state()}',
             );
           }
@@ -3708,7 +3718,36 @@ void main() {
         pin = ((await state())['pins'] as List).single as Map;
         expect(pin['x'], 100.0);
         expect(pin['y'], 200.0);
-        await drag(200, 260, 230, 280, adjust: true);
+        for (final entry in {
+          'nw': const Offset(100, 200),
+          'ne': const Offset(200, 200),
+          'sw': const Offset(100, 260),
+          'se': const Offset(200, 260),
+          'n': const Offset(150, 200),
+          's': const Offset(150, 260),
+          'w': const Offset(100, 230),
+          'e': const Offset(200, 230),
+        }.entries) {
+          await hoverNative(
+            entry.value.dx,
+            entry.value.dy,
+            'resize-${{'n': 'ns', 's': 'ns', 'w': 'ew', 'e': 'ew', 'nw': 'nwse', 'se': 'nwse', 'ne': 'nesw', 'sw': 'nesw'}[entry.key]}',
+          );
+        }
+        await drag(
+          200,
+          260,
+          220,
+          265,
+          adjust: true,
+          shift: true,
+          resize: 'resize-nwse',
+        );
+        pin = ((await state())['pins'] as List).single as Map;
+        expect(pin['width'], 120.0);
+        expect(pin['height'], 72.0);
+        await drag(220, 272, 200, 260, adjust: true, resize: 'resize-nwse');
+        await drag(200, 260, 230, 280, adjust: true, resize: 'resize-nwse');
         pin = ((await state())['pins'] as List).single as Map;
         expect(pin['width'], 130.0);
         expect(pin['height'], 80.0);

@@ -118,6 +118,23 @@ class EdgeDetector {
   }
 }
 
+/// 以变化更大的轴决定缩放量，另一轴跟随；边界限制应用于同一比例。
+({double width, double height}) aspectRatioResize(
+  double width,
+  double height,
+  double requestedWidth,
+  double requestedHeight,
+  double maxWidth,
+  double maxHeight,
+) {
+  final sx = requestedWidth / width, sy = requestedHeight / height;
+  final requested = (sx - 1).abs() >= (sy - 1).abs() ? sx : sy;
+  final maximum = math.min(maxWidth / width, maxHeight / height);
+  final minimum = math.min(maximum, 1 / math.min(width, height));
+  final scale = requested.clamp(minimum, maximum);
+  return (width: width * scale, height: height * scale);
+}
+
 /// Move as a whole or resize named edges; preserve at least one screenshot pixel.
 PixelRect transformAnnotation(
   PixelRect rect,
@@ -126,6 +143,7 @@ PixelRect transformAnnotation(
   int width,
   int height, {
   String handle = 'move',
+  bool keepAspectRatio = false,
 }) {
   if (handle == 'move') {
     final x = dx.clamp(-rect.left, width - rect.right);
@@ -135,6 +153,27 @@ PixelRect transformAnnotation(
       top: rect.top + y,
       right: rect.right + x,
       bottom: rect.bottom + y,
+    );
+  }
+  if (keepAspectRatio &&
+      ['nw', 'ne', 'sw', 'se'].contains(handle) &&
+      rect.width > 0 &&
+      rect.height > 0) {
+    final west = handle.contains('w'), north = handle.contains('n');
+    final size = aspectRatioResize(
+      rect.width.toDouble(),
+      rect.height.toDouble(),
+      (rect.width + (west ? -dx : dx)).toDouble(),
+      (rect.height + (north ? -dy : dy)).toDouble(),
+      (west ? rect.right : width - rect.left).toDouble(),
+      (north ? rect.bottom : height - rect.top).toDouble(),
+    );
+    final w = size.width.round(), h = size.height.round();
+    return PixelRect(
+      left: west ? rect.right - w : rect.left,
+      right: west ? rect.right : rect.left + w,
+      top: north ? rect.bottom - h : rect.top,
+      bottom: north ? rect.bottom : rect.top + h,
     );
   }
   final left = handle.contains('w')

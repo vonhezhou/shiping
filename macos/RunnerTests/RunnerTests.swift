@@ -150,6 +150,16 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(nudge.resize, true)
   }
 
+  func testPinResizePreservesShiftModifierThroughNativeProtocol() {
+    let event = nativeEvent(["type": "pinDrag", "id": 1, "displayId": UInt32(3),
+      "phase": "update", "handle": "ne", "dx": 12.5, "dy": -4.0, "keep": true])
+    XCTAssertEqual(event.kind, .pinDrag)
+    XCTAssertEqual(event.handle, "ne")
+    XCTAssertEqual(event.keep, true)
+    XCTAssertEqual(event.dx, 12.5)
+    XCTAssertEqual(event.dy, -4.0)
+  }
+
   func testFFIReferencesSurviveSessionReleaseAndFreeAfterLastReader() {
     XCTAssertNil(NativePixelBuffer(byteCount: 0))
     XCTAssertNil(frulerFrameAcquire(-1))

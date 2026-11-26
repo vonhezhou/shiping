@@ -4,6 +4,63 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/core/core.dart';
 
 void main() {
+  test('Shift 四角缩放保留比例、固定对角并限制在屏幕内', () {
+    const rect = PixelRect(left: 100, top: 100, right: 300, bottom: 200);
+    for (final handle in ['nw', 'ne', 'sw', 'se']) {
+      final west = handle.contains('w'), north = handle.contains('n');
+      final next = transformAnnotation(
+        rect,
+        west ? -40 : 40,
+        north ? -5 : 5,
+        640,
+        480,
+        handle: handle,
+        keepAspectRatio: true,
+      );
+      expect(next.width, 240);
+      expect(next.height, 120);
+      expect(west ? next.right : next.left, west ? rect.right : rect.left);
+      expect(north ? next.bottom : next.top, north ? rect.bottom : rect.top);
+      final bounded = transformAnnotation(
+        rect,
+        west ? -999 : 999,
+        north ? -999 : 999,
+        640,
+        480,
+        handle: handle,
+        keepAspectRatio: true,
+      );
+      expect(bounded.width / bounded.height, closeTo(2, .01));
+      expect(bounded.left, greaterThanOrEqualTo(0));
+      expect(bounded.top, greaterThanOrEqualTo(0));
+      expect(bounded.right, lessThanOrEqualTo(640));
+      expect(bounded.bottom, lessThanOrEqualTo(480));
+    }
+    expect(
+      transformAnnotation(
+        rect,
+        40,
+        5,
+        640,
+        480,
+        handle: 'e',
+        keepAspectRatio: true,
+      ).height,
+      100,
+    );
+    final shrink = transformAnnotation(
+      rect,
+      -999,
+      -999,
+      640,
+      480,
+      handle: 'se',
+      keepAspectRatio: true,
+    );
+    expect(shrink.width, 2);
+    expect(shrink.height, 1);
+  });
+
   test('WCAG 已知基准、前背景对称及阈值不舍入', () {
     final bw = ColorContrast(
       const RgbColor(0, 0, 0),

@@ -1,8 +1,8 @@
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fruler/app/app_controller.dart';
 import 'package:fruler/core/core.dart';
@@ -116,7 +116,19 @@ void main() {
         );
         // The selected object's corner resizes the complete rectangle.
         await mouse.moveTo(origin + const Offset(180, 200));
+        await tester.pump();
+        expect(
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(91001),
+          SystemMouseCursors.resizeUpLeftDownRight,
+        );
         await mouse.down(origin + const Offset(180, 200));
+        await mouse.moveTo(origin + const Offset(20, 220));
+        await tester.pump();
+        expect(
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(91001),
+          SystemMouseCursors.resizeUpRightDownLeft,
+          reason: '越过固定角点后，光标跟随当前对角方向',
+        );
         await mouse.moveTo(origin + const Offset(220, 220));
         await mouse.up();
         await tester.pumpAndSettle();
@@ -135,6 +147,33 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('annotation-redo')));
         await tester.pumpAndSettle();
         expect(c.markup.items, [moved, eraser]);
+        // Shift 按拖动前的矩形比例缩放，松开后恢复自由缩放。
+        await mouse.moveTo(origin + const Offset(180, 200));
+        await mouse.down(origin + const Offset(180, 200));
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await mouse.moveTo(origin + const Offset(220, 205));
+        await tester.pump();
+        expect(
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(91001),
+          SystemMouseCursors.resizeUpLeftDownRight,
+        );
+        await mouse.up();
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pumpAndSettle();
+        final resized = c.markup.items.first.bounds;
+        expect(
+          resized.width / resized.height,
+          closeTo(moved.bounds.width / moved.bounds.height, .001),
+        );
+        expect(resized.topLeft, moved.bounds.topLeft);
+        await tester.tap(find.byKey(const ValueKey('annotation-undo')));
+        await tester.pumpAndSettle();
+        await mouse.moveTo(origin + const Offset(180, 100));
+        await tester.pump();
+        expect(
+          RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(91001),
+          SystemMouseCursors.resizeUpRightDownLeft,
+        );
         // Hover changes only cursor feedback, not the composed annotation layer.
         final content = find.byKey(const ValueKey('annotation-content'));
         final paintFinder = find.descendant(
