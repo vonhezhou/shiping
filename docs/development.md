@@ -23,6 +23,8 @@ flutter --no-version-check build macos --release --no-pub
 
 `pubspec.lock` 随应用代码提交，以固定依赖版本。依赖默认从 `pub.dev` 获取；需要镜像时仅在本机设置 `PUB_HOSTED_URL` / `FLUTTER_STORAGE_BASE_URL`，不要把本机 SDK 路径、镜像偏好或签名证书写入仓库。
 
+使用镜像执行 `pub get` 也会改写锁文件中的包源地址。提交前使用 `PUB_HOSTED_URL=https://pub.dev flutter --no-version-check pub get` 恢复官方源，检查差异中没有意外版本变动，再执行 `PUB_HOSTED_URL=https://pub.dev flutter --no-version-check pub get --enforce-lockfile` 验证与 CI 一致的严格安装。CI 保留 `--enforce-lockfile`，避免安装时静默改写已提交的依赖。
+
 修改 `pigeons/desktop.dart` 后运行 `dart run pigeon --input pigeons/desktop.dart`，修改 ARB 后运行 `flutter --no-version-check gen-l10n`。生成的 Dart / Swift 文件与源文件一起提交，不直接编辑生成文件。
 
 ## 测试与验收
