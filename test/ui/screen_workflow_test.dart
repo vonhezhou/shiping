@@ -152,10 +152,10 @@ void main() {
       final corner = tester.getTopLeft(canvas) + const Offset(150, 105);
       await cursorMouse.moveTo(corner);
       await tester.pump();
-      expect(activeCursor(), SystemMouseCursors.grab);
+      expect(activeCursor(), SystemMouseCursors.resizeUpLeftDownRight);
       await cursorMouse.down(corner);
       await tester.pump();
-      expect(activeCursor(), SystemMouseCursors.grabbing);
+      expect(activeCursor(), SystemMouseCursors.resizeUpLeftDownRight);
       await cursorMouse.cancel();
       await tester.pump();
       await cursorMouse.moveTo(
