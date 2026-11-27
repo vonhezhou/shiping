@@ -27,6 +27,8 @@ flutter --no-version-check build macos --release --no-pub
 
 修改 `pigeons/desktop.dart` 后运行 `dart run pigeon --input pigeons/desktop.dart`，修改 ARB 后运行 `flutter --no-version-check gen-l10n`。生成的 Dart / Swift 文件与源文件一起提交，不直接编辑生成文件。
 
+App 图标采用深蓝灰底、橙色三角尺，菜单栏使用同轮廓的 18 pt 单色模板，跟随系统适配黑白（录屏时保留红色提示）。修改后运行 `swift tool/generate_icon.swift`，同时生成 App 的七种尺寸和菜单栏的 1x / 2x 资源；不要单独修改导出的 PNG。
+
 ## 测试与验收
 
 新增 / 修复行为先补失败回归，再修改实现。单元和 UI 测试不能替代真实 macOS 通道与浮层验收；开发约束见 [AGENTS.md](../AGENTS.md)。

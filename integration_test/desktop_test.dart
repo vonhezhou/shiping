@@ -996,6 +996,10 @@ void main() {
     final status = (await driver.invokeMapMethod<String, Object?>('status'))!;
     expect(status['mainVisible'], false);
     expect(status['statusItemCount'], 1);
+    expect(status['statusIconName'], 'TrayIcon');
+    expect(status['statusIconTemplate'], true);
+    expect(status['statusIconWidth'], 18);
+    expect(status['statusIconHeight'], 18);
     expect(status['accessory'], true);
   });
 

@@ -460,6 +460,10 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
              "tool": entry.representedObject as? String ?? "", "key": entry.keyEquivalent,
              "hasImage": entry.image != nil]
           } ?? [],
+          "statusIconName": self.statusItem?.button?.image?.name() ?? "",
+          "statusIconTemplate": self.statusItem?.button?.image?.isTemplate ?? false,
+          "statusIconWidth": self.statusItem?.button?.image?.size.width ?? 0,
+          "statusIconHeight": self.statusItem?.button?.image?.size.height ?? 0,
           "statusItemCount":self.statusItem == nil ? 0 : 1,"accessory":NSApp.activationPolicy() == .accessory,
           "rulerViews":self.overlays.values.map { $0.overlay.integrationState },
           "captureWindows":self.overlays.values.map { panel in
@@ -1439,7 +1443,11 @@ private final class FrulerDesktopBridge: NSObject, DesktopHostApi {
   private func setupMenu() {
     let item = statusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.length = recorder.isRecording ? NSStatusItem.variableLength : NSStatusItem.squareLength
-    item.button?.image = NSImage(systemSymbolName: "ruler", accessibilityDescription: "拾屏")
+    let image = NSImage(named: "TrayIcon")
+    image?.isTemplate = true
+    image?.size = NSSize(width: 18, height: 18)
+    image?.accessibilityDescription = "拾屏"
+    item.button?.image = image
     item.button?.contentTintColor = recorder.isRecording ? .systemRed : nil
     let menu = NSMenu()
     // 常用工具独立成组，快捷键靠右；管理入口和退出另起分组。
