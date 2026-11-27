@@ -42,9 +42,12 @@ python3 tool/check.py
 ```sh
 flutter --no-version-check test --no-pub
 python3 tool/test_macos_native.py
+python3 tool/test_macos_search.py
 python3 tool/test_macos_integration.py
 python3 tool/test_color_samples.py
 ```
+
+应用名称搜索回归通过真实 `Application.mdimporter` 检查构建产物：`MDItemKeywords` 提供 `fruler` 英文搜索词，中文显示名与 `拾屏.app` 文件名保持不变。可传入应用路径检查 Release 或已安装版本，例如 `python3 tool/test_macos_search.py /Applications/拾屏.app`。
 
 集成测试使用独立的 `dev.fruler.integration` 标识和沙盒，需要本机允许录屏并保持桌面解锁。锁屏时 ScreenCaptureKit 可能返回空的显示器列表，不能作为验收通过。它实际调用 ScreenCaptureKit，向原生 NSPanel 发送 Cocoa 鼠标 / 键盘事件，检查：
 

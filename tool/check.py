@@ -15,6 +15,7 @@ commands = [
     [sys.executable, 'tool/test_annotation_export.py'],
     [sys.executable, 'tool/test_single_instance.py'],
     [sys.executable, 'tool/test_macos_native.py'],
+    [sys.executable, 'tool/test_macos_search.py'],
     [sys.executable, 'tool/test_macos_integration.py'],
     [sys.executable, 'tool/test_annotation_options_restart.py'],
     [sys.executable, 'tool/test_macos_recording.py'],
